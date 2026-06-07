@@ -1,0 +1,219 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="description" content="RECON — AI-Powered Construction Management & Dynamic Financial Ledger for contractors and site builders.">
+<meta name="theme-color" content="#302D2E">
+<title>RECON — Construction Financial Ledger</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Barlow:wght@400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500;600;700&family=Barlow+Condensed:wght@600;700;800&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="css/main.css">
+</head>
+<body>
+
+<!-- WELCOME SCREEN -->
+<div id="welcome-screen" class="welcome-screen">
+  <div class="welcome-content">
+    <div class="welcome-logo">
+      <span class="logo-icon" id="welcome-logo-icon"></span>
+      <div>
+        <h1>RECON</h1>
+        <p class="logo-tagline">Site. Scope. Spend. — AI Construction Ledger</p>
+      </div>
+    </div>
+    <p class="welcome-desc">Track every rupee. Every phase. Every trade.<br>No spreadsheets. No chaos.</p>
+    <button class="btn-primary btn-xl" onclick="App.startNewProject()">
+      <span>+ Start a New Project</span>
+    </button>
+    <div id="existing-projects-list"></div>
+    <div id="signin-area" style="margin-top:24px">
+      <a href="/auth.html" style="display:inline-block;padding:8px 16px;color:var(--text-secondary);font-size:11px;text-decoration:none;border:1px solid var(--charcoal-border);border-radius:6px;letter-spacing:0.06em">Sign in to sync across devices</a>
+    </div>
+  </div>
+</div>
+
+<!-- PROJECT WIZARD -->
+<div id="project-wizard" class="project-wizard hidden">
+  <div class="wizard-container">
+    <div class="wizard-header">
+      <h2>New Project Setup</h2>
+      <div class="wizard-steps">
+        <div class="wizard-step active" data-step="1">1 · Info</div>
+        <div class="wizard-step" data-step="2">2 · Budget</div>
+        <div class="wizard-step" data-step="3">3 · Timeline</div>
+      </div>
+    </div>
+    <div id="wizard-body"></div>
+    <div class="wizard-nav">
+      <button class="btn-ghost" id="wizard-back" onclick="App.wizardBack()" style="display:none">← Back</button>
+      <button class="btn-primary" id="wizard-next" onclick="App.wizardNext()">Next →</button>
+    </div>
+  </div>
+</div>
+
+<!-- MAIN APP -->
+<div id="main-app" class="main-app hidden">
+
+  <!-- TOP BAR -->
+  <header class="top-bar">
+    <div class="top-bar-left">
+      <button class="hamburger" onclick="App.toggleSidebar()" title="Toggle Sidebar"><span style="display:inline-flex"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg></span></button>
+      <div class="app-brand">
+        <span class="brand-icon" id="brand-icon"></span>
+        <span class="brand-text">RECON</span>
+      </div>
+      <div class="project-name-display" id="current-project-name">—</div>
+    </div>
+    <div class="top-bar-center">
+      <div class="master-total-box">
+        <span class="total-label">Total Project Cost</span>
+        <span class="total-amount mono" id="master-total">₹0</span>
+      </div>
+    </div>
+    <div class="top-bar-right">
+      <div class="budget-health" id="budget-health-indicator">
+        <span class="health-label">Budget</span>
+        <span class="health-bar-wrap"><span class="health-bar" id="health-bar-fill"></span></span>
+        <span class="health-pct" id="health-pct">—</span>
+      </div>
+      <button class="btn-icon" title="Export PDF" onclick="App.exportPDF()"><span style="display:inline-flex" id="topbar-icon-pdf"></span></button>
+      <button class="btn-icon" title="Export CSV" onclick="App.exportExcel()"><span style="display:inline-flex" id="topbar-icon-csv"></span></button>
+      <button class="btn-icon ai-toggle-btn" title="AI Co-Pilot" onclick="App.toggleAI()" id="ai-toggle-btn">
+        <span style="display:inline-flex" id="topbar-icon-bot"></span> <span class="ai-pulse" id="ai-pulse"></span>
+      </button>
+      <div class="user-menu" id="user-menu" style="position:relative">
+        <button class="btn-icon" id="user-menu-btn" title="Account" onclick="App.toggleUserMenu()"><span style="display:inline-flex" id="topbar-icon-user"></span></button>
+        <div class="user-dropdown hidden" id="user-dropdown" style="position:absolute;right:0;top:100%;margin-top:8px;background:var(--charcoal-mid);border:1px solid var(--charcoal-border);border-radius:var(--radius-lg);padding:8px 4px;min-width:180px;box-shadow:var(--shadow-lg);z-index:200">
+          <div style="padding:8px 12px;font-size:11px;color:var(--text-muted);border-bottom:1px solid var(--charcoal-border);margin-bottom:4px" id="user-email-display">Not signed in</div>
+          <button onclick="App.signOut()" style="width:100%;text-align:left;padding:8px 12px;border:none;background:none;cursor:pointer;font-family:var(--font-body);font-size:12px;color:var(--warning);border-radius:6px;font-weight:600" onmouseover="this.style.background='var(--warning-glow)'" onmouseout="this.style.background='none'">Sign Out</button>
+        </div>
+      </div>
+    </div>
+  </header>
+
+  <div class="app-body">
+
+    <!-- LEFT SIDEBAR -->
+    <nav class="sidebar" id="sidebar">
+      <div class="sidebar-project-switcher">
+        <button class="btn-ghost-sm" onclick="App.showDashboard()" style="width:100%;text-align:left">⟵ All Projects</button>
+      </div>
+      <div class="phase-nav" id="phase-nav">
+        <!-- Phases injected by JS -->
+      </div>
+      <div class="sidebar-footer">
+        <div class="sidebar-totals">
+          <div class="sidebar-total-row">
+            <span>Materials</span>
+            <span class="mono" id="sb-materials">₹0</span>
+          </div>
+          <div class="sidebar-total-row">
+            <span>Labor</span>
+            <span class="mono" id="sb-labor">₹0</span>
+          </div>
+          <div class="sidebar-total-row">
+            <span>Equipment</span>
+            <span class="mono" id="sb-equipment">₹0</span>
+          </div>
+          <div class="sidebar-total-row bold">
+            <span>TOTAL</span>
+            <span class="mono" id="sb-total">₹0</span>
+          </div>
+        </div>
+      </div>
+    </nav>
+
+    <!-- MAIN CONTENT -->
+    <main class="content-area" id="content-area">
+      <!-- Phase workspaces injected here -->
+    </main>
+
+    <!-- RIGHT AI DRAWER -->
+    <aside class="ai-drawer" id="ai-drawer">
+      <div class="ai-drawer-header">
+        <div class="ai-title">
+          <span id="ai-title-icon"></span>
+          <span>Build Assistant</span>
+          <span class="ai-status-dot" id="ai-status-dot"></span>
+        </div>
+        <div class="ai-controls">
+          <button class="btn-icon-sm" onclick="App.minimizeAI()" title="Minimize" id="ai-min-btn"></button>
+          <button class="btn-icon-sm" onclick="App.closeAI()" title="Close" id="ai-close-btn"></button>
+        </div>
+      </div>
+      <div class="ai-watching" id="ai-watching">Watching: Dashboard</div>
+      <div class="ai-messages" id="ai-messages">
+        <div class="ai-message ai-intro">
+          <span class="ai-msg-icon" id="ai-intro-icon"></span>
+          <div class="ai-msg-body">
+            <p>I'm your Build Assistant. As you fill in each section, I'll flag risks and help you think through costs.</p>
+            <p style="color:var(--text-muted);font-size:11px">You're always in control — I'm just the sidekick.</p>
+          </div>
+        </div>
+      </div>
+      <div class="ai-input-area">
+        <input type="text" class="ai-input" id="ai-input" placeholder="Ask about costs, risks, specs…" onkeydown="if(event.key==='Enter') App.sendAIMessage()">
+        <button class="btn-primary btn-sm" onclick="App.sendAIMessage()">Send</button>
+      </div>
+    </aside>
+
+  </div><!-- /app-body -->
+</div><!-- /main-app -->
+
+<!-- TOAST NOTIFICATIONS -->
+<div id="toast-container"></div>
+
+<script src="js/supabase-client.js"></script>
+<script src="js/icons.js"></script>
+<script src="js/state.js"></script>
+<script src="js/financial.js"></script>
+<script src="js/dashboard.js"></script>
+<script src="js/phases.js"></script>
+<script src="js/ai.js"></script>
+<script src="js/export.js"></script>
+<script src="js/app.js"></script>
+<script>
+  // Wait for Supabase + all icon helpers to be ready, then inject
+  // the topbar SVGs. We do NOT redirect to auth.html here — that
+  // can cause blank-page flashes. Instead, app.js's init() will
+  // detect unauthenticated state and show an inline sign-in prompt
+  // on the welcome screen.
+  function injectTopbarIcons() {
+    if (typeof Icons === 'undefined') return false;
+    const inj = (id, icon) => { const el = document.getElementById(id); if (el) el.innerHTML = icon; };
+    try {
+      inj('topbar-icon-pdf', Icons.render('fileText', 18));
+      inj('topbar-icon-csv', Icons.render('spreadsheet', 18));
+      inj('topbar-icon-bot', Icons.render('bot', 18));
+      inj('topbar-icon-user', Icons.render('user', 18));
+      inj('welcome-logo-icon', Icons.render('building', 40));
+      inj('brand-icon', Icons.render('building', 18));
+      inj('ai-title-icon', Icons.render('bot', 14));
+      inj('ai-intro-icon', Icons.render('userCircle', 14));
+      inj('ai-min-btn', Icons.render('minimize', 14));
+      inj('ai-close-btn', Icons.render('close', 14));
+    } catch (e) {
+      console.warn('[Icons] Failed to inject topbar icons:', e.message);
+    }
+    return true;
+  }
+  // Try injecting right now (icons.js is loaded already)
+  if (!injectTopbarIcons()) {
+    // Defer until next tick in case icons aren't ready
+    setTimeout(injectTopbarIcons, 50);
+  }
+  // Show user email in menu (if logged in)
+  if (typeof SupabaseClient !== 'undefined') {
+    SupabaseClient.onReady((sb) => {
+      const user = SupabaseClient.getUser && SupabaseClient.getUser();
+      if (user) {
+        const el = document.getElementById('user-email-display');
+        if (el) el.textContent = user.email;
+      }
+    });
+  }
+</script>
+</body>
+</html>

@@ -1,0 +1,356 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="description" content="RECON — Sign in to your construction management dashboard.">
+<title>RECON — Sign In</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Barlow:wght@400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500;600;700&family=Barlow+Condensed:wght@600;700;800&display=swap" rel="stylesheet">
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  html { font-size: 14px; -webkit-font-smoothing: antialiased; }
+  body {
+    font-family: 'Barlow', sans-serif;
+    background: linear-gradient(135deg, #1B1B1E 0%, #232022 100%);
+    color: #F5E4CC;
+    min-height: 100vh;
+    display: flex; align-items: center; justify-content: center;
+    background-image:
+      radial-gradient(ellipse at 30% 60%, rgba(158,119,88,0.20) 0%, transparent 60%),
+      radial-gradient(ellipse at 70% 30%, rgba(201,160,124,0.15) 0%, transparent 50%);
+  }
+
+  .auth-container {
+    width: 100%; max-width: 420px; padding: 20px;
+  }
+
+  .auth-logo {
+    text-align: center; margin-bottom: 32px;
+  }
+  .auth-logo-icon { font-size: 40px; margin-bottom: 8px; filter: drop-shadow(0 4px 12px rgba(158,119,88,0.4)); }
+  .auth-logo h1 {
+    font-family: 'Barlow Condensed', sans-serif;
+    font-size: 28px; font-weight: 800;
+    background: linear-gradient(135deg, #9E7758, #ECD1B4);
+    -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+    background-clip: text; letter-spacing: 0.06em;
+  }
+  .auth-logo p { font-size: 12px; color: #C9B49A; letter-spacing: 0.08em; text-transform: uppercase; }
+
+  .auth-card {
+    background: #4A4240;
+    border: 1px solid rgba(236,209,180,0.10);
+    border-radius: 16px;
+    padding: 32px 28px;
+    box-shadow: 0 8px 40px rgba(0,0,0,0.45);
+  }
+
+  .auth-tabs {
+    display: flex; gap: 4px; margin-bottom: 24px;
+    background: #302D2E; border-radius: 10px; padding: 3px;
+  }
+  .auth-tab {
+    flex: 1; padding: 10px; text-align: center;
+    font-size: 13px; font-weight: 700; border: none;
+    background: none; color: #C9B49A; cursor: pointer;
+    border-radius: 8px; transition: all 0.2s;
+    font-family: 'Barlow', sans-serif;
+  }
+  .auth-tab.active {
+    background: linear-gradient(135deg, #705748, #9E7758);
+    color: #F5E4CC;
+    box-shadow: 0 2px 8px rgba(158,119,88,0.30);
+  }
+  .auth-tab:hover:not(.active) { color: #C9A07C; }
+
+  .auth-form { display: flex; flex-direction: column; gap: 16px; }
+  .auth-form.hidden { display: none; }
+
+  .form-group { display: flex; flex-direction: column; gap: 5px; }
+  .form-label {
+    font-size: 10px; font-weight: 700; text-transform: uppercase;
+    letter-spacing: 0.1em; color: #C9B49A;
+  }
+  .form-input {
+    width: 100%; padding: 12px 14px; border: 1px solid rgba(236,209,180,0.22);
+    border-radius: 8px; background: #1B1B1E; color: #F5E4CC;
+    font-family: 'Barlow', sans-serif; font-size: 14px;
+    outline: none; transition: border-color 0.2s, box-shadow 0.2s;
+  }
+  .form-input:focus {
+    border-color: #9E7758;
+    box-shadow: 0 0 0 3px rgba(158,119,88,0.20);
+  }
+  .form-input::placeholder { color: #8A7C6E; opacity: 0.9; }
+
+  .auth-btn {
+    width: 100%; padding: 14px; border: none;
+    background: linear-gradient(135deg, #705748, #9E7758);
+    color: #F5E4CC; font-family: 'Barlow', sans-serif;
+    font-size: 14px; font-weight: 700; border-radius: 10px;
+    cursor: pointer; transition: all 0.2s;
+    box-shadow: 0 2px 8px rgba(158,119,88,0.30);
+    letter-spacing: 0.03em;
+  }
+  .auth-btn:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 4px 16px rgba(158,119,88,0.45);
+  }
+  .auth-btn:active { transform: translateY(0); }
+  .auth-btn:disabled {
+    opacity: 0.6; cursor: not-allowed; transform: none;
+    box-shadow: none;
+  }
+
+  .auth-link {
+    text-align: center; margin-top: 4px;
+  }
+  .auth-link a {
+    font-size: 12px; color: #C9A07C; text-decoration: none;
+    font-weight: 600;
+  }
+  .auth-link a:hover { text-decoration: underline; }
+
+  .auth-error {
+    background: rgba(199,121,102,0.10); border: 1px solid rgba(199,121,102,0.25);
+    border-radius: 8px; padding: 10px 14px; font-size: 12px;
+    color: #C77966; display: none; line-height: 1.4;
+  }
+  .auth-error.visible { display: block; }
+
+  .auth-success {
+    background: rgba(168,184,156,0.10); border: 1px solid rgba(168,184,156,0.25);
+    border-radius: 8px; padding: 10px 14px; font-size: 12px;
+    color: #A8B89C; display: none; line-height: 1.4;
+  }
+  .auth-success.visible { display: block; }
+
+  .auth-divider {
+    display: flex; align-items: center; gap: 12px;
+    margin: 4px 0; color: #C9B49A; font-size: 11px;
+    text-transform: uppercase; letter-spacing: 0.1em;
+  }
+  .auth-divider::before, .auth-divider::after {
+    content: ''; flex: 1; height: 1px; background: rgba(236,209,180,0.10);
+  }
+
+  .auth-footer {
+    text-align: center; margin-top: 24px; font-size: 11px; color: #C9B49A;
+  }
+
+  .spinner {
+    display: inline-block; width: 16px; height: 16px;
+    border: 2px solid rgba(236,209,180,0.30);
+    border-top-color: #F5E4CC;
+    border-radius: 50%; animation: spin 0.6s linear infinite;
+    vertical-align: middle; margin-right: 6px;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+</style>
+</head>
+<body>
+
+<div class="auth-container">
+  <div class="auth-logo">
+    <div class="auth-logo-icon" id="auth-logo-icon"></div>
+    <h1>RECON</h1>
+    <p>Site · Scope · Spend</p>
+  </div>
+
+  <div class="auth-card">
+    <!-- Tabs -->
+    <div class="auth-tabs">
+      <button class="auth-tab active" id="tab-login" onclick="AuthUI.switchTab('login')">Sign In</button>
+      <button class="auth-tab" id="tab-register" onclick="AuthUI.switchTab('register')">Create Account</button>
+    </div>
+
+    <!-- Error/Success Messages -->
+    <div class="auth-error" id="auth-error"></div>
+    <div class="auth-success" id="auth-success"></div>
+
+    <!-- Login Form -->
+    <form class="auth-form" id="login-form" onsubmit="AuthUI.handleLogin(event)">
+      <div class="form-group">
+        <label class="form-label" for="login-email">Email Address</label>
+        <input class="form-input" type="email" id="login-email" placeholder="you@company.com" required autocomplete="email">
+      </div>
+      <div class="form-group">
+        <label class="form-label" for="login-password">Password</label>
+        <input class="form-input" type="password" id="login-password" placeholder="••••••••" required autocomplete="current-password" minlength="6">
+      </div>
+      <button type="submit" class="auth-btn" id="login-btn">Sign In</button>
+      <div class="auth-link">
+        <a href="#" onclick="AuthUI.showForgotPassword(event)">Forgot password?</a>
+      </div>
+    </form>
+
+    <!-- Register Form -->
+    <form class="auth-form hidden" id="register-form" onsubmit="AuthUI.handleRegister(event)">
+      <div class="form-group">
+        <label class="form-label" for="register-name">Full Name</label>
+        <input class="form-input" type="text" id="register-name" placeholder="Rajesh Sharma" required autocomplete="name">
+      </div>
+      <div class="form-group">
+        <label class="form-label" for="register-email">Email Address</label>
+        <input class="form-input" type="email" id="register-email" placeholder="you@company.com" required autocomplete="email">
+      </div>
+      <div class="form-group">
+        <label class="form-label" for="register-password">Password</label>
+        <input class="form-input" type="password" id="register-password" placeholder="Min. 6 characters" required autocomplete="new-password" minlength="6">
+      </div>
+      <button type="submit" class="auth-btn" id="register-btn">Create Account</button>
+    </form>
+
+    <!-- Forgot Password Form -->
+    <form class="auth-form hidden" id="forgot-form" onsubmit="AuthUI.handleForgotPassword(event)">
+      <p style="font-size:13px;color:#ECD1B4;line-height:1.5;margin-bottom:4px">Enter your email and we'll send you a password reset link.</p>
+      <div class="form-group">
+        <label class="form-label" for="forgot-email">Email Address</label>
+        <input class="form-input" type="email" id="forgot-email" placeholder="you@company.com" required autocomplete="email">
+      </div>
+      <button type="submit" class="auth-btn" id="forgot-btn">Send Reset Link</button>
+      <div class="auth-link">
+        <a href="#" onclick="AuthUI.switchTab('login')">← Back to Sign In</a>
+      </div>
+    </form>
+  </div>
+
+  <div class="auth-footer">
+    Powered by Supabase · Secured with Row-Level Security
+  </div>
+</div>
+
+<script src="js/supabase-client.js"></script>
+<script src="js/icons.js"></script>
+<script>
+// Inject the brand SVG icon
+(function(){
+  const el = document.getElementById('auth-logo-icon');
+  if (el && typeof Icons !== 'undefined') el.innerHTML = Icons.render('building', 40);
+})();
+</script>
+<script>
+const AuthUI = (() => {
+  function switchTab(tab) {
+    hideMessages();
+    document.getElementById('login-form').classList.toggle('hidden', tab !== 'login');
+    document.getElementById('register-form').classList.toggle('hidden', tab !== 'register');
+    document.getElementById('forgot-form').classList.add('hidden');
+    document.getElementById('tab-login').classList.toggle('active', tab === 'login');
+    document.getElementById('tab-register').classList.toggle('active', tab === 'register');
+  }
+
+  function showForgotPassword(e) {
+    e.preventDefault();
+    hideMessages();
+    document.getElementById('login-form').classList.add('hidden');
+    document.getElementById('register-form').classList.add('hidden');
+    document.getElementById('forgot-form').classList.remove('hidden');
+    document.querySelectorAll('.auth-tab').forEach(t => t.classList.remove('active'));
+  }
+
+  function showError(msg) {
+    const el = document.getElementById('auth-error');
+    el.textContent = msg; el.classList.add('visible');
+    document.getElementById('auth-success').classList.remove('visible');
+  }
+
+  function showSuccess(msg) {
+    const el = document.getElementById('auth-success');
+    el.textContent = msg; el.classList.add('visible');
+    document.getElementById('auth-error').classList.remove('visible');
+  }
+
+  function hideMessages() {
+    document.getElementById('auth-error').classList.remove('visible');
+    document.getElementById('auth-success').classList.remove('visible');
+  }
+
+  function setLoading(btnId, loading) {
+    const btn = document.getElementById(btnId);
+    btn.disabled = loading;
+    if (loading) {
+      btn.dataset.originalText = btn.textContent;
+      btn.innerHTML = '<span class="spinner"></span> Please wait...';
+    } else {
+      btn.textContent = btn.dataset.originalText || btn.textContent;
+    }
+  }
+
+  async function handleLogin(e) {
+    e.preventDefault();
+    hideMessages();
+    const email = document.getElementById('login-email').value.trim();
+    const password = document.getElementById('login-password').value;
+
+    if (!email || !password) return showError('Please fill in all fields');
+
+    setLoading('login-btn', true);
+    try {
+      await SupabaseClient.signIn(email, password);
+      showSuccess('Signed in! Redirecting...');
+      setTimeout(() => { window.location.href = '/'; }, 500);
+    } catch (err) {
+      showError(err.message || 'Sign in failed. Check your credentials.');
+    }
+    setLoading('login-btn', false);
+  }
+
+  async function handleRegister(e) {
+    e.preventDefault();
+    hideMessages();
+    const name = document.getElementById('register-name').value.trim();
+    const email = document.getElementById('register-email').value.trim();
+    const password = document.getElementById('register-password').value;
+
+    if (!name || !email || !password) return showError('Please fill in all fields');
+    if (password.length < 6) return showError('Password must be at least 6 characters');
+
+    setLoading('register-btn', true);
+    try {
+      const data = await SupabaseClient.signUp(email, password, name);
+      if (data.user && !data.session) {
+        // Email confirmation required
+        showSuccess('Account created! Check your email to verify, then sign in.');
+        switchTab('login');
+      } else {
+        showSuccess('Account created! Redirecting...');
+        setTimeout(() => { window.location.href = '/'; }, 500);
+      }
+    } catch (err) {
+      showError(err.message || 'Registration failed. Try a different email.');
+    }
+    setLoading('register-btn', false);
+  }
+
+  async function handleForgotPassword(e) {
+    e.preventDefault();
+    hideMessages();
+    const email = document.getElementById('forgot-email').value.trim();
+    if (!email) return showError('Please enter your email');
+
+    setLoading('forgot-btn', true);
+    try {
+      await SupabaseClient.resetPassword(email);
+      showSuccess('Password reset link sent! Check your email.');
+    } catch (err) {
+      showError(err.message || 'Failed to send reset link.');
+    }
+    setLoading('forgot-btn', false);
+  }
+
+  // If already logged in, redirect to app
+  SupabaseClient.onReady((sb) => {
+    if (SupabaseClient.isAuthenticated()) {
+      window.location.href = '/';
+    }
+  });
+
+  return { switchTab, showForgotPassword, handleLogin, handleRegister, handleForgotPassword };
+})();
+</script>
+
+</body>
+</html>
