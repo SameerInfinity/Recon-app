@@ -1,0 +1,17 @@
+{
+  "name": "RECON Build Manager",
+  "short_name": "RECON",
+  "description": "Construction management tailored for Indian contractors.",
+  "start_url": "/?source=pwa",
+  "display": "standalone",
+  "background_color": "#0F172A",
+  "theme_color": "#0F172A",
+  "icons": [
+    {
+      "src": "/icons/icon.svg",
+      "sizes": "192x192 512x512",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}

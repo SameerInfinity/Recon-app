@@ -384,10 +384,10 @@ const App = (() => {
     if (interiorPhase) {
       html += groupHeader('interior', 'sofa', 'Interior', interiorCollapsed);
       if (!interiorCollapsed) {
-        const intTotal = Financial.computePhaseTotal(interiorPhase);
-        const intActive = currentView === 'interior-hub' || currentView === 'interior-category';
-        html += `
-          <button class="phase-btn ${intActive ? 'active' : ''}" onclick="App.showInteriorHub()" id="phase-btn-interior">
+      const intTotal = Financial.computePhaseTotal(interiorPhase);
+      const intActive = currentView === 'interior-hub' || currentView === 'interior-category' || currentView === 'colour-lab';
+      html += `
+        <button class="phase-btn ${intActive ? 'active' : ''}" onclick="App.showInteriorHub()" id="phase-btn-interior">
             <span class="phase-btn-icon">${Phases.iconFor('sofa', 15)}</span>
             <div class="phase-btn-content">
               <span class="phase-btn-label">Interior Finish</span>

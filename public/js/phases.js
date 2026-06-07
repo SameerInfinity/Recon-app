@@ -282,7 +282,7 @@ const Phases = (() => {
       const total = card.fields.length;
       const filled = card.fields.filter(f => {
         const v = data[f.key];
-        return v != null && v !== '' && v !== 0;
+        return v != null && v !== '';
       }).length;
       const pct = total > 0 ? Math.round((filled / total) * 100) : 0;
       const cost = card.costFn(data);

@@ -53,6 +53,18 @@ const SupabaseClient = (() => {
       const { data: { session } } = await _supabase.auth.getSession();
       _user = session?.user || null;
 
+      // Global fetch interceptor to catch 401/403 auth expiry
+      const originalFetch = window.fetch;
+      window.fetch = async function(...args) {
+        const response = await originalFetch.apply(this, args);
+        if ((response.status === 401 || response.status === 403) && !window.location.pathname.includes('auth.html')) {
+          console.warn('[Auth] Token expired or invalid, redirecting to login...');
+          if (_supabase) await _supabase.auth.signOut();
+          window.location.href = '/auth.html?expired=1';
+        }
+        return response;
+      };
+
       _ready = true;
       _readyCallbacks.forEach(cb => cb(_supabase));
       console.log('[Supabase] Initialized', _user ? `(user: ${_user.email})` : '(no session)');

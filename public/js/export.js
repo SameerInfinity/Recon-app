@@ -11,54 +11,53 @@ const Export = (() => {
     const proj = State.getCurrentProject();
     if (!proj) { App.toast('No project loaded', 'warning'); return; }
 
+    if (typeof html2pdf === 'undefined') {
+      App.toast('PDF library not loaded yet. Please wait...', 'warning');
+      return;
+    }
+
     const total = F.computeProjectTotal(proj);
     const budgetPct = proj.totalBudget > 0 ? Math.round((total / proj.totalBudget) * 100) : 0;
     const budgetStatus = total > proj.totalBudget && proj.totalBudget > 0 ? 'OVER BUDGET' : 'Within Budget';
     const budgetColor = total > proj.totalBudget && proj.totalBudget > 0 ? '#C77966' : '#A8B89C';
 
-    const printWindow = window.open('', '_blank');
-    printWindow.document.write(`
-      <!DOCTYPE html>
-      <html>
-      <head>
-        <title>RECON — ${proj.name}</title>
-        <link href="https://fonts.googleapis.com/css2?family=Barlow:wght@400;600;700;900&family=JetBrains+Mono:wght@400;600;700&display=swap" rel="stylesheet">
-        <style>
-          * { box-sizing: border-box; margin: 0; padding: 0; }
-          body { font-family: Barlow, sans-serif; padding: 36px 40px; color: #1C1F26; background: white; font-size: 13px; line-height: 1.5; }
-          @media print { body { padding: 20px; } @page { margin: 15mm; } }
-          .header { border-bottom: 3px solid #705748; padding-bottom: 20px; margin-bottom: 28px; display: flex; justify-content: space-between; align-items: flex-start; }
-          .header-left h1 { font-size: 24px; font-weight: 900; color: #1B1B1E; letter-spacing: .04em; }
-          .header-left h2 { font-size: 16px; font-weight: 700; color: #705748; margin-top: 4px; }
-          .header-left p { font-size: 11px; color: #6B7280; margin-top: 4px; }
-          .header-right { text-align: right; }
-          .header-right .total-label { font-size: 9px; color: #6B7280; text-transform: uppercase; letter-spacing: .1em; }
-          .header-right .total-val { font-family: 'JetBrains Mono', monospace; font-size: 26px; font-weight: 700; color: #9E7758; }
-          .header-right .budget-info { font-size: 11px; color: #6B7280; margin-top: 4px; }
-          .budget-badge { display: inline-block; padding: 2px 8px; border-radius: 4px; font-size: 10px; font-weight: 700; }
-          table { width: 100%; border-collapse: collapse; margin-bottom: 24px; }
-          th { text-align: left; padding: 8px 10px; font-size: 10px; text-transform: uppercase; letter-spacing: .08em; color: #4A4240; border-bottom: 2px solid #705748; background: #F5EBDD; }
-          th.right { text-align: right; }
-          td { padding: 8px 10px; border-bottom: 1px solid #EDE8DF; font-size: 12px; }
-          td.mono { font-family: 'JetBrains Mono', monospace; }
-          td.right { text-align: right; }
-          tr.total-row { background: #705748; color: #ECD1B4; }
-          tr.total-row td { border-bottom: none; font-weight: 900; font-size: 14px; }
-          tr.total-row td.mono { color: #705748; font-size: 16px; }
-          .section-title { font-size: 13px; font-weight: 700; text-transform: uppercase; letter-spacing: .08em; color: #6B7280; margin: 24px 0 10px; padding-top: 16px; border-top: 1px solid #EDE8DF; }
-          .section-title:first-of-type { border-top: none; margin-top: 0; }
-          .footer { margin-top: 32px; padding-top: 16px; border-top: 1px solid #EDE8DF; font-size: 9px; color: #9CA3AF; display: flex; justify-content: space-between; }
-          .stat-grid { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 12px; margin-bottom: 24px; }
-          .stat-box { border: 1px solid #EDE8DF; border-radius: 6px; padding: 12px; }
-          .stat-box .label { font-size: 9px; color: #6B7280; text-transform: uppercase; letter-spacing: .1em; }
-          .stat-box .value { font-family: 'JetBrains Mono', monospace; font-size: 20px; font-weight: 700; color: #9E7758; margin-top: 4px; }
-          .badge { display: inline-block; padding: 2px 8px; border-radius: 10px; font-size: 9px; font-weight: 700; }
-          .badge-paid { background: #DDE5D2; color: #5A6B3F; }
-          .badge-partial { background: #C8D3D9; color: #4A5C66; }
-          .badge-pending { background: #E8C7BC; color: #8B4A3D; }
-        </style>
-      </head>
-      <body>
+    const container = document.createElement('div');
+    container.innerHTML = `
+      <style>
+        .pdf-wrap { font-family: 'Barlow', sans-serif; padding: 20px; color: #1C1F26; background: white; font-size: 12px; line-height: 1.5; }
+        .pdf-wrap * { box-sizing: border-box; }
+        .pdf-wrap .header { border-bottom: 3px solid #705748; padding-bottom: 20px; margin-bottom: 24px; display: flex; justify-content: space-between; align-items: flex-start; }
+        .pdf-wrap .header-left h1 { font-size: 24px; font-weight: 900; color: #1B1B1E; letter-spacing: .04em; margin: 0; }
+        .pdf-wrap .header-left h2 { font-size: 16px; font-weight: 700; color: #705748; margin: 4px 0 0 0; }
+        .pdf-wrap .header-left p { font-size: 11px; color: #6B7280; margin: 4px 0 0 0; }
+        .pdf-wrap .header-right { text-align: right; }
+        .pdf-wrap .header-right .total-label { font-size: 9px; color: #6B7280; text-transform: uppercase; letter-spacing: .1em; }
+        .pdf-wrap .header-right .total-val { font-family: 'JetBrains Mono', monospace; font-size: 24px; font-weight: 700; color: #9E7758; margin-top: 2px; }
+        .pdf-wrap .header-right .budget-info { font-size: 10px; color: #6B7280; margin-top: 4px; }
+        .pdf-wrap .budget-badge { display: inline-block; padding: 2px 6px; border-radius: 4px; font-size: 10px; font-weight: 700; }
+        .pdf-wrap table { width: 100%; border-collapse: collapse; margin-bottom: 24px; page-break-inside: auto; }
+        .pdf-wrap tr { page-break-inside: avoid; page-break-after: auto; }
+        .pdf-wrap th { text-align: left; padding: 8px 10px; font-size: 10px; text-transform: uppercase; letter-spacing: .08em; color: #4A4240; border-bottom: 2px solid #705748; background: #F5EBDD; }
+        .pdf-wrap th.right { text-align: right; }
+        .pdf-wrap td { padding: 8px 10px; border-bottom: 1px solid #EDE8DF; font-size: 11px; }
+        .pdf-wrap td.mono { font-family: 'JetBrains Mono', monospace; }
+        .pdf-wrap td.right { text-align: right; }
+        .pdf-wrap tr.total-row { background: #705748; color: #ECD1B4; }
+        .pdf-wrap tr.total-row td { border-bottom: none; font-weight: 900; font-size: 13px; }
+        .pdf-wrap tr.total-row td.mono { color: #705748; font-size: 15px; }
+        .pdf-wrap .section-title { font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: .08em; color: #6B7280; margin: 24px 0 10px; padding-top: 16px; border-top: 1px solid #EDE8DF; page-break-after: avoid; }
+        .pdf-wrap .section-title:first-of-type { border-top: none; margin-top: 0; padding-top: 0; }
+        .pdf-wrap .footer { margin-top: 32px; padding-top: 16px; border-top: 1px solid #EDE8DF; font-size: 9px; color: #9CA3AF; display: flex; justify-content: space-between; }
+        .pdf-wrap .stat-grid { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 12px; margin-bottom: 24px; }
+        .pdf-wrap .stat-box { border: 1px solid #EDE8DF; border-radius: 6px; padding: 12px; }
+        .pdf-wrap .stat-box .label { font-size: 9px; color: #6B7280; text-transform: uppercase; letter-spacing: .1em; }
+        .pdf-wrap .stat-box .value { font-family: 'JetBrains Mono', monospace; font-size: 18px; font-weight: 700; color: #9E7758; margin-top: 4px; }
+        .pdf-wrap .badge { display: inline-block; padding: 2px 6px; border-radius: 10px; font-size: 9px; font-weight: 700; }
+        .pdf-wrap .badge-paid { background: #DDE5D2; color: #5A6B3F; }
+        .pdf-wrap .badge-partial { background: #C8D3D9; color: #4A5C66; }
+        .pdf-wrap .badge-pending { background: #E8C7BC; color: #8B4A3D; }
+      </style>
+      <div class="pdf-wrap">
         <!-- Header -->
         <div class="header">
           <div class="header-left">
@@ -128,15 +127,49 @@ const Export = (() => {
           <span>Generated by RECON · ${new Date().toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}</span>
           <span>Confidential — ${proj.name}</span>
         </div>
-      </body>
-      </html>`);
-    printWindow.document.close();
-    printWindow.onload = () => {
-      printWindow.focus();
-      printWindow.print();
+      </div>
+    `;
+
+    App.toast('Generating PDF...', 'info');
+
+    const opt = {
+      margin:       10,
+      filename:     `RECON_${proj.name.replace(/[^a-z0-9]/gi, '_')}.pdf`,
+      image:        { type: 'jpeg', quality: 0.98 },
+      html2canvas:  { scale: 2, useCORS: true },
+      jsPDF:        { unit: 'mm', format: 'a4', orientation: 'portrait' }
     };
 
-    App.toast('PDF export opened — use Print to save', 'info');
+    html2pdf().set(opt).from(container).output('blob').then(function(blob) {
+      const file = new File([blob], opt.filename, { type: "application/pdf" });
+      
+      // Try using the Web Share API (native share dialog on mobile/macOS)
+      if (navigator.share && navigator.canShare && navigator.canShare({ files: [file] })) {
+        navigator.share({
+          title: `RECON Report - ${proj.name}`,
+          text: `Here is the latest project report for ${proj.name}.`,
+          files: [file]
+        }).catch(err => {
+          console.warn('[Export] Share cancelled or failed:', err);
+          // Fallback to download on error if they just canceled? Better to not force download if they aborted.
+        });
+        App.toast('Share dialog opened', 'success');
+      } else {
+        // Fallback: Download the file automatically
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = opt.filename;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+        App.toast('PDF downloaded successfully', 'success');
+      }
+    }).catch(err => {
+      console.error('[Export] PDF generation error:', err);
+      App.toast('Failed to generate PDF', 'error');
+    });
   }
 
   function renderSubPDF(proj) {
