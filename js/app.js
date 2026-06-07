@@ -4,35 +4,46 @@
    ═══════════════════════════════════════════ */
 
 const App = (() => {
-  let currentPhase = 0; // 0 = dashboard
+  // currentView: 'overview' | 'phase-hub' | 'phase-category' | 'interior-hub' | 'interior-category' | 'subcontractors' | 'tools'
+  let currentView = 'overview';
+  let currentPhase = 0; // 0 = dashboard, 1-9 = phase number
+  let currentCategory = null; // category id when in 'phase-category' or 'interior-category'
   let sidebarOpen = true;
   let aiOpen = true;
   let wizardStep = 1;
   const wizardData = {};
+  // Sidebar group collapse state (persisted per session)
+  const collapsedGroups = new Set(); // 'construction' | 'interior' | 'tools'
 
   // ── Boot ──────────────────────────────────────────────────
   function init() {
-    const projects = State.getProjects();
-    const currentProj = State.getCurrentProject();
+    try {
+      const projects = State.getProjects();
+      const currentProj = State.getCurrentProject();
 
-    if (currentProj) {
-      showMainApp(currentProj);
-    } else if (projects.length > 0) {
-      showWelcomeWithProjects(projects);
-    } else {
-      showWelcome();
+      if (currentProj) {
+        showMainApp(currentProj);
+      } else if (projects.length > 0) {
+        showWelcomeWithProjects(projects);
+      } else {
+        showWelcome();
+      }
+    } catch (err) {
+      console.error('[App] init failed:', err);
+      // Fallback: show welcome screen so the user is never stuck
+      try { showWelcome(); } catch (e2) { /* swallow */ }
     }
 
     // Keyboard shortcuts
     document.addEventListener('keydown', (e) => {
-      if (e.ctrlKey && e.key >= '1' && e.key <= '8') {
+      if (e.ctrlKey && e.key >= '1' && e.key <= '9') {
         e.preventDefault();
         const phase = parseInt(e.key);
         if (State.getCurrentProject()) showPhase(phase);
       }
       if (e.ctrlKey && e.key === 's') {
         e.preventDefault();
-        toast('Auto-saved ✓', 'success');
+        toast(`Auto-saved ${Icons.render('check', 11)}`, 'success');
       }
     });
   }
@@ -48,10 +59,11 @@ const App = (() => {
     const listEl = document.getElementById('existing-projects-list');
     if (!listEl) return;
 
-    listEl.innerHTML = `
-      <div class="existing-projects-divider">or open existing project</div>
-      ${projects.map(p => {
-        const total = Financial.computeProjectTotal(p);
+    // Render safely — wrap each project's stats in try/catch so a
+    // single broken project doesn't blank the whole welcome page
+    const rows = projects.map(p => {
+      try {
+        const total = Financial.computeProjectTotal(p) || 0;
         const pct = p.totalBudget > 0 ? Math.round((total / p.totalBudget) * 100) : 0;
         return `<button class="existing-project-btn" onclick="App.openProject('${p.id}')">
           <div style="min-width:0">
@@ -63,7 +75,12 @@ const App = (() => {
             ${p.totalBudget > 0 ? `<div style="font-size:10px;color:var(--text-muted);margin-top:2px">${pct}% of budget</div>` : ''}
           </div>
         </button>`;
-      }).join('')}`;
+      } catch (e) {
+        console.warn('[App] Skipping project in welcome list (render error):', e);
+        return '';
+      }
+    }).filter(Boolean).join('');
+    listEl.innerHTML = `<div class="existing-projects-divider">or open existing project</div>${rows}`;
   }
 
   function openProject(id) {
@@ -170,7 +187,8 @@ const App = (() => {
     }
   }
 
-  function wizardNext() {
+  let _wizardCreating = false; // guard against double-tap
+  async function wizardNext() {
     if (wizardStep === 1) {
       const name = document.getElementById('w-name')?.value?.trim();
       if (!name) { toast('Please enter a project name', 'warning'); return; }
@@ -188,9 +206,24 @@ const App = (() => {
       wizardData.endDate = document.getElementById('w-end')?.value;
       wizardData.notes = document.getElementById('w-notes')?.value;
 
-      const proj = State.createProject(wizardData);
-      document.getElementById('project-wizard').classList.add('hidden');
-      showMainApp(proj);
+      if (_wizardCreating) return;
+      _wizardCreating = true;
+      const nextBtn = document.getElementById('wizard-next');
+      if (nextBtn) { nextBtn.disabled = true; nextBtn.textContent = 'Creating…'; }
+      try {
+        const proj = await State.createProject(wizardData);
+        if (!proj) { toast('Could not create project — try again', 'error'); return; }
+        const phases = Array.isArray(proj.phases) ? proj.phases : [];
+        console.log('[App] Created project:', proj.name, 'id:', proj.id, 'phases:', phases.length);
+        document.getElementById('project-wizard').classList.add('hidden');
+        showMainApp(proj);
+      } catch (createErr) {
+        console.error('[App] Project creation error:', createErr);
+        toast('Could not create project — try again', 'error');
+      } finally {
+        _wizardCreating = false;
+        if (nextBtn) { nextBtn.disabled = false; nextBtn.textContent = 'Create Project →'; }
+      }
       return;
     }
 
@@ -210,20 +243,35 @@ const App = (() => {
 
   // ── Main App ──────────────────────────────────────────────
   function showMainApp(proj) {
+    if (!proj) {
+      console.warn('[App] showMainApp called with no project — falling back to welcome');
+      return showWelcome();
+    }
+    // Ensure the project is set as the current one in state.
+    // setCurrentProject just updates the pointer; createProject
+    // already pushed the project into store.projects. This is a
+    // safety net in case the local proj reference is stale.
+    State.setCurrentProject(proj.id);
+
     document.getElementById('welcome-screen').classList.add('hidden');
     document.getElementById('project-wizard').classList.add('hidden');
     document.getElementById('main-app').classList.remove('hidden');
 
     document.getElementById('current-project-name').textContent = proj.name;
-    
+
     if (proj.currency) Financial.currency = proj.currency;
 
-    renderSidebar(proj);
+    // Use the project from State (which has the canonical id and
+    // full data after a possible cloud sync) rather than the local
+    // proj reference, so getCurrentProject() in Dashboard.render()
+    // can find the same object.
+    const canonical = State.getCurrentProject() || proj;
+    renderSidebar(canonical);
     showOverview(); // Start with dashboard
     Financial.updateAllTotals();
 
     setTimeout(() => {
-      AI.addMessage('info', '👷', 'Welcome', `Project "${proj.name}" loaded. ${Financial.fmtFull(Financial.computeProjectTotal(proj))} tracked so far. Fill in each phase and I'll flag risks as you go.`, ['Got it']);
+      AI.addMessage('info', Phases.iconFor('checkCircle', 14), 'Welcome', `Project "${canonical.name}" loaded. ${Financial.fmtFull(Financial.computeProjectTotal(canonical))} tracked so far. Fill in each phase and I'll flag risks as you go.`, ['Got it']);
     }, 600);
   }
 
@@ -237,7 +285,9 @@ const App = (() => {
 
   // ── Overview / Dashboard ──────────────────────────────────
   function showOverview() {
+    currentView = 'overview';
     currentPhase = 0;
+    currentCategory = null;
     const content = document.getElementById('content-area');
     if (!content) return;
 
@@ -256,83 +306,228 @@ const App = (() => {
     const nav = document.getElementById('phase-nav');
     if (!nav) return;
 
-    const phases = proj.phases;
-    
-    // Overview button
-    let html = `
-      <button class="phase-btn active" onclick="App.showOverview()" id="phase-btn-overview">
-        <span class="phase-btn-icon">📊</span>
-        <div class="phase-btn-content">
-          <span class="phase-btn-label">Overview</span>
-          <div class="phase-chip"><span class="phase-pct">Dashboard</span></div>
-        </div>
-      </button>
-      <div style="height:1px;background:var(--charcoal-border);margin:4px 14px"></div>`;
+    // Safety: ensure phases is an array (could be missing on a
+    // partially-loaded project during the boot sequence)
+    const phases = Array.isArray(proj?.phases) ? proj.phases : [];
+    if (!phases.length) {
+      // Show a friendly message. The most common cause is the
+      // user being on the dashboard — they need to open a project
+      // for the sidebar to populate.
+      const onDashboard = currentView === 'overview';
+      nav.innerHTML = `<div style="padding:24px 16px;color:var(--text-muted);font-size:12px;text-align:center;line-height:1.6">
+        <div style="margin-bottom:8px;color:var(--text-muted);opacity:0.7">${Phases.iconFor('dashboard', 28)}</div>
+        ${onDashboard
+          ? 'No project open. Click an existing project above, or create a new one.'
+          : 'Loading phases…'}
+      </div>`;
+      return;
+    }
+    const constructionCollapsed = collapsedGroups.has('construction');
+    const interiorCollapsed = collapsedGroups.has('interior');
+    const toolsCollapsed = collapsedGroups.has('tools');
 
-    // Phase buttons
-    html += phases.map(ph => {
-      const phTotal = Financial.computePhaseTotal(ph);
+    // Helper: a collapsible group header. `key` is the state key,
+    // `icon` and `label` for display, `extra` for inline mini-info
+    function groupHeader(key, icon, label, collapsed) {
       return `
-        <button class="phase-btn" onclick="App.showPhase(${ph.id})" id="phase-btn-${ph.id}">
-          <span class="phase-btn-icon">${ph.icon}</span>
-          <div class="phase-btn-content">
-            <span class="phase-btn-label">${ph.name}</span>
-            <div class="phase-chip">
-              <span class="phase-pct" id="phase-pct-${ph.id}">${ph.completion}%</span>
-              <span class="phase-cost" id="phase-cost-${ph.id}">${Financial.fmt(phTotal)}</span>
-            </div>
-            <div class="phase-progress-mini">
-              <div class="phase-progress-mini-fill" id="phase-prog-${ph.id}" style="width:${ph.completion}%"></div>
-            </div>
-          </div>
-        </button>`;
-    }).join('');
+        <div class="sidebar-group-header ${collapsed ? 'is-collapsed' : ''}" onclick="App.toggleSidebarGroup('${key}')" id="group-header-${key}">
+          <span class="sidebar-group-toggle">${Phases.iconFor('chevronDown', 10)}</span>
+          <span class="sidebar-group-icon">${Phases.iconFor(icon, 13)}</span>
+          <span>${label}</span>
+          <span class="sidebar-group-divider"></span>
+        </div>`;
+    }
 
-    // Subcontractor button
-    html += `
-      <div style="height:1px;background:var(--charcoal-border);margin:4px 14px"></div>
-      <button class="phase-btn" onclick="App.showSubLedger()" id="phase-btn-sub">
-        <span class="phase-btn-icon">👷</span>
+    // ── Dashboard: single block, no group header ──
+    let html = `
+      <button class="phase-btn ${currentView === 'overview' ? 'active' : ''}" onclick="App.showOverview()" id="phase-btn-overview">
+        <span class="phase-btn-icon">${Phases.iconFor('dashboard', 15)}</span>
         <div class="phase-btn-content">
-          <span class="phase-btn-label">Subcontractors</span>
-          <div class="phase-chip"><span class="phase-pct">Ledger</span></div>
+          <span class="phase-btn-label">Dashboard</span>
+          <div class="phase-chip"><span class="phase-pct">Overview</span></div>
         </div>
       </button>`;
+
+    // ── Group 2: Construction (Phases 1-9 — 9 trades) — collapsible ──
+    html += groupHeader('construction', 'building', 'Construction', constructionCollapsed);
+    if (!constructionCollapsed) {
+      // Construction is phases 1-9 (the 9 trade phases). Interior is #10.
+      const constructionPhases = phases.filter(p => p.id >= 1 && p.id <= 9);
+      html += constructionPhases.map(ph => {
+        const phTotal = Financial.computePhaseTotal(ph);
+        const isActive = currentPhase === ph.id && (currentView === 'phase-hub' || currentView === 'phase-category');
+        return `
+          <button class="phase-btn ${isActive ? 'active' : ''}" onclick="App.showPhaseHub(${ph.id})" id="phase-btn-${ph.id}">
+            <span class="phase-btn-icon">${Phases.iconFor(ph.icon, 15)}</span>
+            <div class="phase-btn-content">
+              <span class="phase-btn-label">${ph.name}</span>
+              <div class="phase-chip">
+                <span class="phase-pct" id="phase-pct-${ph.id}">${ph.completion}%</span>
+                <span class="phase-cost" id="phase-cost-${ph.id}">${Financial.fmt(phTotal)}</span>
+              </div>
+              <div class="phase-progress-mini">
+                <div class="phase-progress-mini-fill" id="phase-prog-${ph.id}" style="width:${ph.completion}%"></div>
+              </div>
+            </div>
+          </button>`;
+      }).join('');
+    }
+
+    // ── Group 3: Interior — collapsible ──
+    const interiorPhase = phases.find(p => p.id === 10);
+    if (interiorPhase) {
+      html += groupHeader('interior', 'sofa', 'Interior', interiorCollapsed);
+      if (!interiorCollapsed) {
+        const intTotal = Financial.computePhaseTotal(interiorPhase);
+        const intActive = currentView === 'interior-hub' || currentView === 'interior-category';
+        html += `
+          <button class="phase-btn ${intActive ? 'active' : ''}" onclick="App.showInteriorHub()" id="phase-btn-interior">
+            <span class="phase-btn-icon">${Phases.iconFor('sofa', 15)}</span>
+            <div class="phase-btn-content">
+              <span class="phase-btn-label">Interior Finish</span>
+              <div class="phase-chip">
+                <span class="phase-pct" id="phase-pct-10">${interiorPhase.completion}%</span>
+                <span class="phase-cost" id="phase-cost-10">${Financial.fmt(intTotal)}</span>
+              </div>
+              <div class="phase-progress-mini">
+                <div class="phase-progress-mini-fill" id="phase-prog-10" style="width:${interiorPhase.completion}%"></div>
+              </div>
+            </div>
+          </button>`;
+      }
+    }
+
+    // ── Group 4: Tools — collapsible ──
+    html += groupHeader('tools', 'tools', 'Tools', toolsCollapsed);
+    if (!toolsCollapsed) {
+      html += `
+        <button class="phase-btn ${currentView === 'subcontractors' ? 'active' : ''}" onclick="App.showSubLedger()" id="phase-btn-sub">
+          <span class="phase-btn-icon">${Phases.iconFor('userCircle', 15)}</span>
+          <div class="phase-btn-content">
+            <span class="phase-btn-label">Subcontractors</span>
+            <div class="phase-chip"><span class="phase-pct">Ledger</span></div>
+          </div>
+        </button>
+        <button class="phase-btn ${currentView === 'tools' ? 'active' : ''}" onclick="App.showTools()" id="phase-btn-tools">
+          <span class="phase-btn-icon">${Phases.iconFor('wrench', 15)}</span>
+          <div class="phase-btn-content">
+            <span class="phase-btn-label">Project Tools</span>
+            <div class="phase-chip"><span class="phase-pct">Export · AI</span></div>
+          </div>
+        </button>`;
+    }
 
     nav.innerHTML = html;
   }
 
+  // Toggle a sidebar group's collapsed state and re-render
+  function toggleSidebarGroup(key) {
+    if (collapsedGroups.has(key)) collapsedGroups.delete(key);
+    else collapsedGroups.add(key);
+    const proj = State.getCurrentProject();
+    if (proj) renderSidebar(proj);
+  }
+
   // ── Phase Rendering ───────────────────────────────────────
+  // New flow: clicking a phase button shows the CATEGORY HUB
+  // (a grid of cards). Clicking a card shows the detail form
+  // for that category, with a back-to-hub button + breadcrumb.
   function showPhase(phaseId) {
+    // Keyboard shortcuts (Ctrl+1..9) land here — route to hub
+    showPhaseHub(phaseId);
+  }
+
+  function showPhaseHub(phaseId) {
+    currentView = phaseId === 10 ? 'interior-hub' : 'phase-hub';
     currentPhase = phaseId;
+    currentCategory = null;
     const proj = State.getCurrentProject();
     if (!proj) return;
-
     const phase = proj.phases.find(p => p.id === phaseId);
     if (!phase) return;
 
-    // Update sidebar active
+    // Update sidebar active state without full re-render
     document.querySelectorAll('.phase-btn').forEach(b => b.classList.remove('active'));
     const activeBtn = document.getElementById(`phase-btn-${phaseId}`);
     if (activeBtn) activeBtn.classList.add('active');
 
-    // Render workspace
     const content = document.getElementById('content-area');
     if (!content) return;
 
-    let html = '';
+    content.innerHTML = Phases.renderPhaseHub(phase);
+    content.scrollTop = 0;
+
+    AI.setWatching(`Phase ${phaseId} · ${phase.name} · Hub`);
+  }
+
+  // Interior gets its own dedicated entry point (no "Phase 9" numbering)
+  function showInteriorHub() {
+    showPhaseHub(10);
+  }
+
+  // Open a single category's detail form
+  function showPhaseCategory(phaseId, categoryId) {
+    currentView = phaseId === 10 ? 'interior-category' : 'phase-category';
+    currentPhase = phaseId;
+    currentCategory = categoryId;
+    const proj = State.getCurrentProject();
+    if (!proj) return;
+    const phase = proj.phases.find(p => p.id === phaseId);
+    if (!phase) return;
+
+    const category = (Phases.CATEGORY_REGISTRY[phaseId] || []).find(c => c.id === categoryId);
+    if (!category) return showPhaseHub(phaseId);
+
+    // Update sidebar active state
+    document.querySelectorAll('.phase-btn').forEach(b => b.classList.remove('active'));
+    const activeBtn = document.getElementById(`phase-btn-${phaseId}`);
+    if (activeBtn) activeBtn.classList.add('active');
+
+    const content = document.getElementById('content-area');
+    if (!content) return;
+
+    // Render ONLY this category's section cards. We call the full
+    // renderTradePhaseN() (or renderPhase9 for Interior) to get
+    // the standard HTML, then strip out every section card except
+    // the ones this category owns.
+    let fullPhaseHtml = '';
     switch (phaseId) {
-      case 1: html = Phases.renderPhase1(phase); break;
-      case 2: html = Phases.renderPhase2(phase); break;
-      case 3: html = Phases.renderPhase3(phase); break;
-      case 4: html = Phases.renderPhase4(phase); break;
-      case 5: html = Phases.renderPhase5(phase); break;
-      case 6: html = Phases.renderPhase6(phase); break;
-      case 7: html = Phases.renderPhase7(phase); break;
-      case 8: html = Phases.renderPhase8(phase); break;
+      case 1: fullPhaseHtml = Phases.renderTradePhase1(phase); break;
+      case 2: fullPhaseHtml = Phases.renderTradePhase2(phase); break;
+      case 3: fullPhaseHtml = Phases.renderTradePhase3(phase); break;
+      case 4: fullPhaseHtml = Phases.renderTradePhase4(phase); break;
+      case 5: fullPhaseHtml = Phases.renderTradePhase5(phase); break;
+      case 6: fullPhaseHtml = Phases.renderTradePhase6(phase); break;
+      case 7: fullPhaseHtml = Phases.renderTradePhase7(phase); break;
+      case 8: fullPhaseHtml = Phases.renderTradePhase8(phase); break;
+      case 9: fullPhaseHtml = Phases.renderTradePhase9(phase); break;
+      case 10: fullPhaseHtml = Phases.renderPhase9(phase); break; // Interior
     }
 
-    content.innerHTML = `<div class="phase-workspace active" id="pw-${phaseId}">${html}</div>`;
+    // Use the proper phaseHeader helper (now exported) so the
+    // header + budget bar + completion bar render correctly
+    const headerHtml = Phases.phaseHeader(phase);
+    const filteredSectionsHtml = Phases.filterPhaseHtmlBySections(fullPhaseHtml, category.sectionIds || []);
+
+    // For "synthetic" categories (no actual section card) show a meta card
+    const bodyHtml = (category.sectionIds && category.sectionIds.length > 0)
+      ? filteredSectionsHtml
+      : Phases.renderCategoryMetaCard(category);
+
+    // Breadcrumb + back button
+    const backTarget = phaseId === 10 ? 'App.showInteriorHub()' : `App.showPhaseHub(${phaseId})`;
+    const crumbHtml = `
+      <div class="breadcrumb">
+        <a onclick="App.showOverview()">Overview</a>
+        <span class="breadcrumb-sep">›</span>
+        <a onclick="${backTarget}">${Phases.iconFor(phase.icon, 11)} <span style="margin-left:6px">${phase.name}</span></a>
+        <span class="breadcrumb-sep">›</span>
+        <span class="breadcrumb-current">${Phases.iconFor(category.icon, 11)} <span style="margin-left:6px">${category.name}</span></span>
+      </div>
+      <button class="back-to-hub" onclick="${backTarget}">${Phases.iconFor('arrowLeft', 12)} Back to ${phase.name} categories</button>
+    `;
+
+    content.innerHTML = `<div class="phase-workspace active" id="pw-${phaseId}">${crumbHtml}${headerHtml}${bodyHtml}</div>`;
 
     // Restore data into inputs
     restorePhaseInputs(phase);
@@ -347,13 +542,66 @@ const App = (() => {
     if (compBar) compBar.style.width = (phase.completion || 0) + '%';
 
     Financial.updateAllTotals();
-    AI.setWatching(`Phase ${phaseId} · ${phase.name}`);
+    AI.setWatching(`Phase ${phaseId} · ${category.name}`);
     AI.checkTriggers();
 
+    // Smooth scroll the focus category into view if possible
     content.scrollTop = 0;
   }
 
+  // Open a single input card's detail form (the new per-input design)
+  // Used by the 9 trade phases. Each card has a specific set of
+  // fields with their own costFn. The card is rendered with
+  // breadcrumb + back-to-hub navigation.
+  function showInputCard(phaseId, cardId) {
+    currentView = phaseId === 10 ? 'interior-category' : 'phase-category';
+    currentPhase = phaseId;
+    currentCategory = cardId;
+    const proj = State.getCurrentProject();
+    if (!proj) return;
+    const phase = proj.phases.find(p => p.id === phaseId);
+    if (!phase) return;
+
+    // Look up the card spec from phases.js
+    const card = Phases.getInputCard ? Phases.getInputCard(phaseId, cardId) : null;
+    if (!card) {
+      // Fallback: go to the phase hub
+      return showPhaseHub(phaseId);
+    }
+
+    // Update sidebar active state
+    document.querySelectorAll('.phase-btn').forEach(b => b.classList.remove('active'));
+    const activeBtn = document.getElementById(`phase-btn-${phaseId}`);
+    if (activeBtn) activeBtn.classList.add('active');
+
+    const content = document.getElementById('content-area');
+    if (!content) return;
+
+    // Breadcrumb + back button
+    const backTarget = phaseId === 10 ? 'App.showInteriorHub()' : `App.showPhaseHub(${phaseId})`;
+    const crumbHtml = `
+      <div class="breadcrumb">
+        <a onclick="App.showOverview()">Overview</a>
+        <span class="breadcrumb-sep">›</span>
+        <a onclick="${backTarget}">${Phases.iconFor(phase.icon, 11)} <span style="margin-left:6px">${phase.name}</span></a>
+        <span class="breadcrumb-sep">›</span>
+        <span class="breadcrumb-current">${Phases.iconFor(card.icon, 11)} <span style="margin-left:6px">${card.name}</span></span>
+      </div>
+      <button class="back-to-hub" onclick="${backTarget}">${Phases.iconFor('arrowLeft', 12)} Back to ${phase.name} categories</button>
+    `;
+
+    const cardDetailHtml = Phases.renderSingleInputCard(phase, card);
+    content.innerHTML = `<div class="phase-workspace active" id="pw-${phaseId}">${crumbHtml}${cardDetailHtml}</div>`;
+    content.scrollTop = 0;
+
+    AI.setWatching(`Phase ${phaseId} · ${card.name}`);
+    Financial.updateAllTotals();
+  }
+
   function showSubLedger() {
+    currentView = 'subcontractors';
+    currentPhase = 0;
+    currentCategory = null;
     const content = document.getElementById('content-area');
     if (!content) return;
 
@@ -363,9 +611,14 @@ const App = (() => {
 
     content.innerHTML = `
       <div class="phase-workspace active">
+        <div class="breadcrumb">
+          <a onclick="App.showOverview()">Overview</a>
+          <span class="breadcrumb-sep">›</span>
+          <span class="breadcrumb-current">${Phases.iconFor('userCircle', 11)} <span style="margin-left:6px">Subcontractors</span></span>
+        </div>
         <div class="phase-header">
           <div class="phase-title-block">
-            <div class="phase-title">👷 Subcontractor & Trade Ledger</div>
+            <div class="phase-title">${Phases.iconFor('userCircle', 22)} <span style="margin-left:8px">Subcontractor & Trade Ledger</span></div>
             <div class="phase-subtitle">Track all trades, contracts, and payments</div>
           </div>
         </div>
@@ -373,6 +626,111 @@ const App = (() => {
       </div>`;
 
     AI.setWatching('Subcontractor Ledger');
+  }
+
+  // New "Tools" view — bundles export + AI insights
+  function showTools() {
+    currentView = 'tools';
+    currentPhase = 0;
+    currentCategory = null;
+    const content = document.getElementById('content-area');
+    if (!content) return;
+
+    document.querySelectorAll('.phase-btn').forEach(b => b.classList.remove('active'));
+    const toolsBtn = document.getElementById('phase-btn-tools');
+    if (toolsBtn) toolsBtn.classList.add('active');
+
+    const proj = State.getCurrentProject();
+    const total = proj ? Financial.computeProjectTotal(proj) : 0;
+    const budget = proj ? proj.totalBudget : 0;
+    const pct = budget > 0 ? Math.round((total / budget) * 100) : 0;
+
+    content.innerHTML = `
+      <div class="phase-workspace active">
+        <div class="breadcrumb">
+          <a onclick="App.showOverview()">Overview</a>
+          <span class="breadcrumb-sep">›</span>
+          <span class="breadcrumb-current">${Phases.iconFor('wrench', 11)} <span style="margin-left:6px">Project Tools</span></span>
+        </div>
+        <div class="category-hub">
+          <div class="category-hub-header">
+            <div>
+              <div class="category-hub-title">${Phases.iconFor('wrench', 26)} <span style="margin-left:10px">Project Tools</span></div>
+              <div class="category-hub-subtitle">Export your data, generate AI insights, and manage project artifacts</div>
+            </div>
+          </div>
+          <div class="category-grid">
+            <button class="category-card" onclick="App.exportPDF()">
+              <span class="category-card-arrow">→</span>
+              <span class="category-card-icon">${Phases.iconFor('fileText', 28)}</span>
+              <div class="category-card-name">Export PDF Report</div>
+              <div class="category-card-desc">Generate a printable project summary with all phases, line items, and totals.</div>
+              <div class="category-card-meta">
+                <div class="category-card-progress">
+                  <div class="category-card-progress-label">Printable · single page summary</div>
+                </div>
+              </div>
+            </button>
+            <button class="category-card" onclick="App.exportExcel()">
+              <span class="category-card-arrow">→</span>
+              <span class="category-card-icon">${Phases.iconFor('dashboard', 28)}</span>
+              <div class="category-card-name">Export CSV / Excel</div>
+              <div class="category-card-desc">Download all phase data as CSV for analysis in Excel, Sheets, or Power BI.</div>
+              <div class="category-card-meta">
+                <div class="category-card-progress">
+                  <div class="category-card-progress-label">All line items · machine-readable</div>
+                </div>
+              </div>
+            </button>
+            <button class="category-card" onclick="AI.sendUserMessage('Give me a full project health analysis with risks and recommendations.')">
+              <span class="category-card-arrow">→</span>
+              <span class="category-card-icon">${Phases.iconFor('bot', 28)}</span>
+              <div class="category-card-name">AI Project Health</div>
+              <div class="category-card-desc">Run a deep AI analysis: budget risk, over-spend alerts, cost optimization, scope risks.</div>
+              <div class="category-card-meta">
+                <div class="category-card-progress">
+                  <div class="category-card-progress-label">Powered by Gemini · uses live project data</div>
+                </div>
+              </div>
+            </button>
+            <button class="category-card" onclick="AI.sendUserMessage('List every line item across all phases with quantities and unit prices.')">
+              <span class="category-card-arrow">→</span>
+              <span class="category-card-icon">${Phases.iconFor('listChecks', 28)}</span>
+              <div class="category-card-name">AI Line-Item Dump</div>
+              <div class="category-card-desc">Have the AI enumerate every entered field, quantity, and price — useful for audits.</div>
+              <div class="category-card-meta">
+                <div class="category-card-progress">
+                  <div class="category-card-progress-label">Comprehensive data export via AI</div>
+                </div>
+              </div>
+            </button>
+            <button class="category-card" onclick="App.toggleAI()">
+              <span class="category-card-arrow">→</span>
+              <span class="category-card-icon">${Phases.iconFor('chat', 28)}</span>
+              <div class="category-card-name">Open AI Assistant</div>
+              <div class="category-card-desc">Open the Build Assistant drawer to ask anything about costs, materials, or schedules.</div>
+              <div class="category-card-meta">
+                <div class="category-card-progress">
+                  <div class="category-card-progress-label">Always-on co-pilot</div>
+                </div>
+              </div>
+            </button>
+            <button class="category-card" onclick="App.showDashboard()">
+              <span class="category-card-arrow">→</span>
+              <span class="category-card-icon">${Phases.iconFor('dashboard', 28)}</span>
+              <div class="category-card-name">Back to Dashboard</div>
+              <div class="category-card-desc">Return to the project overview and switch projects.</div>
+              <div class="category-card-meta">
+                <div class="category-card-progress">
+                  <div class="category-card-progress-label">Project home</div>
+                </div>
+              </div>
+            </button>
+          </div>
+        </div>
+      </div>`;
+
+    AI.setWatching('Project Tools');
   }
 
   // ── Data Restoration ──────────────────────────────────────
@@ -540,7 +898,7 @@ const App = (() => {
 
     const t = document.createElement('div');
     t.className = `toast ${type}`;
-    t.innerHTML = `${type === 'success' ? '✓' : type === 'warning' ? '⚠' : 'ℹ'} ${message}`;
+    t.innerHTML = `${type === 'success' ? Icons.render('check', 12) : type === 'warning' ? Icons.render('alert', 12) : Icons.render('info', 12)} <span style="margin-left:6px">${message}</span>`;
     container.appendChild(t);
 
     setTimeout(() => {
@@ -551,17 +909,67 @@ const App = (() => {
     }, 3500);
   }
 
+  // ── User Menu ──────────────────────────────────────────────
+  function _closeMenuOnOutsideClick(e) {
+    if (!e.target.closest('#user-menu')) {
+      const dd = document.getElementById('user-dropdown');
+      if (dd) dd.classList.add('hidden');
+      document.removeEventListener('click', _closeMenuOnOutsideClick);
+    }
+  }
+
+  function toggleUserMenu() {
+    const dd = document.getElementById('user-dropdown');
+    if (!dd) return;
+    dd.classList.toggle('hidden');
+    // Close on outside click — single persistent listener
+    if (!dd.classList.contains('hidden')) {
+      document.removeEventListener('click', _closeMenuOnOutsideClick);
+      setTimeout(() => document.addEventListener('click', _closeMenuOnOutsideClick), 0);
+    }
+  }
+
+  async function signOut() {
+    try {
+      if (typeof SupabaseClient !== 'undefined') {
+        await SupabaseClient.signOut();
+      }
+    } catch (err) {
+      console.warn('Sign out error:', err);
+    }
+    // Clear local app state (but keep Supabase auth session cleared via signOut)
+    // Legacy localStorage key from prior brand naming
+    try { localStorage.removeItem('buildmanager_v2'); } catch {}
+    window.location.href = '/auth.html';
+  }
+
   // ── Init ──────────────────────────────────────────────────
-  document.addEventListener('DOMContentLoaded', init);
+  async function boot() {
+    // Wait for state to finish loading from Supabase (or localStorage fallback)
+    try {
+      await State.load();
+    } catch (err) {
+      console.warn('[App] State load error:', err);
+    }
+    init();
+  }
+
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', boot);
+  } else {
+    boot();
+  }
 
   return {
     init, startNewProject, openProject,
     wizardNext, wizardBack,
-    showPhase, showSubLedger,
+    showPhase, showPhaseHub, showPhaseCategory, showInputCard, showInteriorHub,
+    showSubLedger, showTools,
     showDashboard: showDashboardHome,
     showOverview,
-    toggleSidebar, toggleAI, minimizeAI, closeAI,
+    toggleSidebar, toggleSidebarGroup, toggleAI, minimizeAI, closeAI,
     sendAIMessage, exportPDF, exportExcel,
+    toggleUserMenu, signOut,
     toast,
   };
 })();

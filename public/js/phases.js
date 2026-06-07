@@ -479,6 +479,19 @@ const Phases = (() => {
             </div>
           </button>`;
         }).join('')}
+        ${phase.id === 10 ? `
+        <button class="category-card colour-lab-card" onclick="App.showColourLab()" style="border-color:rgba(158,119,88,0.4);background:linear-gradient(135deg,var(--charcoal-mid),var(--charcoal-surface))">
+          <span class="category-card-arrow">${iconFor('arrowRight', 14)}</span>
+          <span class="category-card-icon" style="font-size:34px">🎨</span>
+          <div class="category-card-name" style="background:linear-gradient(135deg,var(--amber),var(--amber-light));-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text">Colour Lab</div>
+          <div class="category-card-desc">Preview wall &amp; ceiling colours under daylight, warm LED, cool LED and night lighting — live on a 3D room view.</div>
+          <div class="category-card-meta">
+            <div class="category-card-progress">
+              <div class="category-card-progress-label">Interactive · No data required</div>
+            </div>
+            <div class="category-card-cost" style="font-size:16px">🌅</div>
+          </div>
+        </button>` : ''}
       </div>
     </div>`;
   }

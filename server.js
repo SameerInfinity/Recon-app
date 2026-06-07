@@ -149,6 +149,62 @@ app.post('/api/ai/chat', async (req, res) => {
   }
 });
 
+// ── Delete User Account (server-side, needs service key) ──
+app.post('/api/user/delete', async (req, res) => {
+  const authHeader = req.headers['authorization'];
+  if (!authHeader?.startsWith('Bearer ')) {
+    return res.status(401).json({ error: 'Unauthorized', message: 'Missing auth token' });
+  }
+
+  const userToken = authHeader.replace('Bearer ', '');
+
+  const serviceKey = process.env.SUPABASE_SERVICE_KEY;
+  const supabaseUrl = process.env.SUPABASE_URL;
+  if (!serviceKey || !supabaseUrl) {
+    return res.status(503).json({ error: 'Not configured', message: 'Supabase service key not set' });
+  }
+
+  try {
+    // 1. Verify the user's own JWT to get their user_id (don't trust client-sent IDs)
+    const verifyRes = await fetch(`${supabaseUrl}/auth/v1/user`, {
+      headers: {
+        'Authorization': `Bearer ${userToken}`,
+        'apikey': process.env.SUPABASE_ANON_KEY,
+      }
+    });
+    if (!verifyRes.ok) {
+      return res.status(401).json({ error: 'Invalid token', message: 'Could not verify user identity' });
+    }
+    const userData = await verifyRes.json();
+    const userId = userData.id;
+    if (!userId) return res.status(401).json({ error: 'No user ID in token' });
+
+    // 2. Delete the user via service-role (admin) API — cascades to all tables
+    const deleteRes = await fetch(`${supabaseUrl}/auth/v1/admin/users/${userId}`, {
+      method: 'DELETE',
+      headers: {
+        'Authorization': `Bearer ${serviceKey}`,
+        'apikey': serviceKey,
+      }
+    });
+
+    if (!deleteRes.ok) {
+      const errBody = await deleteRes.json().catch(() => ({}));
+      return res.status(deleteRes.status).json({
+        error: 'Delete failed',
+        message: errBody.message || `Supabase returned ${deleteRes.status}`
+      });
+    }
+
+    console.log(`[Auth] Deleted user ${userId}`);
+    return res.json({ success: true, message: 'Account deleted' });
+
+  } catch (err) {
+    console.error('[Delete User] Error:', err.message);
+    return res.status(500).json({ error: 'Server error', message: err.message });
+  }
+});
+
 // ── SPA Fallback ───────────────────────────
 app.get('*', (req, res) => {
   // For any non-API, non-static route, serve index.html

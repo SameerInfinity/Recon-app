@@ -267,15 +267,6 @@ const State = (() => {
       phases.sort((a, b) => a.id - b.id);
       normalizePhaseIcons(phases);
 
-      // If the cloud returned no projects but we have local projects,
-      // preserve the local ones (offline-first behavior). Only write
-      // to the cloud when the user explicitly creates or updates.
-      if (fullProjects.length === 0 && Array.isArray(store.projects) && store.projects.length > 0) {
-        console.log('[State] Cloud empty but local has data — keeping local projects');
-        saveLocal();
-        return;
-      }
-
       fullProjects.push({
         id: proj.id,
         name: proj.name,
@@ -351,9 +342,10 @@ const State = (() => {
           name: p.name,
           icon: p.icon,
           completion: p.completion || 0,
-          data: p.data || {},
+          data: JSON.stringify(p.data || {}),
         }));
-        await client.from('phases').insert(phaseInserts);
+        const { error: migPhaseErr } = await client.from('phases').insert(phaseInserts);
+        if (migPhaseErr) console.warn('[State] Migration phase insert warning:', migPhaseErr.message);
 
         // Insert subcontractors
         if (proj.subcontractors?.length) {
@@ -450,7 +442,7 @@ const State = (() => {
           name: phase.name,
           icon: phase.icon,
           completion: phase.completion || 0,
-          data: phase.data || {},
+          data: JSON.stringify(phase.data || {}),
         }, { onConflict: 'project_id,phase_number' });
       }
 
@@ -545,16 +537,17 @@ const State = (() => {
 
         project.id = newProj.id;
 
-        // Insert 8 phases
+        // Insert 10 phases — stringify data for Supabase JSONB
         const phaseInserts = defaultPhases().map(p => ({
           project_id: newProj.id,
           phase_number: p.id,
           name: p.name,
           icon: p.icon,
           completion: 0,
-          data: {},
+          data: JSON.stringify({}),
         }));
-        await client.from('phases').insert(phaseInserts);
+        const { error: phaseErr } = await client.from('phases').insert(phaseInserts);
+        if (phaseErr) console.warn('[State] Phase insert warning:', phaseErr.message);
 
         console.log('[State] Project created in Supabase:', project.name);
       } catch (err) {

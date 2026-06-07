@@ -85,9 +85,12 @@
       </button>
       <div class="user-menu" id="user-menu" style="position:relative">
         <button class="btn-icon" id="user-menu-btn" title="Account" onclick="App.toggleUserMenu()"><span style="display:inline-flex" id="topbar-icon-user"></span></button>
-        <div class="user-dropdown hidden" id="user-dropdown" style="position:absolute;right:0;top:100%;margin-top:8px;background:var(--charcoal-mid);border:1px solid var(--charcoal-border);border-radius:var(--radius-lg);padding:8px 4px;min-width:180px;box-shadow:var(--shadow-lg);z-index:200">
+        <div class="user-dropdown hidden" id="user-dropdown" style="position:absolute;right:0;top:100%;margin-top:8px;background:var(--charcoal-mid);border:1px solid var(--charcoal-border);border-radius:var(--radius-lg);padding:8px 4px;min-width:200px;box-shadow:var(--shadow-lg);z-index:200">
           <div style="padding:8px 12px;font-size:11px;color:var(--text-muted);border-bottom:1px solid var(--charcoal-border);margin-bottom:4px" id="user-email-display">Not signed in</div>
-          <button onclick="App.signOut()" style="width:100%;text-align:left;padding:8px 12px;border:none;background:none;cursor:pointer;font-family:var(--font-body);font-size:12px;color:var(--warning);border-radius:6px;font-weight:600" onmouseover="this.style.background='var(--warning-glow)'" onmouseout="this.style.background='none'">Sign Out</button>
+          <button onclick="App.confirmDeleteProject()" id="btn-delete-project" style="width:100%;text-align:left;padding:8px 12px;border:none;background:none;cursor:pointer;font-family:var(--font-body);font-size:12px;color:var(--text-secondary);border-radius:6px;font-weight:600" onmouseover="this.style.background='rgba(0,0,0,0.06)'" onmouseout="this.style.background='none'">🗑 Delete This Project</button>
+          <div style="height:1px;background:var(--charcoal-border);margin:4px 0"></div>
+          <button onclick="App.signOut()" style="width:100%;text-align:left;padding:8px 12px;border:none;background:none;cursor:pointer;font-family:var(--font-body);font-size:12px;color:var(--text-secondary);border-radius:6px;font-weight:600" onmouseover="this.style.background='rgba(0,0,0,0.06)'" onmouseout="this.style.background='none'">↪ Sign Out</button>
+          <button onclick="App.confirmDeleteAccount()" style="width:100%;text-align:left;padding:8px 12px;border:none;background:none;cursor:pointer;font-family:var(--font-body);font-size:12px;color:#DC2626;border-radius:6px;font-weight:600" onmouseover="this.style.background='rgba(220,38,38,0.06)'" onmouseout="this.style.background='none'">⚠ Delete My Account</button>
         </div>
       </div>
     </div>
@@ -165,6 +168,82 @@
 <!-- TOAST NOTIFICATIONS -->
 <div id="toast-container"></div>
 
+<!-- CONFIRM DELETE MODAL -->
+<div id="confirm-modal" class="confirm-modal-overlay hidden" onclick="App.closeConfirmModal(event)">
+  <div class="confirm-modal-box">
+    <div class="confirm-modal-icon" id="confirm-modal-icon">🗑</div>
+    <h3 class="confirm-modal-title" id="confirm-modal-title">Delete Project?</h3>
+    <p class="confirm-modal-body" id="confirm-modal-body">This action cannot be undone.</p>
+    <div class="confirm-modal-input-wrap" id="confirm-modal-input-wrap" style="display:none">
+      <label class="confirm-modal-input-label" id="confirm-modal-input-label">Type to confirm:</label>
+      <input class="confirm-modal-input" id="confirm-modal-input" type="text" placeholder="" oninput="App.onConfirmInput()">
+    </div>
+    <div class="confirm-modal-actions">
+      <button class="confirm-modal-cancel" onclick="App.closeConfirmModal()">Cancel</button>
+      <button class="confirm-modal-confirm" id="confirm-modal-btn" onclick="App.executeConfirmAction()">Delete</button>
+    </div>
+  </div>
+</div>
+
+<style>
+.confirm-modal-overlay {
+  position: fixed; inset: 0; z-index: 9999;
+  background: rgba(0,0,0,0.45); backdrop-filter: blur(4px);
+  display: flex; align-items: center; justify-content: center;
+  animation: fadeIn 0.15s ease;
+}
+.confirm-modal-overlay.hidden { display: none; }
+.confirm-modal-box {
+  background: #FFFFFF; border-radius: 16px;
+  padding: 32px 28px; max-width: 400px; width: 90%;
+  box-shadow: 0 20px 60px rgba(0,0,0,0.18);
+  text-align: center; animation: slideUp 0.2s ease;
+}
+.confirm-modal-icon { font-size: 36px; margin-bottom: 12px; }
+.confirm-modal-title {
+  font-size: 18px; font-weight: 800; color: #1A1A2E;
+  margin-bottom: 10px; font-family: var(--font-body);
+}
+.confirm-modal-body {
+  font-size: 13px; color: #6B7280; line-height: 1.6;
+  margin-bottom: 20px;
+}
+.confirm-modal-input-wrap { margin-bottom: 20px; text-align: left; }
+.confirm-modal-input-label {
+  display: block; font-size: 11px; font-weight: 700;
+  color: #6B7280; text-transform: uppercase; letter-spacing: 0.08em;
+  margin-bottom: 6px;
+}
+.confirm-modal-input {
+  width: 100%; padding: 10px 12px; border: 1.5px solid #E5E7EB;
+  border-radius: 8px; font-size: 13px; font-family: var(--font-mono);
+  background: #F9FAFB; color: #1A1A2E; outline: none;
+  transition: border-color 0.2s;
+}
+.confirm-modal-input:focus { border-color: #007979; }
+.confirm-modal-actions {
+  display: flex; gap: 10px; justify-content: center;
+}
+.confirm-modal-cancel {
+  flex: 1; padding: 11px; border: 1.5px solid #E5E7EB;
+  background: none; border-radius: 10px; cursor: pointer;
+  font-size: 13px; font-weight: 700; color: #6B7280;
+  font-family: var(--font-body); transition: all 0.15s;
+}
+.confirm-modal-cancel:hover { background: #F3F4F6; }
+.confirm-modal-confirm {
+  flex: 1; padding: 11px; border: none;
+  background: #DC2626; color: #FFF; border-radius: 10px;
+  cursor: pointer; font-size: 13px; font-weight: 700;
+  font-family: var(--font-body); transition: all 0.15s;
+  opacity: 1;
+}
+.confirm-modal-confirm:hover:not(:disabled) { background: #B91C1C; }
+.confirm-modal-confirm:disabled { opacity: 0.4; cursor: not-allowed; }
+@keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+@keyframes slideUp { from { transform: translateY(12px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
+</style>
+
 <script src="js/supabase-client.js"></script>
 <script src="js/icons.js"></script>
 <script src="js/state.js"></script>
@@ -173,6 +252,7 @@
 <script src="js/phases.js"></script>
 <script src="js/ai.js"></script>
 <script src="js/export.js"></script>
+<script src="js/colour-lab.js"></script>
 <script src="js/app.js"></script>
 <script>
   // Wait for Supabase + all icon helpers to be ready, then inject

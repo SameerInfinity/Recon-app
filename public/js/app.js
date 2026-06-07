@@ -65,16 +65,22 @@ const App = (() => {
       try {
         const total = Financial.computeProjectTotal(p) || 0;
         const pct = p.totalBudget > 0 ? Math.round((total / p.totalBudget) * 100) : 0;
-        return `<button class="existing-project-btn" onclick="App.openProject('${p.id}')">
-          <div style="min-width:0">
-            <div style="font-weight:700;font-size:14px">${p.name}</div>
-            <div style="font-size:11px;color:var(--text-muted);margin-top:2px">${p.address || 'No address'} ${p.client ? '· ' + p.client : ''}</div>
-          </div>
-          <div style="text-align:right;flex-shrink:0">
-            <div style="font-family:var(--font-mono);color:var(--steel-light);font-weight:600">${Financial.fmtFull(total)}</div>
-            ${p.totalBudget > 0 ? `<div style="font-size:10px;color:var(--text-muted);margin-top:2px">${pct}% of budget</div>` : ''}
-          </div>
-        </button>`;
+        const safeName = p.name.replace(/'/g, "\\'").replace(/"/g, '&quot;');
+        return `<div class="existing-project-row">
+          <button class="existing-project-btn" onclick="App.openProject('${p.id}')">
+            <div style="min-width:0">
+              <div style="font-weight:700;font-size:14px">${p.name}</div>
+              <div style="font-size:11px;color:var(--text-muted);margin-top:2px">${p.address || 'No address'} ${p.client ? '· ' + p.client : ''}</div>
+            </div>
+            <div style="text-align:right;flex-shrink:0">
+              <div style="font-family:var(--font-mono);color:var(--steel-light);font-weight:600">${Financial.fmtFull(total)}</div>
+              ${p.totalBudget > 0 ? `<div style="font-size:10px;color:var(--text-muted);margin-top:2px">${pct}% of budget</div>` : ''}
+            </div>
+          </button>
+          <button class="existing-project-delete-btn" title="Delete project" onclick="App.confirmDeleteProjectById('${p.id}', '${safeName}', event)">
+            🗑
+          </button>
+        </div>`;
       } catch (e) {
         console.warn('[App] Skipping project in welcome list (render error):', e);
         return '';
@@ -187,9 +193,8 @@ const App = (() => {
     }
   }
 
+  let _wizardCreating = false; // guard against double-tap
   async function wizardNext() {
-    // Ensure state is loaded before using project/phases.
-    try { if (State && State.load) await State.load(); } catch {}
     if (wizardStep === 1) {
       const name = document.getElementById('w-name')?.value?.trim();
       if (!name) { toast('Please enter a project name', 'warning'); return; }
@@ -207,11 +212,24 @@ const App = (() => {
       wizardData.endDate = document.getElementById('w-end')?.value;
       wizardData.notes = document.getElementById('w-notes')?.value;
 
-      const proj = await State.createProject(wizardData);
-      if (!proj) { toast('Could not create project — try again', 'error'); return; }
-      console.log('[App] Created project:', proj.name, 'id:', proj.id, 'phases:', proj.phases.length);
-      document.getElementById('project-wizard').classList.add('hidden');
-      showMainApp(proj);
+      if (_wizardCreating) return;
+      _wizardCreating = true;
+      const nextBtn = document.getElementById('wizard-next');
+      if (nextBtn) { nextBtn.disabled = true; nextBtn.textContent = 'Creating…'; }
+      try {
+        const proj = await State.createProject(wizardData);
+        if (!proj) { toast('Could not create project — try again', 'error'); return; }
+        const phases = Array.isArray(proj.phases) ? proj.phases : [];
+        console.log('[App] Created project:', proj.name, 'id:', proj.id, 'phases:', phases.length);
+        document.getElementById('project-wizard').classList.add('hidden');
+        showMainApp(proj);
+      } catch (createErr) {
+        console.error('[App] Project creation error:', createErr);
+        toast('Could not create project — try again', 'error');
+      } finally {
+        _wizardCreating = false;
+        if (nextBtn) { nextBtn.disabled = false; nextBtn.textContent = 'Create Project →'; }
+      }
       return;
     }
 
@@ -616,13 +634,45 @@ const App = (() => {
     AI.setWatching('Subcontractor Ledger');
   }
 
-  // New "Tools" view — bundles export + AI insights
-  function showTools() {
+  // ── Colour Lab (Interior Colour Visualiser) ───────────────
+  function showColourLab() {
+    currentView = 'colour-lab';
+    currentPhase = 10;
+    currentCategory = null;
+    const content = document.getElementById('content-area');
+    if (!content) return;
 
-    AI.setWatching('Subcontractor Ledger');
+    // Clear any previous canvas
+    if (typeof ColourLab !== 'undefined' && ColourLab.destroy) ColourLab.destroy();
+
+    document.querySelectorAll('.phase-btn').forEach(b => b.classList.remove('active'));
+    const interiorBtn = document.getElementById('phase-btn-interior');
+    if (interiorBtn) interiorBtn.classList.add('active');
+
+    content.innerHTML = `
+      <div class="phase-workspace active">
+        <div class="breadcrumb">
+          <a onclick="App.showOverview()">Overview</a>
+          <span class="breadcrumb-sep">›</span>
+          <a onclick="App.showInteriorHub()">Interior Finish</a>
+          <span class="breadcrumb-sep">›</span>
+          <span class="breadcrumb-current">🎨 Colour Lab</span>
+        </div>
+        <button class="back-to-hub" onclick="App.showInteriorHub()">
+          ← Back to Interior categories
+        </button>
+        ${typeof ColourLab !== 'undefined' ? ColourLab.renderView() : '<p>Colour Lab not loaded.</p>'}
+      </div>`;
+
+    // Init canvas after DOM is painted
+    setTimeout(() => {
+      if (typeof ColourLab !== 'undefined') ColourLab.init();
+    }, 60);
+
+    content.scrollTop = 0;
+    AI.setWatching('Colour Lab');
   }
 
-  // New "Tools" view — bundles export + AI insights
   function showTools() {
     currentView = 'tools';
     currentPhase = 0;
@@ -903,6 +953,124 @@ const App = (() => {
     }, 3500);
   }
 
+  // ── Confirm Delete Modal ───────────────────────────────────
+  let _confirmAction = null;
+  let _confirmRequired = null; // string that must be typed, or null
+
+  function showConfirmModal({ icon = '🗑', title, body, confirmLabel = 'Delete', confirmRequired = null, onConfirm }) {
+    _confirmAction = onConfirm;
+    _confirmRequired = confirmRequired;
+
+    document.getElementById('confirm-modal-icon').textContent = icon;
+    document.getElementById('confirm-modal-title').textContent = title;
+    document.getElementById('confirm-modal-body').textContent = body;
+    document.getElementById('confirm-modal-btn').textContent = confirmLabel;
+
+    const inputWrap = document.getElementById('confirm-modal-input-wrap');
+    const input = document.getElementById('confirm-modal-input');
+    if (confirmRequired) {
+      inputWrap.style.display = 'block';
+      document.getElementById('confirm-modal-input-label').textContent = `Type "${confirmRequired}" to confirm:`;
+      input.placeholder = confirmRequired;
+      input.value = '';
+      document.getElementById('confirm-modal-btn').disabled = true;
+    } else {
+      inputWrap.style.display = 'none';
+      document.getElementById('confirm-modal-btn').disabled = false;
+    }
+
+    document.getElementById('confirm-modal').classList.remove('hidden');
+    if (confirmRequired) setTimeout(() => input.focus(), 100);
+  }
+
+  function closeConfirmModal(e) {
+    if (e && e.target !== document.getElementById('confirm-modal')) return;
+    document.getElementById('confirm-modal').classList.add('hidden');
+    _confirmAction = null;
+    _confirmRequired = null;
+  }
+
+  function onConfirmInput() {
+    if (!_confirmRequired) return;
+    const val = document.getElementById('confirm-modal-input').value;
+    document.getElementById('confirm-modal-btn').disabled = (val !== _confirmRequired);
+  }
+
+  async function executeConfirmAction() {
+    if (!_confirmAction) return;
+    const btn = document.getElementById('confirm-modal-btn');
+    btn.disabled = true;
+    btn.textContent = 'Deleting…';
+    try {
+      await _confirmAction();
+    } catch (err) {
+      toast('Delete failed: ' + (err.message || err), 'warning');
+    }
+    document.getElementById('confirm-modal').classList.add('hidden');
+    _confirmAction = null;
+    _confirmRequired = null;
+  }
+
+  // ── Delete Project ─────────────────────────────────────────
+  function confirmDeleteProject() {
+    const proj = State.getCurrentProject();
+    // Close user dropdown
+    document.getElementById('user-dropdown')?.classList.add('hidden');
+    if (!proj) {
+      toast('No project open to delete', 'warning');
+      return;
+    }
+    showConfirmModal({
+      icon: '🗑',
+      title: `Delete "${proj.name}"?`,
+      body: `All phases, subcontractors, invoices and punch items in this project will be permanently deleted. This cannot be undone.`,
+      confirmLabel: 'Delete Project',
+      onConfirm: async () => {
+        await State.deleteProject(proj.id);
+        showDashboardHome();
+        toast('Project deleted', 'success');
+      }
+    });
+  }
+
+  // Called from the welcome screen project list
+  function confirmDeleteProjectById(id, name, e) {
+    e?.stopPropagation();
+    showConfirmModal({
+      icon: '🗑',
+      title: `Delete "${name}"?`,
+      body: `All data for this project will be permanently removed. This cannot be undone.`,
+      confirmLabel: 'Delete Project',
+      onConfirm: async () => {
+        await State.deleteProject(id);
+        const remaining = State.getProjects();
+        if (remaining.length > 0) showWelcomeWithProjects(remaining);
+        else showWelcome();
+        toast('Project deleted', 'success');
+      }
+    });
+  }
+
+  // ── Delete Account ─────────────────────────────────────────
+  function confirmDeleteAccount() {
+    document.getElementById('user-dropdown')?.classList.add('hidden');
+    const user = SupabaseClient.getUser?.();
+    const email = user?.email || 'your account';
+    showConfirmModal({
+      icon: '⚠️',
+      title: 'Delete Your Account?',
+      body: `This will permanently delete ${email} and ALL your projects, phases, subcontractors, and data. This cannot be undone.`,
+      confirmLabel: 'Delete Everything',
+      confirmRequired: 'DELETE',
+      onConfirm: async () => {
+        await SupabaseClient.deleteUser();
+        try { localStorage.clear(); } catch {}
+        toast('Account deleted. Redirecting…', 'success');
+        setTimeout(() => { window.location.href = '/auth.html'; }, 1200);
+      }
+    });
+  }
+
   // ── User Menu ──────────────────────────────────────────────
   function _closeMenuOnOutsideClick(e) {
     if (!e.target.closest('#user-menu')) {
@@ -915,6 +1083,9 @@ const App = (() => {
   function toggleUserMenu() {
     const dd = document.getElementById('user-dropdown');
     if (!dd) return;
+    // Show/hide delete-project button based on whether a project is open
+    const delProjBtn = document.getElementById('btn-delete-project');
+    if (delProjBtn) delProjBtn.style.display = State.getCurrentProject() ? 'block' : 'none';
     dd.classList.toggle('hidden');
     // Close on outside click — single persistent listener
     if (!dd.classList.contains('hidden')) {
@@ -958,12 +1129,15 @@ const App = (() => {
     init, startNewProject, openProject,
     wizardNext, wizardBack,
     showPhase, showPhaseHub, showPhaseCategory, showInputCard, showInteriorHub,
-    showSubLedger, showTools,
+    showSubLedger, showTools, showColourLab,
     showDashboard: showDashboardHome,
     showOverview,
     toggleSidebar, toggleSidebarGroup, toggleAI, minimizeAI, closeAI,
     sendAIMessage, exportPDF, exportExcel,
     toggleUserMenu, signOut,
+    // Delete system
+    showConfirmModal, closeConfirmModal, onConfirmInput, executeConfirmAction,
+    confirmDeleteProject, confirmDeleteProjectById, confirmDeleteAccount,
     toast,
   };
 })();

@@ -120,6 +120,25 @@ const SupabaseClient = (() => {
     if (error) throw error;
   }
 
+  async function deleteUser() {
+    if (!_supabase) throw new Error('Supabase not initialized');
+    // Get the current user's access token to send to the server
+    const { data: { session } } = await _supabase.auth.getSession();
+    if (!session?.access_token) throw new Error('No active session');
+
+    const res = await fetch('/api/user/delete', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${session.access_token}`,
+        'Content-Type': 'application/json',
+      }
+    });
+
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.message || 'Failed to delete account');
+    return data;
+  }
+
   // Guard: redirect to auth if not logged in
   function requireAuth() {
     if (!_ready) {
@@ -144,6 +163,7 @@ const SupabaseClient = (() => {
     signIn,
     signOut,
     resetPassword,
+    deleteUser,
     requireAuth,
   };
 })();
