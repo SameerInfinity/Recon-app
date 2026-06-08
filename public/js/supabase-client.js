@@ -12,9 +12,11 @@ const SupabaseClient = (() => {
 
   async function init() {
     try {
-      // Fetch config from server (keeps anon key server-managed)
-      const res = await fetch('/api/config');
-      const config = await res.json();
+      // Hardcoded config for static/PWA support (safe to expose Anon Key)
+      const config = {
+        supabaseUrl: 'https://vmkdfhghyirbgdnmrfmu.supabase.co',
+        supabaseAnonKey: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InZta2RmaGdoeWlyYmdkbm1yZm11Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODA3NjcxNTksImV4cCI6MjA5NjM0MzE1OX0.ddmof_p2ZkOcrNAzgSIB3hzv6Mu2ZwhX-LCznciPTRw'
+      };
 
       if (!config.supabaseUrl || !config.supabaseAnonKey) {
         console.warn('[Supabase] No credentials configured — running in offline mode');
