@@ -202,6 +202,14 @@ const State = (() => {
                 p.phases.push({ id: i, name: meta.name, icon: meta.icon, completion: 0, data: {} });
               }
             }
+            // Migrate new feature arrays (added in later versions)
+            if (!p.labour) p.labour = [];
+            if (!p.labourLogs) p.labourLogs = [];
+            if (!p.vendors) p.vendors = [];
+            if (!p.vendorTransactions) p.vendorTransactions = [];
+            if (!p.materials) p.materials = [];
+            if (!p.materialLogs) p.materialLogs = [];
+            if (!p.raBills) p.raBills = [];
           });
         }
         const normalized = normalizePhaseIcons(store.projects);
@@ -241,10 +249,12 @@ const State = (() => {
     // Fetch phases, subs, punch items for each project
     const fullProjects = [];
     for (const proj of projects) {
-      const [phasesRes, subsRes, punchRes] = await Promise.all([
+      const [phasesRes, subsRes, punchRes, labourRes, labourLogsRes] = await Promise.all([
         client.from('phases').select('*').eq('project_id', proj.id).order('phase_number'),
         client.from('subcontractors').select('*').eq('project_id', proj.id).order('created_at'),
         client.from('punch_items').select('*').eq('project_id', proj.id).order('created_at'),
+        client.from('labour').select('*').eq('project_id', proj.id).order('created_at'),
+        client.from('labour_logs').select('*').eq('project_id', proj.id).order('log_date', { ascending: false }),
       ]);
 
       // Map Supabase format → app format
@@ -296,6 +306,18 @@ const State = (() => {
           location: p.location, assignedTo: p.assigned_to,
           priority: p.priority, status: p.status,
           createdAt: p.created_at, resolvedAt: p.resolved_at,
+        })),
+        labour: (labourRes.data || []).map(l => ({
+          id: l.id,
+          name: l.name, role: l.role, dailyRate: l.daily_rate,
+          phone: l.phone, balance: l.balance, active: l.active,
+          createdAt: l.created_at
+        })),
+        labourLogs: (labourLogsRes.data || []).map(log => ({
+          id: log.id,
+          labourId: log.labour_id, logDate: log.log_date,
+          status: log.status, kharchi: log.kharchi,
+          notes: log.notes, createdAt: log.created_at
         })),
         invoices: [],
       });
@@ -374,6 +396,43 @@ const State = (() => {
             resolved_at: p.resolvedAt || null,
           }));
           await client.from('punch_items').insert(punchInserts);
+        }
+
+        // Insert labour
+        if (proj.labour?.length) {
+          const labourInserts = proj.labour.map(l => ({
+            id: isUUID(l.id) ? l.id : undefined,
+            project_id: newProj.id,
+            name: l.name || '',
+            role: l.role || 'mazdoor',
+            daily_rate: l.dailyRate || 0,
+            phone: l.phone || '',
+            balance: l.balance || 0,
+            active: l.active !== false,
+            created_at: l.createdAt || new Date().toISOString(),
+          }));
+          const { data: insertedLabour } = await client.from('labour').insert(labourInserts).select('id, name');
+          
+          // Note: migrating logs correctly requires mapping old temp IDs to new Supabase UUIDs
+          // For now, if we generate UUIDs locally, we can just use them.
+        }
+
+        // Insert labour logs
+        if (proj.labourLogs?.length) {
+           const logInserts = proj.labourLogs.map(log => ({
+             project_id: newProj.id,
+             labour_id: log.labourId,
+             log_date: log.logDate,
+             status: log.status || 'full',
+             kharchi: log.kharchi || 0,
+             notes: log.notes || '',
+             created_at: log.createdAt || new Date().toISOString()
+           }));
+           // Filter out logs with invalid labour_ids just in case
+           const validLogs = logInserts.filter(l => isUUID(l.labour_id));
+           if (validLogs.length) {
+             await client.from('labour_logs').insert(validLogs);
+           }
         }
 
         // Update local project ID to match Supabase
@@ -457,6 +516,10 @@ const State = (() => {
     return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id);
   }
 
+  function generateId() {
+    return Date.now().toString() + '-' + Math.random().toString(36).substr(2, 9);
+  }
+
   // ── Data Migration ───────────────────────────────
   function migrateOrphanedData() {
     if (!store.projects) return;
@@ -512,6 +575,13 @@ const State = (() => {
       subcontractors: [],
       invoices: [],
       punchItems: [],
+      labour: [],
+      labourLogs: [],
+      vendors: [],
+      vendorTransactions: [],
+      materials: [],
+      materialLogs: [],
+      raBills: [],
       archived: false,
     };
 
@@ -766,6 +836,232 @@ const State = (() => {
     saveLocal();
   }
 
+  // ── Labour & Attendance ──────────────────────────
+  async function addLabour(labour) {
+    const proj = getCurrentProject();
+    if (!proj) return;
+    if (!proj.labour) proj.labour = [];
+    const client = sb();
+    if (_useSupabase && client && isUUID(proj.id)) {
+      try {
+        const { data, error } = await client.from('labour').insert({
+          project_id: proj.id,
+          name: labour.name,
+          role: labour.role || 'mazdoor',
+          daily_rate: labour.dailyRate || 0,
+          phone: labour.phone || '',
+          balance: labour.balance || 0,
+          active: labour.active !== false
+        }).select().single();
+        if (error) throw error;
+        labour.id = data.id;
+        labour.createdAt = data.created_at;
+      } catch (err) { console.error('[State] addLabour err:', err); }
+    } else {
+      labour.id = generateId();
+      labour.createdAt = new Date().toISOString();
+    }
+    proj.labour.push(labour);
+    saveLocal();
+  }
+
+  async function updateLabour(id, updates) {
+    const proj = getCurrentProject();
+    if (!proj || !proj.labour) return;
+    const idx = proj.labour.findIndex(l => l.id === id);
+    if (idx >= 0) Object.assign(proj.labour[idx], updates);
+    const client = sb();
+    if (_useSupabase && client && isUUID(id)) {
+      try {
+        const payload = {};
+        if (updates.name !== undefined) payload.name = updates.name;
+        if (updates.role !== undefined) payload.role = updates.role;
+        if (updates.dailyRate !== undefined) payload.daily_rate = updates.dailyRate;
+        if (updates.phone !== undefined) payload.phone = updates.phone;
+        if (updates.balance !== undefined) payload.balance = updates.balance;
+        if (updates.active !== undefined) payload.active = updates.active;
+        await client.from('labour').update(payload).eq('id', id);
+      } catch (err) { console.error('[State] updateLabour err:', err); }
+    }
+    saveLocal();
+  }
+
+  async function deleteLabour(id) {
+    const proj = getCurrentProject();
+    if (!proj || !proj.labour) return;
+    proj.labour = proj.labour.filter(l => l.id !== id);
+    const client = sb();
+    if (_useSupabase && client && isUUID(id)) {
+      try { await client.from('labour').delete().eq('id', id); }
+      catch (err) { console.error('[State] deleteLabour err:', err); }
+    }
+    saveLocal();
+  }
+
+  // ── Vendor Khata (Udhaar) ───────────────────
+  async function addVendor(vendor) {
+    const proj = getCurrentProject();
+    if (!proj) return;
+    if (!proj.vendors) proj.vendors = [];
+    vendor.id = generateId();
+    vendor.balance = parseFloat(vendor.balance) || 0;
+    vendor.createdAt = new Date().toISOString();
+    proj.vendors.push(vendor);
+    saveLocal();
+  }
+
+  async function updateVendor(id, updates) {
+    const proj = getCurrentProject();
+    if (!proj || !proj.vendors) return;
+    const idx = proj.vendors.findIndex(v => v.id === id);
+    if (idx >= 0) Object.assign(proj.vendors[idx], updates);
+    saveLocal();
+  }
+
+  async function deleteVendor(id) {
+    const proj = getCurrentProject();
+    if (!proj) return;
+    proj.vendors = (proj.vendors || []).filter(v => v.id !== id);
+    proj.vendorTransactions = (proj.vendorTransactions || []).filter(t => t.vendorId !== id);
+    saveLocal();
+  }
+
+  async function addVendorTransaction(txn) {
+    const proj = getCurrentProject();
+    if (!proj) return;
+    if (!proj.vendorTransactions) proj.vendorTransactions = [];
+    txn.id = generateId();
+    txn.createdAt = new Date().toISOString();
+    proj.vendorTransactions.push(txn);
+    // Update vendor balance: debit = we owe more, credit = we paid
+    const vendor = (proj.vendors || []).find(v => v.id === txn.vendorId);
+    if (vendor) {
+      const delta = txn.type === 'debit' ? parseFloat(txn.amount) : -parseFloat(txn.amount);
+      vendor.balance = (parseFloat(vendor.balance) || 0) + delta;
+    }
+    saveLocal();
+  }
+
+  // ── Site Material Inventory ───────────────────
+  async function addMaterial(material) {
+    const proj = getCurrentProject();
+    if (!proj) return;
+    if (!proj.materials) proj.materials = [];
+    material.id = generateId();
+    material.currentStock = parseFloat(material.openingStock) || 0;
+    material.totalInward = parseFloat(material.openingStock) || 0;
+    material.totalOutward = 0;
+    material.createdAt = new Date().toISOString();
+    proj.materials.push(material);
+    saveLocal();
+  }
+
+  async function updateMaterial(id, updates) {
+    const proj = getCurrentProject();
+    if (!proj || !proj.materials) return;
+    const idx = proj.materials.findIndex(m => m.id === id);
+    if (idx >= 0) Object.assign(proj.materials[idx], updates);
+    saveLocal();
+  }
+
+  async function deleteMaterial(id) {
+    const proj = getCurrentProject();
+    if (!proj) return;
+    proj.materials = (proj.materials || []).filter(m => m.id !== id);
+    proj.materialLogs = (proj.materialLogs || []).filter(l => l.materialId !== id);
+    saveLocal();
+  }
+
+  async function addMaterialLog(log) {
+    const proj = getCurrentProject();
+    if (!proj) return;
+    if (!proj.materialLogs) proj.materialLogs = [];
+    log.id = generateId();
+    log.createdAt = new Date().toISOString();
+    proj.materialLogs.push(log);
+    // Update material stock
+    const mat = (proj.materials || []).find(m => m.id === log.materialId);
+    if (mat) {
+      const qty = parseFloat(log.qty) || 0;
+      if (log.type === 'inward') {
+        mat.currentStock = (parseFloat(mat.currentStock) || 0) + qty;
+        mat.totalInward = (parseFloat(mat.totalInward) || 0) + qty;
+      } else {
+        mat.currentStock = Math.max(0, (parseFloat(mat.currentStock) || 0) - qty);
+        mat.totalOutward = (parseFloat(mat.totalOutward) || 0) + qty;
+      }
+    }
+    saveLocal();
+  }
+
+  // ── RA Bills (Running Account) ────────────────
+  async function addRaBill(bill) {
+    const proj = getCurrentProject();
+    if (!proj) return;
+    if (!proj.raBills) proj.raBills = [];
+    bill.id = generateId();
+    bill.status = bill.status || 'draft';
+    bill.createdAt = new Date().toISOString();
+    // Auto-assign bill number
+    bill.billNumber = bill.billNumber || `RA-${String(proj.raBills.length + 1).padStart(3, '0')}`;
+    proj.raBills.push(bill);
+    saveLocal();
+  }
+
+  async function updateRaBill(id, updates) {
+    const proj = getCurrentProject();
+    if (!proj || !proj.raBills) return;
+    const idx = proj.raBills.findIndex(b => b.id === id);
+    if (idx >= 0) Object.assign(proj.raBills[idx], updates);
+    saveLocal();
+  }
+
+  async function deleteRaBill(id) {
+    const proj = getCurrentProject();
+    if (!proj) return;
+    proj.raBills = (proj.raBills || []).filter(b => b.id !== id);
+    saveLocal();
+  }
+
+  async function addLabourLog(log) {
+    const proj = getCurrentProject();
+    if (!proj) return;
+    if (!proj.labourLogs) proj.labourLogs = [];
+    const client = sb();
+    if (_useSupabase && client && isUUID(proj.id) && isUUID(log.labourId)) {
+      try {
+        const { data, error } = await client.from('labour_logs').insert({
+          project_id: proj.id,
+          labour_id: log.labourId,
+          log_date: log.logDate,
+          status: log.status || 'full',
+          kharchi: log.kharchi || 0,
+          notes: log.notes || ''
+        }).select().single();
+        if (error) throw error;
+        log.id = data.id;
+        log.createdAt = data.created_at;
+      } catch (err) { console.error('[State] addLabourLog err:', err); }
+    } else {
+      log.id = generateId();
+      log.createdAt = new Date().toISOString();
+    }
+    proj.labourLogs.push(log);
+    
+    // Update balance
+    const labour = proj.labour.find(l => l.id === log.labourId);
+    if (labour) {
+       let addedValue = 0;
+       if (log.status === 'full') addedValue = Number(labour.dailyRate);
+       else if (log.status === 'half') addedValue = Number(labour.dailyRate) / 2;
+       
+       const newBalance = (Number(labour.balance || 0) + addedValue) - Number(log.kharchi || 0);
+       await updateLabour(labour.id, { balance: newBalance });
+    } else {
+       saveLocal();
+    }
+  }
+
   function updateProjectInfo(updates) {
     const proj = getCurrentProject();
     if (!proj) return;
@@ -807,6 +1103,10 @@ const State = (() => {
     addSubcontractor, updateSubcontractor, deleteSubcontractor,
     addInvoice,
     addPunchItem, updatePunchItem, deletePunchItem,
+    addLabour, updateLabour, deleteLabour, addLabourLog,
+    addVendor, updateVendor, deleteVendor, addVendorTransaction,
+    addMaterial, updateMaterial, deleteMaterial, addMaterialLog,
+    addRaBill, updateRaBill, deleteRaBill,
     updateProjectInfo, deleteProject, archiveProject,
     get store() { return store; },
     get isCloud() { return _useSupabase; },

@@ -414,6 +414,34 @@ const App = (() => {
             <div class="phase-chip"><span class="phase-pct">Ledger</span></div>
           </div>
         </button>
+        <button class="phase-btn ${currentView === 'labour-hub' ? 'active' : ''}" onclick="App.showLabourHub()" id="phase-btn-labour">
+          <span class="phase-btn-icon">👷</span>
+          <div class="phase-btn-content">
+            <span class="phase-btn-label">Labour (Hajiri)</span>
+            <div class="phase-chip"><span class="phase-pct">Attendance</span></div>
+          </div>
+        </button>
+        <button class="phase-btn ${currentView === 'vendor-hub' ? 'active' : ''}" onclick="App.showVendorHub()" id="phase-btn-vendor">
+          <span class="phase-btn-icon">🏪</span>
+          <div class="phase-btn-content">
+            <span class="phase-btn-label">Vendor Khata</span>
+            <div class="phase-chip"><span class="phase-pct">Udhaar</span></div>
+          </div>
+        </button>
+        <button class="phase-btn ${currentView === 'inventory-hub' ? 'active' : ''}" onclick="App.showInventoryHub()" id="phase-btn-inventory">
+          <span class="phase-btn-icon">📦</span>
+          <div class="phase-btn-content">
+            <span class="phase-btn-label">Site Stock</span>
+            <div class="phase-chip"><span class="phase-pct">Inventory</span></div>
+          </div>
+        </button>
+        <button class="phase-btn ${currentView === 'ra-bills' ? 'active' : ''}" onclick="App.showRaBillsHub()" id="phase-btn-ra">
+          <span class="phase-btn-icon">🧾</span>
+          <div class="phase-btn-content">
+            <span class="phase-btn-label">RA Bills</span>
+            <div class="phase-chip"><span class="phase-pct">Invoices</span></div>
+          </div>
+        </button>
         <button class="phase-btn ${currentView === 'tools' ? 'active' : ''}" onclick="App.showTools()" id="phase-btn-tools">
           <span class="phase-btn-icon">${Phases.iconFor('wrench', 15)}</span>
           <div class="phase-btn-content">
@@ -602,6 +630,78 @@ const App = (() => {
 
     AI.setWatching(`Phase ${phaseId} · ${card.name}`);
     Financial.updateAllTotals();
+  }
+
+  function showLabourHub() {
+    currentView = 'labour-hub';
+    currentPhase = null;
+    currentCategory = null;
+    const proj = State.getCurrentProject();
+    if (!proj) return;
+    renderSidebar(proj);
+
+    const content = document.getElementById('content-area');
+    if (!content) return;
+
+    if (typeof LabourVendors !== 'undefined' && LabourVendors.renderLabourHub) {
+      content.innerHTML = LabourVendors.renderLabourHub();
+    } else {
+      content.innerHTML = '<div style="padding:24px">Labour module loading...</div>';
+    }
+  }
+
+  function showVendorHub() {
+    currentView = 'vendor-hub';
+    currentPhase = null;
+    currentCategory = null;
+    const proj = State.getCurrentProject();
+    if (!proj) return;
+    renderSidebar(proj);
+    const content = document.getElementById('content-area');
+    if (!content) return;
+    if (typeof VendorKhata !== 'undefined') {
+      content.innerHTML = VendorKhata.renderVendorHub();
+    } else {
+      content.innerHTML = '<div style="padding:24px">Vendor module loading...</div>';
+    }
+    content.scrollTop = 0;
+    AI.setWatching('Vendor Khata (Udhaar)');
+  }
+
+  function showInventoryHub() {
+    currentView = 'inventory-hub';
+    currentPhase = null;
+    currentCategory = null;
+    const proj = State.getCurrentProject();
+    if (!proj) return;
+    renderSidebar(proj);
+    const content = document.getElementById('content-area');
+    if (!content) return;
+    if (typeof SiteInventory !== 'undefined') {
+      content.innerHTML = SiteInventory.renderInventoryHub();
+    } else {
+      content.innerHTML = '<div style="padding:24px">Inventory module loading...</div>';
+    }
+    content.scrollTop = 0;
+    AI.setWatching('Site Material Inventory');
+  }
+
+  function showRaBillsHub() {
+    currentView = 'ra-bills';
+    currentPhase = null;
+    currentCategory = null;
+    const proj = State.getCurrentProject();
+    if (!proj) return;
+    renderSidebar(proj);
+    const content = document.getElementById('content-area');
+    if (!content) return;
+    if (typeof RaBills !== 'undefined') {
+      content.innerHTML = RaBills.renderRaBillsHub();
+    } else {
+      content.innerHTML = '<div style="padding:24px">RA Bills module loading...</div>';
+    }
+    content.scrollTop = 0;
+    AI.setWatching('Running Account Bills');
   }
 
   function showSubLedger() {
@@ -953,6 +1053,32 @@ const App = (() => {
     }, 3500);
   }
 
+  // ── Generic Modal ──────────────────────────────────────────
+  function showModal(contentHtml) {
+    let modal = document.getElementById('generic-modal');
+    if (!modal) {
+      modal = document.createElement('div');
+      modal.id = 'generic-modal';
+      document.body.appendChild(modal);
+    }
+    modal.className = 'confirm-modal-overlay';
+    modal.innerHTML = `
+      <div class="confirm-modal-box" style="max-width: 500px; text-align: left;">
+        <div id="generic-modal-body">${contentHtml}</div>
+      </div>
+    `;
+    modal.classList.remove('hidden');
+    modal.style.display = 'flex'; // ensures visibility
+  }
+
+  function closeModal() {
+    const modal = document.getElementById('generic-modal');
+    if (modal) {
+      modal.classList.add('hidden');
+      modal.style.display = 'none';
+    }
+  }
+
   // ── Confirm Delete Modal ───────────────────────────────────
   let _confirmAction = null;
   let _confirmRequired = null; // string that must be typed, or null
@@ -1129,12 +1255,13 @@ const App = (() => {
     init, startNewProject, openProject,
     wizardNext, wizardBack,
     showPhase, showPhaseHub, showPhaseCategory, showInputCard, showInteriorHub,
-    showSubLedger, showTools, showColourLab,
+    showSubLedger, showLabourHub, showVendorHub, showInventoryHub, showRaBillsHub,
+    showTools, showColourLab,
     showDashboard: showDashboardHome,
     showOverview,
     toggleSidebar, toggleSidebarGroup, toggleAI, minimizeAI, closeAI,
     sendAIMessage, exportPDF, exportExcel,
-    toggleUserMenu, signOut,
+    toggleUserMenu, signOut, toast, showModal, closeModal,
     // Delete system
     showConfirmModal, closeConfirmModal, onConfirmInput, executeConfirmAction,
     confirmDeleteProject, confirmDeleteProjectById, confirmDeleteAccount,

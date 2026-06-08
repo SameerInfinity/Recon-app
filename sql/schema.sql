@@ -210,3 +210,178 @@ CREATE TRIGGER set_updated_at BEFORE UPDATE ON public.phases
 DROP TRIGGER IF EXISTS set_updated_at ON public.subcontractors;
 CREATE TRIGGER set_updated_at BEFORE UPDATE ON public.subcontractors
   FOR EACH ROW EXECUTE FUNCTION public.update_updated_at();
+
+-- ── 7. LABOUR (Hajiri) ───────────────────────────────
+CREATE TABLE IF NOT EXISTS public.labour (
+  id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  project_id  UUID NOT NULL REFERENCES public.projects(id) ON DELETE CASCADE,
+  name        TEXT NOT NULL,
+  role        TEXT DEFAULT 'mazdoor',
+  daily_rate  NUMERIC DEFAULT 0,
+  phone       TEXT DEFAULT '',
+  balance     NUMERIC DEFAULT 0,
+  active      BOOLEAN DEFAULT TRUE,
+  created_at  TIMESTAMPTZ DEFAULT NOW(),
+  updated_at  TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_labour_project_id ON public.labour(project_id);
+
+CREATE TABLE IF NOT EXISTS public.labour_logs (
+  id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  project_id  UUID NOT NULL REFERENCES public.projects(id) ON DELETE CASCADE,
+  labour_id   UUID NOT NULL REFERENCES public.labour(id) ON DELETE CASCADE,
+  log_date    DATE NOT NULL,
+  status      TEXT DEFAULT 'full', -- full, half, absent
+  kharchi     NUMERIC DEFAULT 0,
+  notes       TEXT DEFAULT '',
+  created_at  TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_labour_logs_project_id ON public.labour_logs(project_id);
+CREATE INDEX IF NOT EXISTS idx_labour_logs_labour_id ON public.labour_logs(labour_id);
+
+ALTER TABLE public.labour      ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.labour_logs ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS "labour_all" ON public.labour;
+CREATE POLICY "labour_all" ON public.labour FOR ALL USING (
+  EXISTS (SELECT 1 FROM public.projects WHERE projects.id = labour.project_id AND projects.user_id = auth.uid())
+);
+
+DROP POLICY IF EXISTS "labour_logs_all" ON public.labour_logs;
+CREATE POLICY "labour_logs_all" ON public.labour_logs FOR ALL USING (
+  EXISTS (SELECT 1 FROM public.projects WHERE projects.id = labour_logs.project_id AND projects.user_id = auth.uid())
+);
+
+DROP TRIGGER IF EXISTS set_updated_at ON public.labour;
+CREATE TRIGGER set_updated_at BEFORE UPDATE ON public.labour
+  FOR EACH ROW EXECUTE FUNCTION public.update_updated_at();
+
+
+-- ── 8. VENDORS (Udhaar / Credit Khata) ──────────────────────
+CREATE TABLE IF NOT EXISTS public.vendors (
+  id            UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  project_id    UUID NOT NULL REFERENCES public.projects(id) ON DELETE CASCADE,
+  name          TEXT NOT NULL,
+  shop_name     TEXT DEFAULT '',
+  phone         TEXT DEFAULT '',
+  balance       NUMERIC DEFAULT 0,
+  notes         TEXT DEFAULT '',
+  created_at    TIMESTAMPTZ DEFAULT NOW(),
+  updated_at    TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_vendors_project_id ON public.vendors(project_id);
+
+CREATE TABLE IF NOT EXISTS public.vendor_transactions (
+  id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  project_id  UUID NOT NULL REFERENCES public.projects(id) ON DELETE CASCADE,
+  vendor_id   UUID NOT NULL REFERENCES public.vendors(id) ON DELETE CASCADE,
+  txn_date    DATE NOT NULL,
+  type        TEXT NOT NULL CHECK (type IN ('debit', 'credit')),
+  amount      NUMERIC NOT NULL DEFAULT 0,
+  description TEXT DEFAULT '',
+  created_at  TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_vendor_txns_project_id ON public.vendor_transactions(project_id);
+CREATE INDEX IF NOT EXISTS idx_vendor_txns_vendor_id ON public.vendor_transactions(vendor_id);
+
+ALTER TABLE public.vendors              ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.vendor_transactions  ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS "vendors_all" ON public.vendors;
+CREATE POLICY "vendors_all" ON public.vendors FOR ALL USING (
+  EXISTS (SELECT 1 FROM public.projects WHERE projects.id = vendors.project_id AND projects.user_id = auth.uid())
+);
+
+DROP POLICY IF EXISTS "vendor_txns_all" ON public.vendor_transactions;
+CREATE POLICY "vendor_txns_all" ON public.vendor_transactions FOR ALL USING (
+  EXISTS (SELECT 1 FROM public.projects WHERE projects.id = vendor_transactions.project_id AND projects.user_id = auth.uid())
+);
+
+DROP TRIGGER IF EXISTS set_updated_at ON public.vendors;
+CREATE TRIGGER set_updated_at BEFORE UPDATE ON public.vendors
+  FOR EACH ROW EXECUTE FUNCTION public.update_updated_at();
+
+
+-- ── 9. MATERIALS (Site Stock / Inventory) ────────────────────
+CREATE TABLE IF NOT EXISTS public.materials (
+  id            UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  project_id    UUID NOT NULL REFERENCES public.projects(id) ON DELETE CASCADE,
+  name          TEXT NOT NULL,
+  unit          TEXT DEFAULT 'bags',
+  current_stock NUMERIC DEFAULT 0,
+  total_inward  NUMERIC DEFAULT 0,
+  total_outward NUMERIC DEFAULT 0,
+  notes         TEXT DEFAULT '',
+  created_at    TIMESTAMPTZ DEFAULT NOW(),
+  updated_at    TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_materials_project_id ON public.materials(project_id);
+
+CREATE TABLE IF NOT EXISTS public.material_logs (
+  id            UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  project_id    UUID NOT NULL REFERENCES public.projects(id) ON DELETE CASCADE,
+  material_id   UUID NOT NULL REFERENCES public.materials(id) ON DELETE CASCADE,
+  log_date      DATE NOT NULL,
+  type          TEXT NOT NULL CHECK (type IN ('inward', 'outward')),
+  qty           NUMERIC NOT NULL DEFAULT 0,
+  notes         TEXT DEFAULT '',
+  created_at    TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_material_logs_project_id ON public.material_logs(project_id);
+CREATE INDEX IF NOT EXISTS idx_material_logs_material_id ON public.material_logs(material_id);
+
+ALTER TABLE public.materials     ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.material_logs ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS "materials_all" ON public.materials;
+CREATE POLICY "materials_all" ON public.materials FOR ALL USING (
+  EXISTS (SELECT 1 FROM public.projects WHERE projects.id = materials.project_id AND projects.user_id = auth.uid())
+);
+
+DROP POLICY IF EXISTS "material_logs_all" ON public.material_logs;
+CREATE POLICY "material_logs_all" ON public.material_logs FOR ALL USING (
+  EXISTS (SELECT 1 FROM public.projects WHERE projects.id = material_logs.project_id AND projects.user_id = auth.uid())
+);
+
+DROP TRIGGER IF EXISTS set_updated_at ON public.materials;
+CREATE TRIGGER set_updated_at BEFORE UPDATE ON public.materials
+  FOR EACH ROW EXECUTE FUNCTION public.update_updated_at();
+
+
+-- ── 10. RA BILLS (Running Account Invoices) ──────────────────
+CREATE TABLE IF NOT EXISTS public.ra_bills (
+  id                  UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  project_id          UUID NOT NULL REFERENCES public.projects(id) ON DELETE CASCADE,
+  bill_number         TEXT DEFAULT '',
+  issue_date          DATE,
+  due_date            DATE,
+  work_description    TEXT DEFAULT '',
+  contract_value      NUMERIC DEFAULT 0,
+  percentage_complete NUMERIC DEFAULT 0 CHECK (percentage_complete BETWEEN 0 AND 100),
+  previous_paid       NUMERIC DEFAULT 0,
+  deductions          NUMERIC DEFAULT 0,
+  amount_due          NUMERIC DEFAULT 0,
+  status              TEXT DEFAULT 'draft' CHECK (status IN ('draft', 'sent', 'paid')),
+  notes               TEXT DEFAULT '',
+  created_at          TIMESTAMPTZ DEFAULT NOW(),
+  updated_at          TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_ra_bills_project_id ON public.ra_bills(project_id);
+
+ALTER TABLE public.ra_bills ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS "ra_bills_all" ON public.ra_bills;
+CREATE POLICY "ra_bills_all" ON public.ra_bills FOR ALL USING (
+  EXISTS (SELECT 1 FROM public.projects WHERE projects.id = ra_bills.project_id AND projects.user_id = auth.uid())
+);
+
+DROP TRIGGER IF EXISTS set_updated_at ON public.ra_bills;
+CREATE TRIGGER set_updated_at BEFORE UPDATE ON public.ra_bills
+  FOR EACH ROW EXECUTE FUNCTION public.update_updated_at();
