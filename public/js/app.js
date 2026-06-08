@@ -657,15 +657,17 @@ const App = (() => {
     const proj = State.getCurrentProject();
     if (!proj) return;
     renderSidebar(proj);
+
     const content = document.getElementById('content-area');
     if (!content) return;
-    if (typeof VendorKhata !== 'undefined') {
+
+    if (typeof VendorKhata !== 'undefined' && VendorKhata.renderVendorHub) {
       content.innerHTML = VendorKhata.renderVendorHub();
     } else {
-      content.innerHTML = '<div style="padding:24px">Vendor module loading...</div>';
+      content.innerHTML = '<div style="padding:24px">Vendor Khata module loading...</div>';
     }
     content.scrollTop = 0;
-    AI.setWatching('Vendor Khata (Udhaar)');
+    AI.setWatching('Vendor Khata');
   }
 
   function showInventoryHub() {
@@ -675,15 +677,17 @@ const App = (() => {
     const proj = State.getCurrentProject();
     if (!proj) return;
     renderSidebar(proj);
+
     const content = document.getElementById('content-area');
     if (!content) return;
-    if (typeof SiteInventory !== 'undefined') {
+
+    if (typeof SiteInventory !== 'undefined' && SiteInventory.renderInventoryHub) {
       content.innerHTML = SiteInventory.renderInventoryHub();
     } else {
-      content.innerHTML = '<div style="padding:24px">Inventory module loading...</div>';
+      content.innerHTML = '<div style="padding:24px">Site Inventory module loading...</div>';
     }
     content.scrollTop = 0;
-    AI.setWatching('Site Material Inventory');
+    AI.setWatching('Site Stock');
   }
 
   function showRaBillsHub() {
@@ -693,16 +697,20 @@ const App = (() => {
     const proj = State.getCurrentProject();
     if (!proj) return;
     renderSidebar(proj);
+
     const content = document.getElementById('content-area');
     if (!content) return;
-    if (typeof RaBills !== 'undefined') {
+
+    if (typeof RaBills !== 'undefined' && RaBills.renderRaBillsHub) {
       content.innerHTML = RaBills.renderRaBillsHub();
     } else {
       content.innerHTML = '<div style="padding:24px">RA Bills module loading...</div>';
     }
     content.scrollTop = 0;
-    AI.setWatching('Running Account Bills');
+    AI.setWatching('RA Bills');
   }
+
+
 
   function showSubLedger() {
     currentView = 'subcontractors';
