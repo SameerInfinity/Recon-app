@@ -12,11 +12,23 @@ const SupabaseClient = (() => {
 
   async function init() {
     try {
-      // Hardcoded config for static/PWA support (safe to expose Anon Key)
-      const config = {
-        supabaseUrl: 'https://vmkdfhghyirbgdnmrfmu.supabase.co',
-        supabaseAnonKey: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InZta2RmaGdoeWlyYmdkbm1yZm11Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODA3NjcxNTksImV4cCI6MjA5NjM0MzE1OX0.ddmof_p2ZkOcrNAzgSIB3hzv6Mu2ZwhX-LCznciPTRw'
-      };
+      let config = null;
+      try {
+        // Fetch config from server (reads from .env)
+        const res = await fetch('/api/config');
+        if (res.ok) {
+          config = await res.json();
+          // Cache for offline PWA support
+          localStorage.setItem('recon_supabase_config', JSON.stringify(config));
+        } else {
+          throw new Error('API config route returned ' + res.status);
+        }
+      } catch (fetchErr) {
+        // Network offline or API unreachable, fallback to cached config
+        console.warn('[Supabase] Config fetch failed, attempting to use cached config for offline mode');
+        const cached = localStorage.getItem('recon_supabase_config');
+        if (cached) config = JSON.parse(cached);
+      }
 
       if (!config.supabaseUrl || !config.supabaseAnonKey) {
         console.warn('[Supabase] No credentials configured — running in offline mode');
