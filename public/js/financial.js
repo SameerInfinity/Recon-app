@@ -44,11 +44,16 @@ const Financial = (() => {
   const qr = (d, qtyKey, rateKey) => {
     try {
       if (!d || typeof d !== 'object') return 0;
+      if (d._manual_total !== undefined && d._manual_total !== '') return parseNum(d._manual_total);
       return (parseNum(d[qtyKey]) || 0) * (parseNum(d[rateKey]) || 0);
     } catch { return 0; }
   };
   // Direct-amount helper
-  const amt = (d, key) => (d && typeof d === 'object') ? (parseNum(d[key]) || 0) : 0;
+  const amt = (d, key) => {
+    if (!d || typeof d !== 'object') return 0;
+    if (d._manual_total !== undefined && d._manual_total !== '') return parseNum(d._manual_total);
+    return parseNum(d[key]) || 0;
+  };
 
   // ── Phase Calculations (Trade-Based) ─────────────────────
   // One function per phase. No duplicates. All use qr/amt helpers
@@ -161,11 +166,21 @@ const Financial = (() => {
   // Phase 10: Interior Finishes
   function calcPhase10(d) {
     let t = 0;
+    const p10ovr = (id, calc) => {
+      const mk = `_manual_${id}`;
+      return (d[mk] !== undefined && d[mk] !== '') ? parseNum(d[mk]) : calc;
+    };
+    const setVal = (id, val) => {
+      const el = document.getElementById(id);
+      if (!el) return;
+      if (el.tagName === 'INPUT') el.value = val.toFixed(2);
+      else el.textContent = fmt(val);
+    };
 
     // Subfloor prep
-    const floorPrepTotal = sumRows(d.floor_prep_rows || [], r =>
+    const floorPrepTotal = p10ovr('p10-floor-prep-total', sumRows(d.floor_prep_rows || [], r =>
       add(mul(r.labor_hours, r.labor_rate), r.material_cost)
-    );
+    ));
     t += floorPrepTotal;
 
     // Finish flooring
@@ -174,140 +189,135 @@ const Financial = (() => {
       const adjCoverage = coverage * (1 + parseNum(r.waste_pct) / 100);
       return add(mul(adjCoverage, r.price), mul(coverage, r.labor_rate), mul(coverage, r.underlay_price));
     });
-    t += floorFinishTotal;
-
     const transStripsTotal = mul(d.trans_strips_count, d.trans_strip_price);
-    t += transStripsTotal;
+    const finishFlooringNet = p10ovr('p10-flooring-total', add(floorFinishTotal, transStripsTotal));
+    t += finishFlooringNet;
 
     // Cabinet box / doors
-    const cabBox = add(
+    const cabBox = p10ovr('p10-cab-box-total', add(
       mul(d.cab_base_lf,   d.cab_base_rate),
       mul(d.cab_upper_lf,  d.cab_upper_rate),
       mul(d.cab_pantry_lf, d.cab_pantry_rate),
       mul(add(d.cab_base_lf, d.cab_upper_lf, d.cab_pantry_lf), d.cab_install_rate),
       parseNum(d.millwork_lump)
-    );
+    ));
     t += cabBox;
 
     // Cabinet hardware
-    const cabHw = add(
+    const cabHw = p10ovr('p10-cab-hw-total', add(
       mul(d.pulls_knobs_count, d.pull_unit_price),
       mul(d.drawer_box_count,  d.drawer_box_price),
       mul(d.hinge_qty,         d.hinge_unit_price),
       mul(d.drawer_box_count,  d.softclose_price)
-    );
+    ));
     t += cabHw;
 
     // Door slabs & jambs
-    const doorSlabTotal = sumRows(d.door_slab_rows || [], r => {
+    const doorSlabTotal = p10ovr('p10-door-slab-total', sumRows(d.door_slab_rows || [], r => {
       const qty = parseNum(r.qty);
       return add(mul(qty, r.slab_price), mul(qty, r.jamb_set_price), mul(qty, r.install_price));
-    });
+    }));
     t += doorSlabTotal;
 
     // Door hardware
-    const doorHw = add(
+    const doorHw = p10ovr('p10-door-hw-total', add(
       mul(d.passage_count, d.passage_price),
       mul(d.privacy_count, d.privacy_price),
       mul(d.dummy_count,   d.dummy_price),
       mul(d.door_stops_count, d.door_stop_price),
       mul(add(d.passage_count, d.privacy_count, d.dummy_count, d.door_stops_count) * 3, d.hinge_finish_price)
-    );
+    ));
     t += doorHw;
 
     // Trim base + casing
-    const trimBaseTotal = sumRows(d.trim_base_rows || [], r => {
+    const trimBaseRaw = sumRows(d.trim_base_rows || [], r => {
       const lf = parseNum(r.lf);
       return add(mul(lf, r.price_lf), mul(lf, r.labor_lf), mul(parseNum(r.corners), r.corner_price));
     });
-    t += trimBaseTotal;
-
-    // Crown + wainscoting
     const crownAndWainscot = add(
       mul(d.crown_lf,      d.crown_price_lf),
       mul(d.crown_lf,      d.crown_labor_lf),
       mul(d.wainscot_sqft, d.wainscot_price),
       mul(d.wainscot_sqft, d.wainscot_labor)
     );
-    t += crownAndWainscot;
+    const trimBaseTotal = p10ovr('p10-trim-base-total', add(trimBaseRaw, crownAndWainscot));
+    t += trimBaseTotal;
 
     // Stair components
-    const stairTotal = add(
+    const stairTotal = p10ovr('p10-trim-stair-total', add(
       mul(d.tread_count,    d.tread_price),
       mul(d.riser_count,    d.riser_price),
       parseNum(d.stair_labor_lump),
       mul(d.baluster_count, d.baluster_price),
       mul(d.newel_count,    d.newel_price)
-    );
+    ));
     t += stairTotal;
 
     // Paint prep
-    const paintPrepTotal = sumRows(d.paint_prep_rows || [], r =>
+    const paintPrepTotal = p10ovr('p10-paint-prep-total', sumRows(d.paint_prep_rows || [], r =>
       add(mul(r.caulk_tubes, 8), mul(r.filler_tubs, 25), parseNum(r.sandpaper_cost), parseNum(r.tape_plastic_cost))
-    );
+    ));
     t += paintPrepTotal;
 
-    // Primer
+    // Primer & Paint coatings
     const paintCoatRows = d.paint_coat_rows || [];
     const totalSqft = paintCoatRows.reduce((s, r) => s + parseNum(r.sqft), 0);
     const primerCoverage = parseNum(d.primer_coverage) || 300;
     const primerGallons = primerCoverage > 0 ? Math.ceil(totalSqft / primerCoverage) : 0;
     const primerTotal = mul(primerGallons, d.primer_price_gal);
-    t += primerTotal;
 
-    // Paint coatings
-    const paintCoatTotal = sumRows(paintCoatRows, r => {
+    const paintCoatRaw = sumRows(paintCoatRows, r => {
       const sqft = parseNum(r.sqft);
       const coats = parseNum(r.coats);
       const coverage = parseNum(r.coverage);
       const gallons = coverage > 0 ? (sqft * coats) / coverage : 0;
       return add(mul(gallons, r.price_per_gal), mul(sqft, r.labor_sqft));
     });
+    const paintCoatTotal = p10ovr('p10-paint-coat-total', add(primerTotal, paintCoatRaw));
     t += paintCoatTotal;
 
     // Closet systems
-    const closetTotal = add(
+    const closetTotal = p10ovr('p10-closet-total', add(
       mul(d.closet_lf,            d.closet_rate_lf),
       mul(d.closet_lf,            d.closet_install_lf),
       mul(d.closet_drawer_count,  d.closet_drawer_price),
       parseNum(d.closet_accessories_lump)
-    );
+    ));
     t += closetTotal;
 
     // Glass & mirrors
-    const glassTotal = sumRows(d.glass_rows || [], r => {
+    const glassRaw = sumRows(d.glass_rows || [], r => {
       const qty = parseNum(r.qty);
       return add(mul(qty, r.unit_price), mul(qty, r.install));
     });
-    t += glassTotal;
-
     const showerAndMirror = add(
       parseNum(d.shower_lump),
       mul(d.vanity_mirror_sqft, d.mirror_price_sqft)
     );
-    t += showerAndMirror;
+    const glassTotal = p10ovr('p10-glass-total', add(glassRaw, showerAndMirror));
+    t += glassTotal;
 
     // Misc custom fixtures
-    const fixtureTotal = sumRows(d.fixture_int_rows || [], r => {
+    const fixtureTotal = p10ovr('p10-fixture-total', sumRows(d.fixture_int_rows || [], r => {
       const qty = parseNum(r.qty);
       return add(mul(qty, r.unit_price), parseNum(r.labor));
-    });
+    }));
     t += fixtureTotal;
 
     // Push section totals to DOM
-    updateEl('p10-floor-prep-total',  fmt(floorPrepTotal));
-    updateEl('p10-flooring-total',    fmt(add(floorFinishTotal, transStripsTotal)));
-    updateEl('p10-cab-box-total',     fmt(cabBox));
-    updateEl('p10-cab-hw-total',      fmt(cabHw));
-    updateEl('p10-door-slab-total',   fmt(doorSlabTotal));
-    updateEl('p10-door-hw-total',     fmt(doorHw));
-    updateEl('p10-trim-base-total',   fmt(add(trimBaseTotal, crownAndWainscot)));
-    updateEl('p10-trim-stair-total',  fmt(stairTotal));
-    updateEl('p10-paint-prep-total',  fmt(paintPrepTotal));
-    updateEl('p10-paint-coat-total',  fmt(add(primerTotal, paintCoatTotal)));
-    updateEl('p10-closet-total',      fmt(closetTotal));
-    updateEl('p10-glass-total',       fmt(add(glassTotal, showerAndMirror)));
-    updateEl('p10-fixture-total',     fmt(fixtureTotal));
+    setVal('p10-floor-prep-total',  floorPrepTotal);
+    setVal('p10-flooring-total',    finishFlooringNet);
+    setVal('p10-cab-box-total',     cabBox);
+    setVal('p10-cab-hw-total',      cabHw);
+    setVal('p10-door-slab-total',   doorSlabTotal);
+    setVal('p10-door-hw-total',     doorHw);
+    setVal('p10-trim-base-total',   trimBaseTotal);
+    setVal('p10-trim-stair-total',  stairTotal);
+    setVal('p10-paint-prep-total',  paintPrepTotal);
+    setVal('p10-paint-coat-total',  paintCoatTotal);
+    setVal('p10-closet-total',      closetTotal);
+    setVal('p10-glass-total',       glassTotal);
+    setVal('p10-fixture-total',     fixtureTotal);
 
     return t;
   }
@@ -370,6 +380,18 @@ const Financial = (() => {
           ptEl.style.textShadow = '0 0 12px rgba(0,121,121,0.3)';
           setTimeout(() => { ptEl.style.color = ''; ptEl.style.textShadow = ''; }, 800);
         }
+      }
+
+      // Update inner card totals if they are rendered on screen
+      if (typeof Phases !== 'undefined' && Phases.CATEGORY_REGISTRY && Phases.CATEGORY_REGISTRY[phase.id]) {
+        Phases.CATEGORY_REGISTRY[phase.id].forEach(card => {
+          const cardTotalEl = document.getElementById(`card-total-${phase.id}-${card.id}`);
+          if (cardTotalEl) {
+            const data = phase.data[card.id] || {};
+            const cost = card.costFn(data);
+            cardTotalEl.textContent = fmtFull(cost);
+          }
+        });
       }
 
       if (proj.totalBudget > 0) {

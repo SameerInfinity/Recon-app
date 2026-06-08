@@ -1062,6 +1062,41 @@ const State = (() => {
     }
   }
 
+  // ── Scanned Bills ──────────────────────────────────────────
+  function getBills(phaseId) {
+    const proj = getCurrentProject();
+    if (!proj) return [];
+    const phase = proj.phases.find(p => p.id === phaseId);
+    if (!phase) return [];
+    if (!phase.bills) phase.bills = [];
+    return phase.bills;
+  }
+
+  async function addBill(phaseId, billObj) {
+    const proj = getCurrentProject();
+    if (!proj) return null;
+    const phase = proj.phases.find(p => p.id === phaseId);
+    if (!phase) return null;
+    if (!phase.bills) phase.bills = [];
+    
+    billObj.id = billObj.id || crypto.randomUUID();
+    billObj.timestamp = Date.now();
+    phase.bills.push(billObj);
+    
+    saveLocal();
+    return billObj;
+  }
+
+  async function deleteBill(phaseId, billId) {
+    const proj = getCurrentProject();
+    if (!proj) return;
+    const phase = proj.phases.find(p => p.id === phaseId);
+    if (!phase || !phase.bills) return;
+    
+    phase.bills = phase.bills.filter(b => b.id !== billId);
+    saveLocal();
+  }
+
   function updateProjectInfo(updates) {
     const proj = getCurrentProject();
     if (!proj) return;
@@ -1107,6 +1142,7 @@ const State = (() => {
     addVendor, updateVendor, deleteVendor, addVendorTransaction,
     addMaterial, updateMaterial, deleteMaterial, addMaterialLog,
     addRaBill, updateRaBill, deleteRaBill,
+    getBills, addBill, deleteBill,
     updateProjectInfo, deleteProject, archiveProject,
     get store() { return store; },
     get isCloud() { return _useSupabase; },

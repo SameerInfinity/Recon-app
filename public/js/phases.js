@@ -64,7 +64,12 @@ const Phases = (() => {
   }
 
   function liveTotal(id, label = 'Section Total') {
-    return `<div class="live-total"><span class="live-total-label">${label}</span><span class="live-total-value" id="${id}">₹0</span></div>`;
+    return `<div class="live-total"><span class="live-total-label">${label}</span>
+      <div class="currency-input-wrap" style="width:140px;margin-left:auto">
+        <span class="currency-symbol">₹</span>
+        <input class="field-input mono" type="number" id="${id}" placeholder="0" style="font-size:18px;font-weight:700;color:var(--amber)" oninput="Phases.updatePhase10ManualTotal('${id}', this.value);Financial.scheduleUpdate()">
+      </div>
+    </div>`;
   }
 
   function completionBar(phaseId) {
@@ -492,6 +497,18 @@ const Phases = (() => {
             <div class="category-card-cost" style="font-size:16px">🌅</div>
           </div>
         </button>` : ''}
+        
+        <button class="category-card" onclick="App.showPhaseBills(${phase.id})" style="border-color:var(--charcoal-border)">
+          <span class="category-card-arrow">${iconFor('arrowRight', 14)}</span>
+          <span class="category-card-icon" style="font-size:28px">📸</span>
+          <div class="category-card-name">Bills & Receipts</div>
+          <div class="category-card-desc">AI Photo Scanner for Kachha bills. Extract items automatically.</div>
+          <div class="category-card-meta">
+            <div class="category-card-progress">
+              <div class="category-card-progress-label">${(State.getBills && State.getBills(phase.id).length) || 0} Bills Scanned</div>
+            </div>
+          </div>
+        </button>
       </div>
     </div>`;
   }
@@ -608,7 +625,10 @@ const Phases = (() => {
       ${layoutHtml}
       <div class="live-total" style="margin-top:18px;font-size:14px">
         <span class="live-total-label" style="font-size:12px;color:var(--text-secondary)">${card.name} Total</span>
-        <span class="live-total-value" id="card-total-${phase.id}-${card.id}" style="font-size:20px">${F.fmtFull(cost)}</span>
+        <div class="currency-input-wrap" style="width:140px">
+          <span class="currency-symbol">₹</span>
+          <input class="field-input mono" type="number" id="card-total-${phase.id}-${card.id}" value="${F.fmtFull(cost).replace(/[^0-9.]/g,'')}" style="font-size:18px;font-weight:700;color:var(--amber)" oninput="Phases.updateInputField(${phase.id},'${card.id}','_manual_total',this.value);Financial.scheduleUpdate()">
+        </div>
       </div>
     `)}`;
   }
@@ -621,6 +641,19 @@ const Phases = (() => {
     if (!ph) return;
     if (!ph.data[cardId]) ph.data[cardId] = {};
     ph.data[cardId][fieldKey] = value;
+    if (fieldKey !== '_manual_total') {
+      delete ph.data[cardId]._manual_total;
+    }
+    State.save();
+  }
+
+  function updatePhase10ManualTotal(id, value) {
+    const proj = State.getCurrentProject();
+    if (!proj) return;
+    const ph = proj.phases.find(p => p.id === 10);
+    if (!ph) return;
+    if (!ph.data) ph.data = {};
+    ph.data[`_manual_${id}`] = value;
     State.save();
   }
 
@@ -1535,6 +1568,23 @@ const Phases = (() => {
     if (!ph.data[key]) ph.data[key] = [{}];
     if (!ph.data[key][i]) ph.data[key][i] = {};
     ph.data[key][i][k] = v;
+
+    if (phaseId === 10) {
+      const map = {
+        'floor_prep_rows': 'p10-floor-prep-total',
+        'flooring_int_rows': 'p10-flooring-total',
+        'door_slab_rows': 'p10-door-slab-total',
+        'trim_base_rows': 'p10-trim-base-total',
+        'paint_prep_rows': 'p10-paint-prep-total',
+        'paint_coat_rows': 'p10-paint-coat-total',
+        'glass_rows': 'p10-glass-total',
+        'fixture_int_rows': 'p10-fixture-total'
+      };
+      if (map[key]) {
+        delete ph.data[`_manual_${map[key]}`];
+      }
+    }
+    
     State.save();
   }
 
@@ -2709,6 +2759,6 @@ const Phases = (() => {
     showAddPunchModal, savePunchItem, cyclePunchStatus,
     showAddSubModal, showEditSubModal, saveSub, deleteSub,
     // Per-input card design (trade phases 1-9)
-    updateInputField, renderSingleInputCard, getInputCard,
+    updateInputField, renderSingleInputCard, getInputCard, updatePhase10ManualTotal
   };
 })();

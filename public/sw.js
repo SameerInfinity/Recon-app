@@ -1,4 +1,4 @@
-const CACHE_NAME = 'recon-cache-v4';
+const CACHE_NAME = 'recon-cache-v8';
 const ASSETS = [
   '/',
   '/index.html',
@@ -18,12 +18,15 @@ const ASSETS = [
   '/js/vendor-khata.js',
   '/js/site-inventory.js',
   '/js/ra-bills.js',
+  '/js/bill-scanner.js',
+  '/manifest.json',
   '/icons/icon.svg',
   'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js',
   'https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js'
 ];
 
 self.addEventListener('install', (event) => {
+  self.skipWaiting(); // Force the new SW to activate immediately
   event.waitUntil(
     caches.open(CACHE_NAME).then((cache) => {
       console.log('[Service Worker] Caching all assets');
@@ -41,7 +44,7 @@ self.addEventListener('activate', (event) => {
           return caches.delete(key);
         }
       }));
-    })
+    }).then(() => self.clients.claim()) // Take control of all pages immediately
   );
 });
 

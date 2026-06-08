@@ -499,6 +499,27 @@ const App = (() => {
     showPhaseHub(10);
   }
 
+  // Show the AI Bill Scanner ledger for a given phase
+  function showPhaseBills(phaseId) {
+    currentView = 'phase-bills';
+    currentPhase = phaseId;
+    currentCategory = 'bills';
+    
+    // Update sidebar active state
+    document.querySelectorAll('.phase-btn').forEach(b => b.classList.remove('active'));
+    const activeBtn = document.getElementById(`phase-btn-${phaseId}`);
+    if (activeBtn) activeBtn.classList.add('active');
+
+    const content = document.getElementById('content-area');
+    if (!content) return;
+
+    // Use the new BillScanner module to render the UI
+    content.innerHTML = BillScanner.renderBillsHub(phaseId);
+    content.scrollTop = 0;
+
+    AI.setWatching(`Phase ${phaseId} · Bills Scanner`);
+  }
+
   // Open a single category's detail form
   function showPhaseCategory(phaseId, categoryId) {
     currentView = phaseId === 10 ? 'interior-category' : 'phase-category';
@@ -1007,6 +1028,12 @@ const App = (() => {
 
     const val = el.type === 'checkbox' ? el.checked : el.value;
     phase.data[sectionKey][el.id] = val;
+
+    // Clear Phase 10 manual total override if a sub-field is changed
+    if (phase.id === 10 && !el.id.includes('-total')) {
+      delete phase.data[`_manual_${sectionId}-total`];
+    }
+
     State.save();
   }
 
@@ -1262,7 +1289,7 @@ const App = (() => {
   return {
     init, startNewProject, openProject,
     wizardNext, wizardBack,
-    showPhase, showPhaseHub, showPhaseCategory, showInputCard, showInteriorHub,
+    showPhase, showPhaseHub, showPhaseCategory, showInputCard, showInteriorHub, showPhaseBills,
     showSubLedger, showLabourHub, showVendorHub, showInventoryHub, showRaBillsHub,
     showTools, showColourLab,
     showDashboard: showDashboardHome,
