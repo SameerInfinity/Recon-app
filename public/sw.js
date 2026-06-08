@@ -1,4 +1,4 @@
-const CACHE_NAME = 'recon-cache-v1';
+const CACHE_NAME = 'recon-cache-v2';
 const ASSETS = [
   '/',
   '/index.html',
@@ -14,6 +14,10 @@ const ASSETS = [
   '/js/colour-lab.js',
   '/js/app.js',
   '/js/supabase-client.js',
+  '/js/labour-vendors.js',
+  '/js/vendor-khata.js',
+  '/js/site-inventory.js',
+  '/js/ra-bills.js',
   '/icons/icon.svg',
   'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js',
   'https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js'
