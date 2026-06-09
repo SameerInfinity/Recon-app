@@ -1840,3 +1840,124 @@ body {
   padding-bottom: 8px;
   border-bottom: 1px solid var(--charcoal-border);
 }
+
+/* ══════════════════════════════════════════════════
+   ENTRY MODEL — New save-and-log styles
+   ══════════════════════════════════════════════════ */
+
+/* Entry form save button flash */
+@keyframes entry-saved {
+  0%   { background: var(--amber); transform: scale(1); }
+  50%  { background: var(--success); transform: scale(1.04); }
+  100% { background: var(--amber); transform: scale(1); }
+}
+.entry-save-flash { animation: entry-saved 0.4s ease; }
+
+/* Previous entries table */
+.prev-entries-table { width: 100%; border-collapse: collapse; }
+.prev-entries-table td { vertical-align: top; }
+.prev-entries-table tbody tr:hover { background: var(--charcoal-mid); }
+
+/* 3-card hub grid — equal height cards */
+.category-grid.three-card {
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+}
+.category-grid.three-card .category-card {
+  min-height: 180px;
+  display: flex;
+  flex-direction: column;
+}
+.category-grid.three-card .category-card-meta {
+  margin-top: auto;
+}
+
+/* Entry form total input highlight */
+#ef-total {
+  transition: border-color 0.2s, box-shadow 0.2s;
+}
+#ef-total:focus {
+  outline: none;
+  border-color: var(--amber-light) !important;
+  box-shadow: 0 0 0 3px rgba(232,124,42,0.15);
+}
+
+/* ══════════════════════════════════════════════════
+   MODULE MODALS — Dark theme inputs inside modals
+   ══════════════════════════════════════════════════ */
+.confirm-modal-box input[type="text"],
+.confirm-modal-box input[type="number"],
+.confirm-modal-box input[type="date"],
+.confirm-modal-box select,
+.confirm-modal-box textarea {
+  background: var(--charcoal) !important;
+  border-color: var(--charcoal-border) !important;
+  color: var(--text-primary) !important;
+}
+.confirm-modal-box input:focus,
+.confirm-modal-box select:focus,
+.confirm-modal-box textarea:focus {
+  border-color: var(--amber) !important;
+  outline: none;
+}
+.confirm-modal-box label {
+  color: var(--text-muted) !important;
+}
+.confirm-modal-box h3 {
+  color: var(--text-primary) !important;
+}
+
+/* ══════════════════════════════════════════════════
+   MODULE MODALS — Dark theme inputs inside modals
+   ══════════════════════════════════════════════════ */
+.confirm-modal-box input[type="text"],
+.confirm-modal-box input[type="number"],
+.confirm-modal-box input[type="date"],
+.confirm-modal-box select,
+.confirm-modal-box textarea {
+  background: var(--charcoal) !important;
+  border-color: var(--charcoal-border) !important;
+  color: var(--text-primary) !important;
+}
+.confirm-modal-box input:focus,
+.confirm-modal-box select:focus,
+.confirm-modal-box textarea:focus {
+  border-color: var(--amber) !important;
+  outline: none;
+}
+.confirm-modal-box label {
+  color: var(--text-muted) !important;
+}
+.confirm-modal-box h3 {
+  color: var(--text-primary) !important;
+}
+
+/* Photo status pill */
+#ef-photo-status {
+  padding: 4px 10px;
+  border-radius: 20px;
+  background: var(--charcoal-mid);
+  border: 1px solid var(--charcoal-border);
+  font-size: 11px;
+  transition: background 0.2s, color 0.2s;
+}
+
+/* Breadcrumb back link */
+.breadcrumb a {
+  color: var(--amber);
+  cursor: pointer;
+  text-decoration: none;
+  font-size: 12px;
+}
+.breadcrumb a:hover { text-decoration: underline; }
+
+/* Entry total row in table footer */
+tfoot tr td {
+  font-size: 13px;
+  border-top: 2px solid var(--charcoal-border);
+}
+
+/* Mobile adjustments */
+@media (max-width: 600px) {
+  #ef-total { font-size: 18px !important; width: 130px !important; }
+  .category-grid.three-card { grid-template-columns: 1fr; }
+}

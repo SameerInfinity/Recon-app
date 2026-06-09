@@ -382,14 +382,20 @@ const Financial = (() => {
         }
       }
 
-      // Update inner card totals if they are rendered on screen
-      if (typeof Phases !== 'undefined' && Phases.CATEGORY_REGISTRY && Phases.CATEGORY_REGISTRY[phase.id]) {
-        Phases.CATEGORY_REGISTRY[phase.id].forEach(card => {
-          const cardTotalEl = document.getElementById(`card-total-${phase.id}-${card.id}`);
-          if (cardTotalEl) {
-            const data = phase.data[card.id] || {};
-            const cost = card.costFn(data);
-            cardTotalEl.textContent = fmtFull(cost);
+      // Update hub card costs for phases 1-9 (entry-based hub)
+      if (phase.id >= 1 && phase.id <= 9 && typeof Phases !== 'undefined' && typeof Phases.updateHubTotals === 'function') {
+        try { Phases.updateHubTotals(phase.id); } catch(e) { /* silent */ }
+      }
+
+      // Update inner card totals for phase 10 (interior — old category registry)
+      if (phase.id === 10 && typeof Phases !== 'undefined' && Phases.CATEGORY_REGISTRY && Phases.CATEGORY_REGISTRY[phase.id]) {
+        Phases.CATEGORY_REGISTRY[phase.id].forEach(cat => {
+          const cardTotalEl = document.getElementById(`card-total-${phase.id}-${cat.id}`);
+          if (cardTotalEl && typeof Phases.categoryStats === 'function') {
+            try {
+              const stats = Phases.categoryStats(phase, cat);
+              cardTotalEl.textContent = fmtFull(stats.cost || 0);
+            } catch(e) { /* silent */ }
           }
         });
       }

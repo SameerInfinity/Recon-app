@@ -147,7 +147,7 @@ const Phases = (() => {
       { id: 'binding_wire',    sectionIds: ['p1-binding_wire'],    meta: { name: 'Binding Wire',           icon: 'wrenchScrew',desc: 'Black annealed wire for tying rebar.' } },
       { id: 'adhesive',        sectionIds: ['p1-adhesive'],        meta: { name: 'Adhesive Chemical',      icon: 'insulation',  desc: 'Bonding agents, water-proofing, curing.' } },
       { id: 'other_material',  sectionIds: ['p1-other_material'],  meta: { name: 'Other Civil Materials',  icon: 'listChecks',  desc: 'Brick, block, AAC, water-stops, etc.' } },
-      { id: 'thekedar',        sectionIds: ['p1-thekedar'],        meta: { name: 'Civil Thekedar Payouts', icon: 'userCircle',  desc: 'Daily wages and milestone payouts to the Thekedar.' } },
+      { id: 'thekedar',        sectionIds: ['p1-thekedar'],        meta: { name: 'Civil Labor Costing', icon: 'userCircle',  desc: 'Daily wages and milestone payouts to labor contractors.' } },
     ],
     2: [
       { id: 'floor_tiles',      sectionIds: ['p2-floor_tiles'],      meta: { name: 'Floor Tiles',                  icon: 'ruler',       desc: 'Floor tiles for all rooms.' } },
@@ -761,8 +761,8 @@ const Phases = (() => {
       costFn: d => costAmount(d, 'amount'),
     },
     {
-      id: 'thekedar', name: 'Civil Thekedar Payouts', icon: 'userCircle',
-      desc: 'Daily wage and milestone payouts to the primary Civil Thekedar and masons. One row per payout.',
+      id: 'thekedar', name: 'Civil Labor Costing', icon: 'userCircle',
+      desc: 'Daily wage and milestone payouts to the primary Civil Labor contractor and masons. One entry per payout.',
       fields: [
         F_DATE('date', 'Date'),
         F_TEXT('payee', 'Payee / Worker'),

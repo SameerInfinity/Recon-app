@@ -111,47 +111,19 @@ Schema:
     const phase = proj.phases.find(p => p.id === phaseId);
     if (!phase) return '';
 
-    // Gather scanned bills for this phase
     const bills = State.getBills(phaseId);
-    // Also gather entries with bill photos from ALL phases
-    const entryBills = [];
-    (proj.phases || []).forEach(ph => {
-      if (!ph.data || !ph.data.entries) return;
-      Object.values(ph.data.entries).forEach(arr => {
-        if (!Array.isArray(arr)) return;
-        arr.forEach(entry => {
-          if (entry.billPhotoUrl && entry.total > 0) {
-            entryBills.push({
-              id: entry.id,
-              vendor: (entry.fields && (entry.fields.vendor || entry.fields.payee)) || 'Entry Bill',
-              date: entry.date || '',
-              totalAmount: entry.total || 0,
-              items: [],
-              _fromEntry: true,
-              _sourcePhase: ph.id,
-              _entryData: entry.fields,
-            });
-          }
-        });
-      });
-    });
-    // Merge: scanned bills + entry bills (deduplicate by id)
-    const allBills = [...bills];
-    entryBills.forEach(eb => {
-      if (!allBills.find(b => b.id === eb.id)) allBills.push(eb);
-    });
-    const totalBillsAmount = allBills.reduce((sum, b) => sum + (Number(b.totalAmount) || 0), 0);
+    const totalBillsAmount = bills.reduce((sum, b) => sum + (Number(b.totalAmount) || 0), 0);
 
     let billsHtml = '';
-    if (allBills.length === 0) {
+    if (bills.length === 0) {
       billsHtml = `
         <div style="padding:40px 20px;text-align:center;color:var(--text-muted);background:var(--charcoal-mid);border-radius:12px;border:1px dashed var(--charcoal-border)">
           <div style="font-size:32px;margin-bottom:12px;opacity:0.6">📸</div>
-          <h3 style="font-size:15px;color:var(--text-secondary);margin-bottom:6px">No Bills Yet</h3>
-          <p style="font-size:12px;line-height:1.5;max-width:300px;margin:0 auto">Scan a receipt or add a bill photo when logging a material/labor entry. All bills and entry photos will appear here.</p>
+          <h3 style="font-size:15px;color:var(--text-secondary);margin-bottom:6px">No Bills Scanned Yet</h3>
+          <p style="font-size:12px;line-height:1.5;max-width:300px;margin:0 auto">Snap photos of hardware store receipts (Kachha bills) and AI will extract the items and totals for you.</p>
         </div>`;
     } else {
-      billsHtml = allBills.map(b => {
+      billsHtml = bills.map(b => {
         const itemHtml = (b.items || []).map(i => `
           <div style="display:flex;justify-content:space-between;font-size:11px;color:var(--text-secondary);margin-top:4px">
             <span>${i.qty}x ${i.desc}</span>
@@ -163,12 +135,12 @@ Schema:
         <div class="card" style="margin-bottom:12px">
           <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:12px;border-bottom:1px solid var(--charcoal-border);padding-bottom:12px">
             <div>
-              <div style="font-weight:700;font-size:14px;color:var(--text-primary)">${b.vendor || 'Unknown Shop'}${b._fromEntry ? ' <span style="font-size:10px;color:var(--amber);background:rgba(232,124,42,0.15);padding:2px 6px;border-radius:4px;margin-left:6px">from Entry</span>' : ''}</div>
-              <div style="font-size:11px;color:var(--text-muted);margin-top:4px">${b.date || 'No Date'}${b._sourcePhase ? ' · Phase ' + b._sourcePhase : ''}</div>
+              <div style="font-weight:700;font-size:14px;color:var(--text-primary)">${b.vendor || 'Unknown Shop'}</div>
+              <div style="font-size:11px;color:var(--text-muted);margin-top:4px">${b.date || 'No Date'}</div>
             </div>
             <div style="text-align:right">
               <div class="mono" style="font-size:16px;font-weight:700;color:var(--text-primary)">${Financial.fmtFull(b.totalAmount)}</div>
-              ${b._fromEntry ? '' : `<button class="btn-ghost-sm" style="color:var(--red-light);margin-top:6px;padding:4px 8px;font-size:10px" onclick="BillScanner.deleteBillUI(${phaseId}, '${b.id}')">Delete</button>`}
+              <button class="btn-ghost-sm" style="color:var(--red-light);margin-top:6px;padding:4px 8px;font-size:10px" onclick="BillScanner.deleteBillUI(${phaseId}, '${b.id}')">Delete</button>
             </div>
           </div>
           <div style="background:var(--charcoal-dark);border-radius:6px;padding:8px">

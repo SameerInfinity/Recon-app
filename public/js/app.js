@@ -482,7 +482,7 @@ const App = (() => {
 
     // Update sidebar active state without full re-render
     document.querySelectorAll('.phase-btn').forEach(b => b.classList.remove('active'));
-    const activeBtn = document.getElementById(`phase-btn-${phaseId}`);
+    const activeBtn = document.getElementById(`phase-btn-${phaseId}`) || document.getElementById('phase-btn-interior');
     if (activeBtn) activeBtn.classList.add('active');
 
     const content = document.getElementById('content-area');
@@ -507,7 +507,7 @@ const App = (() => {
     
     // Update sidebar active state
     document.querySelectorAll('.phase-btn').forEach(b => b.classList.remove('active'));
-    const activeBtn = document.getElementById(`phase-btn-${phaseId}`);
+    const activeBtn = document.getElementById(`phase-btn-${phaseId}`) || document.getElementById('phase-btn-interior');
     if (activeBtn) activeBtn.classList.add('active');
 
     const content = document.getElementById('content-area');
