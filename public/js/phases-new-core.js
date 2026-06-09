@@ -24,11 +24,18 @@
 // direct property assignment on the exported Phases object.
 
 // Wait for Phases to be defined
-  (function patchPhases() {
-    if (typeof Phases === 'undefined' || typeof Financial === 'undefined' || typeof State === 'undefined' || typeof BillScanner === 'undefined') {
-      setTimeout(patchPhases, 50);
-      return;
+(function patchPhases(retries = 0) {
+  const MAX_RETRIES = 10;
+  const RETRY_DELAY = 200; // ms
+
+  if (typeof Phases === 'undefined' || typeof Financial === 'undefined' || typeof State === 'undefined' || typeof BillScanner === 'undefined' || typeof App === 'undefined') {
+    if (retries < MAX_RETRIES) {
+      console.log('[PhasesCore] Dependencies not ready (try ' + (retries + 1) + '/' + MAX_RETRIES + ') — retrying in ' + RETRY_DELAY + 'ms.');
+      return setTimeout(() => patchPhases(retries + 1), RETRY_DELAY);
     }
+    console.error('[PhasesCore] Missing dependency after ' + MAX_RETRIES + ' retries — check script load order. Phases:', typeof Phases, 'Financial:', typeof Financial, 'State:', typeof State, 'BillScanner:', typeof BillScanner, 'App:', typeof App);
+    return;
+  }
 
     const F = Financial;
 
@@ -109,7 +116,7 @@
     <div class="category-grid" style="grid-template-columns:repeat(auto-fit,minmax(240px,1fr))">
 
       <!-- Card 1: Material Costs -->
-      <button class="category-card" onclick="Phases.showMaterialHub(${phase.id})">
+      <button class="category-card" onclick="App.showMaterialCards(${phase.id})">
         <span class="category-card-arrow">${Phases.iconFor('arrowRight',14)}</span>
         <span class="category-card-icon">${Phases.iconFor('blocks',32)}</span>
         <div class="category-card-name">Material Costs</div>
@@ -123,7 +130,7 @@
       </button>
 
       <!-- Card 2: Labor Costing -->
-      <button class="category-card" onclick="Phases.showLaborHub(${phase.id})">
+      <button class="category-card" onclick="App.showLaborCards(${phase.id})">
         <span class="category-card-arrow">${Phases.iconFor('arrowRight',14)}</span>
         <span class="category-card-icon">${Phases.iconFor('userCircle',32)}</span>
         <div class="category-card-name">Labor Costing</div>
@@ -191,7 +198,7 @@
     return `
     ${Phases.phaseHeader(phase)}
     <div class="breadcrumb" style="margin-bottom:12px">
-      <a onclick="${groupLabel === 'Labor Costing' ? `Phases.showLaborHub(${phase.id})` : `Phases.showMaterialHub(${phase.id})`};void 0" style="cursor:pointer">${groupLabel}</a>
+      <a onclick="${groupLabel === 'Labor Costing' ? `App.showLaborCards(${phase.id})` : `App.showMaterialCards(${phase.id})`};void 0" style="cursor:pointer">${groupLabel}</a>
       <span class="breadcrumb-sep">›</span>
       <span class="breadcrumb-current">${card.name}</span>
     </div>
@@ -467,7 +474,7 @@
       const entries = getEntries(phaseId, c.id);
       const total = entries.reduce((s,e) => s + (parseFloat(e.total)||0), 0);
       return `
-        <button class="category-card" onclick="Phases.showCardEntryForm(${phaseId},'${c.id}','Material Costs')" style="text-align:left">
+        <button class="category-card" onclick="App.showEntryForm(${phaseId},'${c.id}')" style="text-align:left">
           <span class="category-card-arrow">${Phases.iconFor('arrowRight',14)}</span>
           <span class="category-card-icon">${Phases.iconFor(c.icon||'listChecks',26)}</span>
           <div class="category-card-name">${c.name}</div>
@@ -513,7 +520,7 @@
       const entries = getEntries(phaseId, c.id);
       const total = entries.reduce((s,e) => s + (parseFloat(e.total)||0), 0);
       return `
-        <button class="category-card" onclick="Phases.showCardEntryForm(${phaseId},'${c.id}','Labor Costing')" style="text-align:left">
+        <button class="category-card" onclick="App.showEntryForm(${phaseId},'${c.id}')" style="text-align:left">
           <span class="category-card-arrow">${Phases.iconFor('arrowRight',14)}</span>
           <span class="category-card-icon">${Phases.iconFor(c.icon||'userCircle',26)}</span>
           <div class="category-card-name">${c.name}</div>
@@ -826,19 +833,21 @@
   Phases.renderTradePhase9 = makeTradeRenderer(9);
 
   // Override showInputCard for phases 1-9 to use new entry form
-  const _origShowInputCard = App.showInputCard ? App.showInputCard.bind(App) : null;
-  App.showInputCard = function(phaseId, cardId) {
-    if (phaseId >= 1 && phaseId <= 9) {
-      const allCards = getAllCardsForPhase(phaseId);
-      const card = allCards.find(c => c.id === cardId);
-      if (card) {
-        const isLabor = LABOR_IDS.includes(cardId);
-        Phases.showCardEntryForm(phaseId, cardId, isLabor ? 'Labor Costing' : 'Material Costs');
-        return;
+  const _origShowInputCard = (typeof App !== 'undefined' && App.showInputCard) ? App.showInputCard.bind(App) : null;
+  if (typeof App !== 'undefined') {
+    App.showInputCard = function(phaseId, cardId) {
+      if (phaseId >= 1 && phaseId <= 9) {
+        const allCards = getAllCardsForPhase(phaseId);
+        const card = allCards.find(c => c.id === cardId);
+        if (card) {
+          const isLabor = LABOR_IDS.includes(cardId);
+          Phases.showCardEntryForm(phaseId, cardId, isLabor ? 'Labor Costing' : 'Material Costs');
+          return;
+        }
       }
-    }
-    if (_origShowInputCard) _origShowInputCard(phaseId, cardId);
-  };
+      if (_origShowInputCard) _origShowInputCard(phaseId, cardId);
+    };
+  }
 
   // ── Live hub update function ────────────────────────────
   // Called by Financial.updateAllTotals() to refresh hub card
@@ -869,5 +878,90 @@
 
   Phases.updateHubTotals = updateHubTotals;
 
+  // BUG 6 FIX: Force immediate totals refresh now that the override is applied
+  // This fixes the "₹0 in sidebar" issue when phases-new-core.js loads after
+  // app.js has already rendered the sidebar with old calc results
+  if (typeof Financial !== 'undefined' && Financial.scheduleUpdate) {
+    Financial.scheduleUpdate();
+  }
+
+  // ── BUG FIX: ALL_CARDS_REF must be declared BEFORE renderCardListView uses it ──
+  // Previously it was declared AFTER, causing a TDZ ReferenceError when
+  // Material Costs / Labor Costing cards were clicked.
+  const ALL_CARDS_REF = PHASE_CARD_MAP
+    ? Object.fromEntries(Object.entries(PHASE_CARD_MAP).map(([k, [mat, lab]]) => [k, [...mat, ...lab].reduce((o,c)=>(o[c.id]=c,o),{})]))
+    : {};
+
+  // Also expose renderCardListView and renderEntryForm on Phases so
+  // App.showMaterialCards / App.showLaborCards / App.showEntryForm can call them
+  Phases.renderCardListView = function(phaseId, isLabor) {
+    phaseId = parseInt(phaseId);
+    const proj = State.getCurrentProject();
+    if (!proj) return '<div style="padding:24px">No project loaded</div>';
+    const phase = proj.phases.find(p => p.id === phaseId);
+    if (!phase) return '';
+    const cards = (Object.values(ALL_CARDS_REF[phaseId] || {})).filter(c =>
+      isLabor ? LABOR_IDS.includes(c.id) : !LABOR_IDS.includes(c.id));
+    const label = isLabor ? 'Labor Costing' : 'Material Costs';
+    const total = cards.reduce((s,c) => s + sumEntries(phaseId, c.id), 0);
+    const cardHtml = cards.map(c => {
+      const entries = getEntries(phaseId, c.id);
+      const ct = entries.reduce((s,e) => s + (parseFloat(e.total)||0), 0);
+      return `<button class="category-card" onclick="App.showEntryForm(${phaseId},'${c.id}')" style="text-align:left">
+        <span class="category-card-arrow">${Phases.iconFor('arrowRight',14)}</span>
+        <span class="category-card-icon">${Phases.iconFor(c.icon||'listChecks',28)}</span>
+        <div class="category-card-name">${c.name}</div>
+        <div class="category-card-desc">${c.desc}</div>
+        <div class="category-card-meta">
+          <div class="category-card-progress-label">${entries.length} entr${entries.length!==1?'ies':'y'}</div>
+          <div class="category-card-cost">${F.fmt(ct)}</div>
+        </div>
+      </button>`;
+    }).join('');
+    return `<div class="category-hub">
+      <div class="breadcrumb">
+        <a onclick="App.showPhaseHub(${phaseId})">← ${phase.name}</a>
+        <span class="breadcrumb-sep">›</span>
+        <span class="breadcrumb-current">${label}</span>
+      </div>
+      <div class="category-hub-header">
+        <div>
+          <div class="category-hub-title">${label} — ${phase.name}</div>
+          <div class="category-hub-subtitle">Tap any category to add entries</div>
+        </div>
+        <div class="category-hub-stat">
+          <span class="category-hub-stat-label">${label} Total</span>
+          <span class="category-hub-stat-value" style="color:var(--amber)">${F.fmtFull(total)}</span>
+        </div>
+      </div>
+      <div class="category-grid">${cardHtml}</div>
+    </div>`;
+  };
+
+  Phases.renderEntryForm = function(phaseId, cardId) {
+    phaseId = parseInt(phaseId);
+    // Delegate to showCardEntryForm which writes to content-area directly
+    // Here we just trigger it and return the content-area html
+    const proj = State.getCurrentProject();
+    if (!proj) return '<div style="padding:24px">No project</div>';
+    const phase = proj.phases.find(p => p.id === phaseId);
+    if (!phase) return '';
+    const allCards = getAllCardsForPhase(phaseId);
+    const card = allCards.find(c => c.id === cardId);
+    if (!card) return '<div style="padding:24px">Card not found</div>';
+    const isLabor = LABOR_IDS.includes(cardId);
+    // Render the entry form and return the HTML (App.showEntryForm sets innerHTML)
+    Phases._entryTotalOverride = false;
+    // Use existing renderEntryForm from phases-new-core
+    return renderEntryForm(phase, card, isLabor ? 'Labor Costing' : 'Material Costs');
+  };
+
   console.log('[PhasesCore] Entry model patched — 3-card hub active for phases 1-9');
+
+  // Dispatch an event so app.js (and other modules) can re-render if they
+  // fell back to the "module loading…" message during the init window.
+  if (typeof window !== 'undefined') {
+    window.__phasesCoreReady = true;
+    window.dispatchEvent(new CustomEvent('phasescoreready'));
+  }
 })();

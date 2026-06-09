@@ -448,6 +448,13 @@ const App = (() => {
             <span class="phase-btn-label">Project Tools</span>
             <div class="phase-chip"><span class="phase-pct">Export · AI</span></div>
           </div>
+        </button>
+        <button class="phase-btn ${currentView === 'flat-sales' ? 'active' : ''}" onclick="App.showFlatSales()" id="phase-btn-flatsales">
+          <span class="phase-btn-icon">🏠</span>
+          <div class="phase-btn-content">
+            <span class="phase-btn-label">Flat Sales</span>
+            <div class="phase-chip"><span class="phase-pct">Buyers</span></div>
+          </div>
         </button>`;
     }
 
@@ -518,6 +525,77 @@ const App = (() => {
     content.scrollTop = 0;
 
     AI.setWatching(`Phase ${phaseId} · Bills Scanner`);
+  }
+
+  // ── BUG 3 FIX: New entry-model routing functions ──────────
+  function showMaterialCards(phaseId) {
+    phaseId = parseInt(phaseId);
+    currentView = 'material-cards';
+    currentPhase = phaseId;
+    currentCategory = 'material';
+    const proj = State.getCurrentProject();
+    if (!proj) return;
+    renderSidebar(proj);
+    const content = document.getElementById('content-area');
+    if (!content) return;
+    if (typeof Phases !== 'undefined' && Phases.renderCardListView) {
+      // renderCardListView returns a .category-hub div — wrap in phase-workspace
+      content.innerHTML = `<div class="phase-workspace active">${Phases.renderCardListView(phaseId, false)}</div>`;
+    } else {
+      console.warn('[App] Phases.renderCardListView unavailable — Phases:', typeof Phases, 'renderCardListView:', typeof Phases?.renderCardListView, 'window.__phasesCoreReady:', window.__phasesCoreReady);
+      content.innerHTML = '<div style="padding:24px;color:var(--text-muted)">Material module loading…</div>';
+    }
+    content.scrollTop = 0;
+    document.querySelectorAll('.phase-btn').forEach(b => b.classList.remove('active'));
+    const btn = document.getElementById(`phase-btn-${phaseId}`);
+    if (btn) btn.classList.add('active');
+    AI.setWatching(`Phase ${phaseId} · Material Costs`);
+  }
+
+  function showLaborCards(phaseId) {
+    phaseId = parseInt(phaseId);
+    currentView = 'labor-cards';
+    currentPhase = phaseId;
+    currentCategory = 'labor';
+    const proj = State.getCurrentProject();
+    if (!proj) return;
+    renderSidebar(proj);
+    const content = document.getElementById('content-area');
+    if (!content) return;
+    if (typeof Phases !== 'undefined' && Phases.renderCardListView) {
+      // renderCardListView returns a .category-hub div — wrap in phase-workspace
+      content.innerHTML = `<div class="phase-workspace active">${Phases.renderCardListView(phaseId, true)}</div>`;
+    } else {
+      console.warn('[App] Phases.renderCardListView (labor) unavailable — Phases:', typeof Phases, 'renderCardListView:', typeof Phases?.renderCardListView, 'window.__phasesCoreReady:', window.__phasesCoreReady);
+      content.innerHTML = '<div style="padding:24px;color:var(--text-muted)">Labour module loading…</div>';
+    }
+    content.scrollTop = 0;
+    document.querySelectorAll('.phase-btn').forEach(b => b.classList.remove('active'));
+    const btn = document.getElementById(`phase-btn-${phaseId}`);
+    if (btn) btn.classList.add('active');
+    AI.setWatching(`Phase ${phaseId} · Labor Costing`);
+  }
+
+  function showEntryForm(phaseId, cardId) {
+    phaseId = parseInt(phaseId);
+    currentView = 'entry-form';
+    currentPhase = phaseId;
+    currentCategory = cardId;
+    const proj = State.getCurrentProject();
+    if (!proj) return;
+    renderSidebar(proj);
+    const content = document.getElementById('content-area');
+    if (!content) return;
+    if (typeof Phases !== 'undefined' && Phases.renderEntryForm) {
+      content.innerHTML = `<div class="phase-workspace active">${Phases.renderEntryForm(phaseId, cardId)}</div>`;
+    } else {
+      console.warn('[App] Phases.renderEntryForm unavailable — Phases:', typeof Phases, 'renderEntryForm:', typeof Phases?.renderEntryForm, 'window.__phasesCoreReady:', window.__phasesCoreReady);
+      content.innerHTML = '<div style="padding:24px;color:var(--text-muted)">Entry form loading…</div>';
+    }
+    content.scrollTop = 0;
+    document.querySelectorAll('.phase-btn').forEach(b => b.classList.remove('active'));
+    const btn = document.getElementById(`phase-btn-${phaseId}`);
+    if (btn) btn.classList.add('active');
   }
 
   // Open a single category's detail form
@@ -667,6 +745,7 @@ const App = (() => {
     if (typeof LabourVendors !== 'undefined' && LabourVendors.renderLabourHub) {
       content.innerHTML = LabourVendors.renderLabourHub();
     } else {
+      console.warn('[App] LabourVendors.renderLabourHub unavailable — LabourVendors:', typeof LabourVendors, 'renderLabourHub:', typeof LabourVendors?.renderLabourHub);
       content.innerHTML = '<div style="padding:24px">Labour module loading...</div>';
     }
   }
@@ -732,6 +811,42 @@ const App = (() => {
   }
 
 
+
+  function showFlatSales() {
+    currentView = 'flat-sales';
+    currentPhase = null;
+    currentCategory = null;
+    const proj = State.getCurrentProject();
+    if (!proj) return;
+    renderSidebar(proj);
+
+    const content = document.getElementById('content-area');
+    if (!content) return;
+
+    if (typeof FlatSales !== 'undefined' && FlatSales.renderHub) {
+      content.innerHTML = FlatSales.renderHub();
+    } else {
+      console.warn('[App] FlatSales.renderHub unavailable — FlatSales:', typeof FlatSales, 'renderHub:', typeof FlatSales?.renderHub);
+      content.innerHTML = '<div style="padding:24px;color:var(--text-muted)">Flat Sales module loading…</div>';
+    }
+    content.scrollTop = 0;
+    AI.setWatching('Flat Sales');
+  }
+
+  function showFlatSalesBuyer(buyerId) {
+    currentView = 'flat-sales-buyer';
+    const proj = State.getCurrentProject();
+    if (!proj) return;
+    renderSidebar(proj);
+
+    const content = document.getElementById('content-area');
+    if (!content) return;
+
+    if (typeof FlatSales !== 'undefined' && FlatSales.renderBuyerDetail) {
+      content.innerHTML = FlatSales.renderBuyerDetail(buyerId);
+    }
+    content.scrollTop = 0;
+  }
 
   function showSubLedger() {
     currentView = 'subcontractors';
@@ -1271,13 +1386,47 @@ const App = (() => {
 
   // ── Init ──────────────────────────────────────────────────
   async function boot() {
-    // Wait for state to finish loading from Supabase (or localStorage fallback)
+    // Wait for state to finish loading (localStorage first, then Supabase)
     try {
       await State.load();
     } catch (err) {
       console.warn('[App] State load error:', err);
     }
     init();
+
+    // BUG 5 FIX: After Supabase sync completes, re-render the UI
+    // so fresh cloud data replaces the localStorage snapshot
+    window.addEventListener('statesynced', () => {
+      console.log('[App] Supabase sync complete — refreshing UI');
+      const proj = State.getCurrentProject();
+      if (proj) {
+        // Re-render sidebar with updated totals
+        renderSidebar(proj);
+        // Re-render current view
+        if (currentView === 'overview' || currentView === 'dashboard') {
+          showOverview();
+        } else if (currentPhase && currentPhase >= 1 && currentPhase <= 10) {
+          showPhaseHub(currentPhase);
+        }
+        // Always refresh totals
+        if (typeof Financial !== 'undefined') Financial.updateAllTotals();
+      } else {
+        // No project after sync — show welcome
+        const projects = State.getProjects();
+        if (projects.length > 0) showWelcomeWithProjects(projects);
+        else showWelcome();
+      }
+    }, { once: false });
+
+    // Listen for phases-new-core.js patching (even without Supabase)
+    // so we can re-render if the user clicked Material/Labor during
+    // the retry window and got a fallback "module loading…" message.
+    window.addEventListener('phasescoreready', () => {
+      console.log('[App] Phases core ready — re-rendering current view if needed');
+      if (currentView === 'material-cards') showMaterialCards(currentPhase);
+      else if (currentView === 'labor-cards') showLaborCards(currentPhase);
+      else if (currentView === 'entry-form') showEntryForm(currentPhase, currentCategory);
+    });
   }
 
   if (document.readyState === 'loading') {
@@ -1290,8 +1439,9 @@ const App = (() => {
     init, startNewProject, openProject,
     wizardNext, wizardBack,
     showPhase, showPhaseHub, showPhaseCategory, showInputCard, showInteriorHub, showPhaseBills,
+    showMaterialCards, showLaborCards, showEntryForm,
     showSubLedger, showLabourHub, showVendorHub, showInventoryHub, showRaBillsHub,
-    showTools, showColourLab,
+    showTools, showColourLab, showFlatSales, showFlatSalesBuyer,
     showDashboard: showDashboardHome,
     showOverview,
     toggleSidebar, toggleSidebarGroup, toggleAI, minimizeAI, closeAI,

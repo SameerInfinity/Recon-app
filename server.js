@@ -16,8 +16,18 @@ const PORT = process.env.PORT || 8080;
 app.use(cors());
 app.use(express.json({ limit: '1mb' }));
 
-// Serve static frontend
-app.use(express.static(path.join(__dirname, 'public')));
+// Serve static frontend — set aggressive no-cache for code assets
+// Using setHeaders inside express.static ensures headers are applied before
+// the file is sent, unlike separate app.get() routes that run after static.
+app.use(express.static(path.join(__dirname, 'public'), {
+  setHeaders: (res, filePath) => {
+    if (filePath.endsWith('sw.js') || filePath.endsWith('.js') || filePath.endsWith('.css') || filePath.endsWith('.html')) {
+      res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
+      res.setHeader('Pragma', 'no-cache');
+      res.setHeader('Expires', '0');
+    }
+  }
+}));
 
 // ── Expose safe config to frontend ─────────
 app.get('/api/config', (req, res) => {

@@ -24,12 +24,15 @@
 // direct property assignment on the exported Phases object.
 
 // Wait for Phases to be defined
-(function patchPhases() {
-  if (typeof Phases === 'undefined') {
-    return setTimeout(patchPhases, 50);
-  }
+  (function patchPhases() {
+    if (typeof Phases === 'undefined' || typeof Financial === 'undefined' || typeof State === 'undefined' || typeof BillScanner === 'undefined') {
+      // This should not happen since index.html loads scripts in order.
+      // If it does, log clearly rather than silently retrying.
+      console.error('[PhasesCore] Missing dependency — check script load order in index.html. Phases:', typeof Phases, 'Financial:', typeof Financial, 'State:', typeof State, 'BillScanner:', typeof BillScanner);
+      return;
+    }
 
-  const F = Financial;
+    const F = Financial;
 
   // ── Entry storage helpers ──────────────────────────────────
   // Each entry is stored in phase.data.entries[cardId] = [ {...}, ... ]
@@ -93,43 +96,45 @@
   function renderTradeHubNew(phase, materialCards, laborCards) {
     const materialTotal = materialCards.reduce((s, c) => s + sumEntries(phase.id, c.id), 0);
     const laborTotal    = laborCards.reduce((s, c)    => s + sumEntries(phase.id, c.id), 0);
-    const billTotal     = (State.getBills(phase.id)||[]).reduce((s,b) => s + (parseFloat(b.total)||0), 0);
+    const billTotal     = (State.getBills(phase.id)||[]).reduce((s,b) => s + (parseFloat(b.totalAmount)||0), 0);
     const phaseTotal    = materialTotal + laborTotal + billTotal;
+    const matCount      = materialCards.reduce((s,c)=>s+getEntries(phase.id,c.id).length,0);
+    const labCount      = laborCards.reduce((s,c)=>s+getEntries(phase.id,c.id).length,0);
     const billCount     = (State.getBills(phase.id)||[]).length;
 
     return `
     ${Phases.phaseHeader(phase)}
     <div style="margin-bottom:20px;background:var(--charcoal-mid);border:1px solid var(--charcoal-border);border-radius:var(--radius-lg);padding:14px 18px;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:12px">
       <div style="font-size:11px;color:var(--text-muted);text-transform:uppercase;letter-spacing:.08em;font-weight:700">${phase.name} — Running Total</div>
-      <div style="font-family:var(--font-mono);font-size:26px;font-weight:700;color:var(--amber-light)">${F.fmtFull(phaseTotal)}</div>
+      <div id="hub-running-total-${phase.id}" style="font-family:var(--font-mono);font-size:26px;font-weight:700;color:var(--amber-light)">${F.fmtFull(phaseTotal)}</div>
     </div>
     <div class="category-grid" style="grid-template-columns:repeat(auto-fit,minmax(240px,1fr))">
 
       <!-- Card 1: Material Costs -->
-      <button class="category-card" onclick="Phases.showMaterialHub(${phase.id})">
+      <button class="category-card" onclick="App.showMaterialCards(${phase.id})">
         <span class="category-card-arrow">${Phases.iconFor('arrowRight',14)}</span>
         <span class="category-card-icon">${Phases.iconFor('blocks',32)}</span>
         <div class="category-card-name">Material Costs</div>
         <div class="category-card-desc">Log every material purchase — cement, steel, tiles, paint, pipes and more. Each entry saved with date and bill photo.</div>
         <div class="category-card-meta">
           <div class="category-card-progress">
-            <div class="category-card-progress-label">${materialCards.reduce((s,c)=>s+getEntries(phase.id,c.id).length,0)} entries</div>
+            <div class="category-card-progress-label" id="hub-material-count-${phase.id}">${matCount} entries</div>
           </div>
-          <div class="category-card-cost" style="color:var(--amber)">${F.fmt(materialTotal)}</div>
+          <div class="category-card-cost" id="hub-material-cost-${phase.id}" style="color:var(--amber)">${F.fmt(materialTotal)}</div>
         </div>
       </button>
 
       <!-- Card 2: Labor Costing -->
-      <button class="category-card" onclick="Phases.showLaborHub(${phase.id})">
+      <button class="category-card" onclick="App.showLaborCards(${phase.id})">
         <span class="category-card-arrow">${Phases.iconFor('arrowRight',14)}</span>
         <span class="category-card-icon">${Phases.iconFor('userCircle',32)}</span>
         <div class="category-card-name">Labor Costing</div>
-        <div class="category-card-desc">Record all payments to contractors, Thekedars, daily wage workers and labor milestones.</div>
+        <div class="category-card-desc">Record all payments to contractors, daily wage workers and labor milestones.</div>
         <div class="category-card-meta">
           <div class="category-card-progress">
-            <div class="category-card-progress-label">${laborCards.reduce((s,c)=>s+getEntries(phase.id,c.id).length,0)} entries</div>
+            <div class="category-card-progress-label" id="hub-labor-count-${phase.id}">${labCount} entries</div>
           </div>
-          <div class="category-card-cost" style="color:var(--amber)">${F.fmt(laborTotal)}</div>
+          <div class="category-card-cost" id="hub-labor-cost-${phase.id}" style="color:var(--amber)">${F.fmt(laborTotal)}</div>
         </div>
       </button>
 
@@ -141,9 +146,9 @@
         <div class="category-card-desc">View all scanned bills and receipts for this phase. AI extracts vendor, amount, and items from photos.</div>
         <div class="category-card-meta">
           <div class="category-card-progress">
-            <div class="category-card-progress-label">${billCount} bill${billCount !== 1 ? 's' : ''} scanned</div>
+            <div class="category-card-progress-label" id="hub-bill-count-${phase.id}">${billCount} bill${billCount !== 1 ? 's' : ''} scanned</div>
           </div>
-          <div class="category-card-cost" style="color:var(--amber)">${F.fmt(billTotal)}</div>
+          <div class="category-card-cost" id="hub-bill-total-${phase.id}" style="color:var(--amber)">${F.fmt(billTotal)}</div>
         </div>
       </button>
 
@@ -158,7 +163,9 @@
     const entries = getEntries(phase.id, card.id);
     const cardTotal = entries.reduce((s,e) => s + (parseFloat(e.total)||0), 0);
 
-    const fieldRows = card.fields.map(f => {
+    // Filter out 'date' field from card fields — the entry form already has ef-entry-date
+    const cardFields = card.fields.filter(f => f.key !== 'date');
+    const fieldRows = cardFields.map(f => {
       let ctrl = '';
       const bStyle = 'background:var(--charcoal);border:1px solid var(--charcoal-border);color:var(--text-primary);padding:8px 10px;border-radius:6px;font-family:var(--font-body);font-size:13px;width:100%;box-sizing:border-box';
       if (f.type === 'select') {
@@ -186,7 +193,7 @@
     return `
     ${Phases.phaseHeader(phase)}
     <div class="breadcrumb" style="margin-bottom:12px">
-      <a onclick="Phases.showMaterialHub(${phase.id});void 0" style="cursor:pointer">${groupLabel}</a>
+      <a onclick="${groupLabel === 'Labor Costing' ? `App.showLaborCards(${phase.id})` : `App.showMaterialCards(${phase.id})`};void 0" style="cursor:pointer">${groupLabel}</a>
       <span class="breadcrumb-sep">›</span>
       <span class="breadcrumb-current">${card.name}</span>
     </div>
@@ -317,10 +324,11 @@
   Phases._entryTotalOverride = false;
 
   Phases._entryAutoCalc = function(phaseId, cardId) {
-    if (Phases._entryTotalOverride) return;
+    // Reset the override flag so that changing other fields always
+    // re-enables auto-calculation (only the total field itself sets it)
+    Phases._entryTotalOverride = false;
     const ph = State.getCurrentProject()?.phases?.find(p => p.id == phaseId);
     if (!ph) return;
-    // Get the card def
     const allCards = getAllCardsForPhase(parseInt(phaseId));
     const card = allCards.find(c => c.id === cardId);
     if (!card) return;
@@ -331,7 +339,7 @@
     });
     const cost = card.costFn(data);
     const el = document.getElementById('ef-total');
-    if (el && cost > 0) { el.value = cost; Phases._entryTotalOverride = false; }
+    if (el && cost >= 0) { el.value = cost || ''; }
   };
 
   Phases._saveEntryForm = function(phaseId, cardId, fieldsSpec) {
@@ -422,10 +430,10 @@
           if (result.date) {
             const dateEl = document.getElementById('ef-entry-date');
             if (dateEl) dateEl.value = result.date;
-          }
-          if (result.total_amount) {
+          }          const detectedTotal = parseFloat(result.total_amount) || parseFloat(result.totalAmount) || 0;
+          if (detectedTotal > 0) {
             const totalEl = document.getElementById('ef-total');
-            if (totalEl && !Phases._entryTotalOverride) totalEl.value = result.total_amount;
+            if (totalEl && !Phases._entryTotalOverride) totalEl.value = detectedTotal;
           }
           if (statusEl) statusEl.textContent = '✅ AI filled fields';
           App.toast('AI auto-filled from bill photo', 'success');
@@ -461,7 +469,7 @@
       const entries = getEntries(phaseId, c.id);
       const total = entries.reduce((s,e) => s + (parseFloat(e.total)||0), 0);
       return `
-        <button class="category-card" onclick="Phases.showCardEntryForm(${phaseId},'${c.id}','Material Costs')" style="text-align:left">
+        <button class="category-card" onclick="App.showEntryForm(${phaseId},'${c.id}')" style="text-align:left">
           <span class="category-card-arrow">${Phases.iconFor('arrowRight',14)}</span>
           <span class="category-card-icon">${Phases.iconFor(c.icon||'listChecks',26)}</span>
           <div class="category-card-name">${c.name}</div>
@@ -507,7 +515,7 @@
       const entries = getEntries(phaseId, c.id);
       const total = entries.reduce((s,e) => s + (parseFloat(e.total)||0), 0);
       return `
-        <button class="category-card" onclick="Phases.showCardEntryForm(${phaseId},'${c.id}','Labor Costing')" style="text-align:left">
+        <button class="category-card" onclick="App.showEntryForm(${phaseId},'${c.id}')" style="text-align:left">
           <span class="category-card-arrow">${Phases.iconFor('arrowRight',14)}</span>
           <span class="category-card-icon">${Phases.iconFor(c.icon||'userCircle',26)}</span>
           <div class="category-card-name">${c.name}</div>
@@ -610,7 +618,7 @@
     { id:'other_material', name:'Other Civil Materials', icon:'listChecks', desc:'Brick, block, AAC, water-stops, anything else.',
       fields:[{key:'item',label:'Item Description',type:'text'},{key:'amount',label:'Amount (₹)',type:'number'},{key:'vendor',label:'Vendor',type:'text'}],
       costFn: d => amtC(d,'amount') },
-    { id:'thekedar', name:'Civil Labor Costing', icon:'userCircle', desc:'Daily wages and payouts to Thekedar and masons.',
+    { id:'thekedar', name:'Civil Labor Costing', icon:'userCircle', desc:'Daily wages and payouts to labor contractors and masons.',
       fields:[{key:'date',label:'Date',type:'date'},{key:'payee',label:'Payee / Worker',type:'text'},{key:'work',label:'Work Description',type:'text'},{key:'amount',label:'Amount (₹)',type:'number'},{key:'mode',label:'Mode',type:'select',options:['Cash','UPI','Cheque','NEFT']}],
       costFn: d => amtC(d,'amount') },
   ];
@@ -768,12 +776,12 @@
       costFn: d => amtC(d,'amount') },
   ];
 
-  // ── Patch financial.js to use entries for phase totals ────
+// ── Patch financial.js to use entries for phase totals ────
   // Override computePhaseTotal to use entry-based sums for phases 1-9
   const _origComputePhaseTotal = Financial.computePhaseTotal;
   Financial.computePhaseTotal = function(phase) {
     if (phase.id >= 1 && phase.id <= 9) {
-      return sumAllEntries(phase.id) + ((State.getBills && State.getBills(phase.id))||[]).reduce((s,b)=>s+(parseFloat(b.total)||0),0);
+      return sumAllEntries(phase.id) + ((State.getBills && State.getBills(phase.id))||[]).reduce((s,b)=>s+(parseFloat(b.totalAmount)||0),0);
     }
     return _origComputePhaseTotal(phase);
   };
@@ -797,6 +805,17 @@
       return renderTradeHubNew(phase, mat, lab);
     };
   }
+
+  // Override renderPhaseHub for phases 1-9 to use new 3-card hub
+  const _origRenderPhaseHub = Phases.renderPhaseHub ? Phases.renderPhaseHub.bind(Phases) : null;
+  Phases.renderPhaseHub = function(phase) {
+    if (phase.id >= 1 && phase.id <= 9) {
+      const [mat, lab] = PHASE_CARD_MAP[phase.id];
+      return renderTradeHubNew(phase, mat, lab);
+    }
+    // For Phase 10 and others, use original
+    return _origRenderPhaseHub ? _origRenderPhaseHub(phase) : '';
+  };
 
   Phases.renderTradePhase1 = makeTradeRenderer(1);
   Phases.renderTradePhase2 = makeTradeRenderer(2);
@@ -823,9 +842,110 @@
     if (_origShowInputCard) _origShowInputCard(phaseId, cardId);
   };
 
-  // Expose for public use from bill-scanner.js
-  BillScanner.compressImagePublic = BillScanner.compressImagePublic || (typeof BillScanner._compressImage === 'function' ? BillScanner._compressImage : null);
-  BillScanner.scanBillWithAIPublic = BillScanner.scanBillWithAIPublic || (typeof BillScanner._scanBillWithAI === 'function' ? BillScanner._scanBillWithAI : null);
+  // ── Live hub update function ────────────────────────────
+  // Called by Financial.updateAllTotals() to refresh hub card
+  // costs without a full re-render.
+  function updateHubTotals(phaseId) {
+    const proj = State.getCurrentProject();
+    if (!proj) return;
+    const phase = proj.phases.find(p => p.id === phaseId);
+    if (!phase) return;
+    const [mat, lab] = PHASE_CARD_MAP[phaseId] || [[], []];
+    const materialTotal = mat.reduce((s, c) => s + sumEntries(phaseId, c.id), 0);
+    const laborTotal    = lab.reduce((s, c) => s + sumEntries(phaseId, c.id), 0);
+    const bills         = (State.getBills(phaseId) || []);
+    const billTotal     = bills.reduce((s, b) => s + (parseFloat(b.totalAmount) || 0), 0);
+    const phaseTotal    = materialTotal + laborTotal + billTotal;
+    const matCount      = mat.reduce((s, c) => s + getEntries(phaseId, c.id).length, 0);
+    const labCount      = lab.reduce((s, c) => s + getEntries(phaseId, c.id).length, 0);
+
+    const updateEl = (id, val) => { const el = document.getElementById(id); if (el) el.textContent = val; };
+    updateEl(`hub-running-total-${phaseId}`, F.fmtFull(phaseTotal));
+    updateEl(`hub-material-cost-${phaseId}`, F.fmt(materialTotal));
+    updateEl(`hub-labor-cost-${phaseId}`,    F.fmt(laborTotal));
+    updateEl(`hub-material-count-${phaseId}`, matCount + ' entries');
+    updateEl(`hub-labor-count-${phaseId}`,    labCount + ' entries');
+    updateEl(`hub-bill-count-${phaseId}`,     bills.length + ' bill' + (bills.length !== 1 ? 's' : '') + ' scanned');
+    updateEl(`hub-bill-total-${phaseId}`,     F.fmt(billTotal));
+  }
+
+  Phases.updateHubTotals = updateHubTotals;
+
+  // BUG 6 FIX: Force immediate totals refresh now that the override is applied
+  // This fixes the "₹0 in sidebar" issue when phases-new-core.js loads after
+  // app.js has already rendered the sidebar with old calc results
+  if (typeof Financial !== 'undefined' && Financial.scheduleUpdate) {
+    Financial.scheduleUpdate();
+  }
+
+  // Also expose renderCardListView and renderEntryForm on Phases so
+  // App.showMaterialCards / App.showLaborCards / App.showEntryForm can call them
+  Phases.renderCardListView = function(phaseId, isLabor) {
+    phaseId = parseInt(phaseId);
+    const proj = State.getCurrentProject();
+    if (!proj) return '<div style="padding:24px">No project loaded</div>';
+    const phase = proj.phases.find(p => p.id === phaseId);
+    if (!phase) return '';
+    const cards = (Object.values(ALL_CARDS_REF[phaseId] || {})).filter(c =>
+      isLabor ? LABOR_IDS.includes(c.id) : !LABOR_IDS.includes(c.id));
+    const label = isLabor ? 'Labor Costing' : 'Material Costs';
+    const total = cards.reduce((s,c) => s + sumEntries(phaseId, c.id), 0);
+    const cardHtml = cards.map(c => {
+      const entries = getEntries(phaseId, c.id);
+      const ct = entries.reduce((s,e) => s + (parseFloat(e.total)||0), 0);
+      return `<button class="category-card" onclick="App.showEntryForm(${phaseId},'${c.id}')" style="text-align:left">
+        <span class="category-card-arrow">${Phases.iconFor('arrowRight',14)}</span>
+        <span class="category-card-icon">${Phases.iconFor(c.icon||'listChecks',28)}</span>
+        <div class="category-card-name">${c.name}</div>
+        <div class="category-card-desc">${c.desc}</div>
+        <div class="category-card-meta">
+          <div class="category-card-progress-label">${entries.length} entr${entries.length!==1?'ies':'y'}</div>
+          <div class="category-card-cost">${F.fmt(ct)}</div>
+        </div>
+      </button>`;
+    }).join('');
+    return `<div class="category-hub">
+      <div class="breadcrumb">
+        <a onclick="App.showPhaseHub(${phaseId})">← ${phase.name}</a>
+        <span class="breadcrumb-sep">›</span>
+        <span class="breadcrumb-current">${label}</span>
+      </div>
+      <div class="category-hub-header">
+        <div>
+          <div class="category-hub-title">${label} — ${phase.name}</div>
+          <div class="category-hub-subtitle">Tap any category to add entries</div>
+        </div>
+        <div class="category-hub-stat">
+          <span class="category-hub-stat-label">${label} Total</span>
+          <span class="category-hub-stat-value" style="color:var(--amber)">${F.fmtFull(total)}</span>
+        </div>
+      </div>
+      <div class="category-grid">${cardHtml}</div>
+    </div>`;
+  };
+
+  Phases.renderEntryForm = function(phaseId, cardId) {
+    phaseId = parseInt(phaseId);
+    // Delegate to showCardEntryForm which writes to content-area directly
+    // Here we just trigger it and return the content-area html
+    const proj = State.getCurrentProject();
+    if (!proj) return '<div style="padding:24px">No project</div>';
+    const phase = proj.phases.find(p => p.id === phaseId);
+    if (!phase) return '';
+    const allCards = getAllCardsForPhase(phaseId);
+    const card = allCards.find(c => c.id === cardId);
+    if (!card) return '<div style="padding:24px">Card not found</div>';
+    const isLabor = LABOR_IDS.includes(cardId);
+    // Render the entry form and return the HTML (App.showEntryForm sets innerHTML)
+    Phases._entryTotalOverride = false;
+    // Use existing renderEntryForm from phases-new-core
+    return renderEntryForm(phase, card, isLabor ? 'Labor Costing' : 'Material Costs');
+  };
+
+  // Expose ALL_CARDS_REF for renderCardListView
+  const ALL_CARDS_REF = PHASE_CARD_MAP
+    ? Object.fromEntries(Object.entries(PHASE_CARD_MAP).map(([k, [mat, lab]]) => [k, [...mat, ...lab].reduce((o,c)=>(o[c.id]=c,o),{})]))
+    : {};
 
   console.log('[PhasesCore] Entry model patched — 3-card hub active for phases 1-9');
 })();

@@ -65,16 +65,22 @@ const App = (() => {
       try {
         const total = Financial.computeProjectTotal(p) || 0;
         const pct = p.totalBudget > 0 ? Math.round((total / p.totalBudget) * 100) : 0;
-        return `<button class="existing-project-btn" onclick="App.openProject('${p.id}')">
-          <div style="min-width:0">
-            <div style="font-weight:700;font-size:14px">${p.name}</div>
-            <div style="font-size:11px;color:var(--text-muted);margin-top:2px">${p.address || 'No address'} ${p.client ? '· ' + p.client : ''}</div>
-          </div>
-          <div style="text-align:right;flex-shrink:0">
-            <div style="font-family:var(--font-mono);color:var(--steel-light);font-weight:600">${Financial.fmtFull(total)}</div>
-            ${p.totalBudget > 0 ? `<div style="font-size:10px;color:var(--text-muted);margin-top:2px">${pct}% of budget</div>` : ''}
-          </div>
-        </button>`;
+        const safeName = p.name.replace(/'/g, "\\'").replace(/"/g, '&quot;');
+        return `<div class="existing-project-row">
+          <button class="existing-project-btn" onclick="App.openProject('${p.id}')">
+            <div style="min-width:0">
+              <div style="font-weight:700;font-size:14px">${p.name}</div>
+              <div style="font-size:11px;color:var(--text-muted);margin-top:2px">${p.address || 'No address'} ${p.client ? '· ' + p.client : ''}</div>
+            </div>
+            <div style="text-align:right;flex-shrink:0">
+              <div style="font-family:var(--font-mono);color:var(--steel-light);font-weight:600">${Financial.fmtFull(total)}</div>
+              ${p.totalBudget > 0 ? `<div style="font-size:10px;color:var(--text-muted);margin-top:2px">${pct}% of budget</div>` : ''}
+            </div>
+          </button>
+          <button class="existing-project-delete-btn" title="Delete project" onclick="App.confirmDeleteProjectById('${p.id}', '${safeName}', event)">
+            🗑
+          </button>
+        </div>`;
       } catch (e) {
         console.warn('[App] Skipping project in welcome list (render error):', e);
         return '';
@@ -378,10 +384,10 @@ const App = (() => {
     if (interiorPhase) {
       html += groupHeader('interior', 'sofa', 'Interior', interiorCollapsed);
       if (!interiorCollapsed) {
-        const intTotal = Financial.computePhaseTotal(interiorPhase);
-        const intActive = currentView === 'interior-hub' || currentView === 'interior-category';
-        html += `
-          <button class="phase-btn ${intActive ? 'active' : ''}" onclick="App.showInteriorHub()" id="phase-btn-interior">
+      const intTotal = Financial.computePhaseTotal(interiorPhase);
+      const intActive = currentView === 'interior-hub' || currentView === 'interior-category' || currentView === 'colour-lab';
+      html += `
+        <button class="phase-btn ${intActive ? 'active' : ''}" onclick="App.showInteriorHub()" id="phase-btn-interior">
             <span class="phase-btn-icon">${Phases.iconFor('sofa', 15)}</span>
             <div class="phase-btn-content">
               <span class="phase-btn-label">Interior Finish</span>
@@ -406,6 +412,34 @@ const App = (() => {
           <div class="phase-btn-content">
             <span class="phase-btn-label">Subcontractors</span>
             <div class="phase-chip"><span class="phase-pct">Ledger</span></div>
+          </div>
+        </button>
+        <button class="phase-btn ${currentView === 'labour-hub' ? 'active' : ''}" onclick="App.showLabourHub()" id="phase-btn-labour">
+          <span class="phase-btn-icon">👷</span>
+          <div class="phase-btn-content">
+            <span class="phase-btn-label">Labour (Hajiri)</span>
+            <div class="phase-chip"><span class="phase-pct">Attendance</span></div>
+          </div>
+        </button>
+        <button class="phase-btn ${currentView === 'vendor-hub' ? 'active' : ''}" onclick="App.showVendorHub()" id="phase-btn-vendor">
+          <span class="phase-btn-icon">🏪</span>
+          <div class="phase-btn-content">
+            <span class="phase-btn-label">Vendor Khata</span>
+            <div class="phase-chip"><span class="phase-pct">Udhaar</span></div>
+          </div>
+        </button>
+        <button class="phase-btn ${currentView === 'inventory-hub' ? 'active' : ''}" onclick="App.showInventoryHub()" id="phase-btn-inventory">
+          <span class="phase-btn-icon">📦</span>
+          <div class="phase-btn-content">
+            <span class="phase-btn-label">Site Stock</span>
+            <div class="phase-chip"><span class="phase-pct">Inventory</span></div>
+          </div>
+        </button>
+        <button class="phase-btn ${currentView === 'ra-bills' ? 'active' : ''}" onclick="App.showRaBillsHub()" id="phase-btn-ra">
+          <span class="phase-btn-icon">🧾</span>
+          <div class="phase-btn-content">
+            <span class="phase-btn-label">RA Bills</span>
+            <div class="phase-chip"><span class="phase-pct">Invoices</span></div>
           </div>
         </button>
         <button class="phase-btn ${currentView === 'tools' ? 'active' : ''}" onclick="App.showTools()" id="phase-btn-tools">
@@ -448,7 +482,7 @@ const App = (() => {
 
     // Update sidebar active state without full re-render
     document.querySelectorAll('.phase-btn').forEach(b => b.classList.remove('active'));
-    const activeBtn = document.getElementById(`phase-btn-${phaseId}`);
+    const activeBtn = document.getElementById(`phase-btn-${phaseId}`) || document.getElementById('phase-btn-interior');
     if (activeBtn) activeBtn.classList.add('active');
 
     const content = document.getElementById('content-area');
@@ -463,6 +497,85 @@ const App = (() => {
   // Interior gets its own dedicated entry point (no "Phase 9" numbering)
   function showInteriorHub() {
     showPhaseHub(10);
+  }
+
+  // Show the AI Bill Scanner ledger for a given phase
+  function showPhaseBills(phaseId) {
+    currentView = 'phase-bills';
+    currentPhase = phaseId;
+    currentCategory = 'bills';
+    
+    // Update sidebar active state
+    document.querySelectorAll('.phase-btn').forEach(b => b.classList.remove('active'));
+    const activeBtn = document.getElementById(`phase-btn-${phaseId}`) || document.getElementById('phase-btn-interior');
+    if (activeBtn) activeBtn.classList.add('active');
+
+    const content = document.getElementById('content-area');
+    if (!content) return;
+
+    // Use the new BillScanner module to render the UI
+    content.innerHTML = BillScanner.renderBillsHub(phaseId);
+    content.scrollTop = 0;
+
+    AI.setWatching(`Phase ${phaseId} · Bills Scanner`);
+  }
+
+  // ── BUG 3 FIX: New entry-model routing functions ──────────
+  function showMaterialCards(phaseId) {
+    phaseId = parseInt(phaseId);
+    currentView = 'material-cards';
+    currentPhase = phaseId;
+    currentCategory = 'material';
+    const proj = State.getCurrentProject();
+    if (!proj) return;
+    renderSidebar(proj);
+    const content = document.getElementById('content-area');
+    if (!content) return;
+    if (typeof Phases !== 'undefined' && Phases.renderCardListView) {
+      content.innerHTML = `<div class="phase-workspace active">${Phases.renderCardListView(phaseId, false)}</div>`;
+    }
+    content.scrollTop = 0;
+    document.querySelectorAll('.phase-btn').forEach(b => b.classList.remove('active'));
+    const btn = document.getElementById(`phase-btn-${phaseId}`);
+    if (btn) btn.classList.add('active');
+  }
+
+  function showLaborCards(phaseId) {
+    phaseId = parseInt(phaseId);
+    currentView = 'labor-cards';
+    currentPhase = phaseId;
+    currentCategory = 'labor';
+    const proj = State.getCurrentProject();
+    if (!proj) return;
+    renderSidebar(proj);
+    const content = document.getElementById('content-area');
+    if (!content) return;
+    if (typeof Phases !== 'undefined' && Phases.renderCardListView) {
+      content.innerHTML = `<div class="phase-workspace active">${Phases.renderCardListView(phaseId, true)}</div>`;
+    }
+    content.scrollTop = 0;
+    document.querySelectorAll('.phase-btn').forEach(b => b.classList.remove('active'));
+    const btn = document.getElementById(`phase-btn-${phaseId}`);
+    if (btn) btn.classList.add('active');
+  }
+
+  function showEntryForm(phaseId, cardId) {
+    phaseId = parseInt(phaseId);
+    currentView = 'entry-form';
+    currentPhase = phaseId;
+    currentCategory = cardId;
+    const proj = State.getCurrentProject();
+    if (!proj) return;
+    renderSidebar(proj);
+    const content = document.getElementById('content-area');
+    if (!content) return;
+    if (typeof Phases !== 'undefined' && Phases.renderEntryForm) {
+      content.innerHTML = Phases.renderEntryForm(phaseId, cardId);
+    }
+    content.scrollTop = 0;
+    document.querySelectorAll('.phase-btn').forEach(b => b.classList.remove('active'));
+    const btn = document.getElementById(`phase-btn-${phaseId}`);
+    if (btn) btn.classList.add('active');
   }
 
   // Open a single category's detail form
@@ -598,6 +711,86 @@ const App = (() => {
     Financial.updateAllTotals();
   }
 
+  function showLabourHub() {
+    currentView = 'labour-hub';
+    currentPhase = null;
+    currentCategory = null;
+    const proj = State.getCurrentProject();
+    if (!proj) return;
+    renderSidebar(proj);
+
+    const content = document.getElementById('content-area');
+    if (!content) return;
+
+    if (typeof LabourVendors !== 'undefined' && LabourVendors.renderLabourHub) {
+      content.innerHTML = LabourVendors.renderLabourHub();
+    } else {
+      content.innerHTML = '<div style="padding:24px">Labour module loading...</div>';
+    }
+  }
+
+  function showVendorHub() {
+    currentView = 'vendor-hub';
+    currentPhase = null;
+    currentCategory = null;
+    const proj = State.getCurrentProject();
+    if (!proj) return;
+    renderSidebar(proj);
+
+    const content = document.getElementById('content-area');
+    if (!content) return;
+
+    if (typeof VendorKhata !== 'undefined' && VendorKhata.renderVendorHub) {
+      content.innerHTML = VendorKhata.renderVendorHub();
+    } else {
+      content.innerHTML = '<div style="padding:24px">Vendor Khata module loading...</div>';
+    }
+    content.scrollTop = 0;
+    AI.setWatching('Vendor Khata');
+  }
+
+  function showInventoryHub() {
+    currentView = 'inventory-hub';
+    currentPhase = null;
+    currentCategory = null;
+    const proj = State.getCurrentProject();
+    if (!proj) return;
+    renderSidebar(proj);
+
+    const content = document.getElementById('content-area');
+    if (!content) return;
+
+    if (typeof SiteInventory !== 'undefined' && SiteInventory.renderInventoryHub) {
+      content.innerHTML = SiteInventory.renderInventoryHub();
+    } else {
+      content.innerHTML = '<div style="padding:24px">Site Inventory module loading...</div>';
+    }
+    content.scrollTop = 0;
+    AI.setWatching('Site Stock');
+  }
+
+  function showRaBillsHub() {
+    currentView = 'ra-bills';
+    currentPhase = null;
+    currentCategory = null;
+    const proj = State.getCurrentProject();
+    if (!proj) return;
+    renderSidebar(proj);
+
+    const content = document.getElementById('content-area');
+    if (!content) return;
+
+    if (typeof RaBills !== 'undefined' && RaBills.renderRaBillsHub) {
+      content.innerHTML = RaBills.renderRaBillsHub();
+    } else {
+      content.innerHTML = '<div style="padding:24px">RA Bills module loading...</div>';
+    }
+    content.scrollTop = 0;
+    AI.setWatching('RA Bills');
+  }
+
+
+
   function showSubLedger() {
     currentView = 'subcontractors';
     currentPhase = 0;
@@ -628,7 +821,45 @@ const App = (() => {
     AI.setWatching('Subcontractor Ledger');
   }
 
-  // New "Tools" view — bundles export + AI insights
+  // ── Colour Lab (Interior Colour Visualiser) ───────────────
+  function showColourLab() {
+    currentView = 'colour-lab';
+    currentPhase = 10;
+    currentCategory = null;
+    const content = document.getElementById('content-area');
+    if (!content) return;
+
+    // Clear any previous canvas
+    if (typeof ColourLab !== 'undefined' && ColourLab.destroy) ColourLab.destroy();
+
+    document.querySelectorAll('.phase-btn').forEach(b => b.classList.remove('active'));
+    const interiorBtn = document.getElementById('phase-btn-interior');
+    if (interiorBtn) interiorBtn.classList.add('active');
+
+    content.innerHTML = `
+      <div class="phase-workspace active">
+        <div class="breadcrumb">
+          <a onclick="App.showOverview()">Overview</a>
+          <span class="breadcrumb-sep">›</span>
+          <a onclick="App.showInteriorHub()">Interior Finish</a>
+          <span class="breadcrumb-sep">›</span>
+          <span class="breadcrumb-current">🎨 Colour Lab</span>
+        </div>
+        <button class="back-to-hub" onclick="App.showInteriorHub()">
+          ← Back to Interior categories
+        </button>
+        ${typeof ColourLab !== 'undefined' ? ColourLab.renderView() : '<p>Colour Lab not loaded.</p>'}
+      </div>`;
+
+    // Init canvas after DOM is painted
+    setTimeout(() => {
+      if (typeof ColourLab !== 'undefined') ColourLab.init();
+    }, 60);
+
+    content.scrollTop = 0;
+    AI.setWatching('Colour Lab');
+  }
+
   function showTools() {
     currentView = 'tools';
     currentPhase = 0;
@@ -855,6 +1086,12 @@ const App = (() => {
 
     const val = el.type === 'checkbox' ? el.checked : el.value;
     phase.data[sectionKey][el.id] = val;
+
+    // Clear Phase 10 manual total override if a sub-field is changed
+    if (phase.id === 10 && !el.id.includes('-total')) {
+      delete phase.data[`_manual_${sectionId}-total`];
+    }
+
     State.save();
   }
 
@@ -909,6 +1146,150 @@ const App = (() => {
     }, 3500);
   }
 
+  // ── Generic Modal ──────────────────────────────────────────
+  function showModal(contentHtml) {
+    let modal = document.getElementById('generic-modal');
+    if (!modal) {
+      modal = document.createElement('div');
+      modal.id = 'generic-modal';
+      document.body.appendChild(modal);
+    }
+    modal.className = 'confirm-modal-overlay';
+    modal.innerHTML = `
+      <div class="confirm-modal-box" style="max-width: 500px; text-align: left;">
+        <div id="generic-modal-body">${contentHtml}</div>
+      </div>
+    `;
+    modal.classList.remove('hidden');
+    modal.style.display = 'flex'; // ensures visibility
+  }
+
+  function closeModal() {
+    const modal = document.getElementById('generic-modal');
+    if (modal) {
+      modal.classList.add('hidden');
+      modal.style.display = 'none';
+    }
+  }
+
+  // ── Confirm Delete Modal ───────────────────────────────────
+  let _confirmAction = null;
+  let _confirmRequired = null; // string that must be typed, or null
+
+  function showConfirmModal({ icon = '🗑', title, body, confirmLabel = 'Delete', confirmRequired = null, onConfirm }) {
+    _confirmAction = onConfirm;
+    _confirmRequired = confirmRequired;
+
+    document.getElementById('confirm-modal-icon').textContent = icon;
+    document.getElementById('confirm-modal-title').textContent = title;
+    document.getElementById('confirm-modal-body').textContent = body;
+    document.getElementById('confirm-modal-btn').textContent = confirmLabel;
+
+    const inputWrap = document.getElementById('confirm-modal-input-wrap');
+    const input = document.getElementById('confirm-modal-input');
+    if (confirmRequired) {
+      inputWrap.style.display = 'block';
+      document.getElementById('confirm-modal-input-label').textContent = `Type "${confirmRequired}" to confirm:`;
+      input.placeholder = confirmRequired;
+      input.value = '';
+      document.getElementById('confirm-modal-btn').disabled = true;
+    } else {
+      inputWrap.style.display = 'none';
+      document.getElementById('confirm-modal-btn').disabled = false;
+    }
+
+    document.getElementById('confirm-modal').classList.remove('hidden');
+    if (confirmRequired) setTimeout(() => input.focus(), 100);
+  }
+
+  function closeConfirmModal(e) {
+    if (e && e.target !== document.getElementById('confirm-modal')) return;
+    document.getElementById('confirm-modal').classList.add('hidden');
+    _confirmAction = null;
+    _confirmRequired = null;
+  }
+
+  function onConfirmInput() {
+    if (!_confirmRequired) return;
+    const val = document.getElementById('confirm-modal-input').value;
+    document.getElementById('confirm-modal-btn').disabled = (val !== _confirmRequired);
+  }
+
+  async function executeConfirmAction() {
+    if (!_confirmAction) return;
+    const btn = document.getElementById('confirm-modal-btn');
+    btn.disabled = true;
+    btn.textContent = 'Deleting…';
+    try {
+      await _confirmAction();
+    } catch (err) {
+      toast('Delete failed: ' + (err.message || err), 'warning');
+    }
+    document.getElementById('confirm-modal').classList.add('hidden');
+    _confirmAction = null;
+    _confirmRequired = null;
+  }
+
+  // ── Delete Project ─────────────────────────────────────────
+  function confirmDeleteProject() {
+    const proj = State.getCurrentProject();
+    // Close user dropdown
+    document.getElementById('user-dropdown')?.classList.add('hidden');
+    if (!proj) {
+      toast('No project open to delete', 'warning');
+      return;
+    }
+    showConfirmModal({
+      icon: '🗑',
+      title: `Delete "${proj.name}"?`,
+      body: `All phases, subcontractors, invoices and punch items in this project will be permanently deleted. This cannot be undone.`,
+      confirmLabel: 'Delete Project',
+      onConfirm: async () => {
+        await State.deleteProject(proj.id);
+        showDashboardHome();
+        toast('Project deleted', 'success');
+      }
+    });
+  }
+
+  // Called from the welcome screen project list
+  function confirmDeleteProjectById(id, name, e) {
+    e?.stopPropagation();
+    showConfirmModal({
+      icon: '🗑',
+      title: `Delete "${name}"?`,
+      body: `All data for this project will be permanently removed. This cannot be undone.`,
+      confirmLabel: 'Delete Project',
+      onConfirm: async () => {
+        await State.deleteProject(id);
+        const remaining = State.getProjects();
+        if (remaining.length > 0) showWelcomeWithProjects(remaining);
+        else showWelcome();
+        toast('Project deleted', 'success');
+      }
+    });
+  }
+
+  // ── Delete Account ─────────────────────────────────────────
+  function confirmDeleteAccount() {
+    document.getElementById('user-dropdown')?.classList.add('hidden');
+    const user = SupabaseClient.getUser?.();
+    const email = user?.email || 'your account';
+    showConfirmModal({
+      icon: '⚠️',
+      title: 'Delete Your Account?',
+      body: `This will permanently delete ${email} and ALL your projects, phases, subcontractors, and data. This cannot be undone.`,
+      confirmLabel: 'Delete Everything',
+      confirmRequired: 'DELETE',
+      onConfirm: async () => {
+        await SupabaseClient.deleteUser();
+        try { localStorage.clear(); } catch {}
+        toast('Account deleted. Redirecting…', 'success');
+        setTimeout(() => { window.location.href = '/auth.html'; }, 1200);
+      }
+    });
+  }
+
   // ── User Menu ──────────────────────────────────────────────
   function _closeMenuOnOutsideClick(e) {
     if (!e.target.closest('#user-menu')) {
@@ -921,6 +1302,9 @@ const App = (() => {
   function toggleUserMenu() {
     const dd = document.getElementById('user-dropdown');
     if (!dd) return;
+    // Show/hide delete-project button based on whether a project is open
+    const delProjBtn = document.getElementById('btn-delete-project');
+    if (delProjBtn) delProjBtn.style.display = State.getCurrentProject() ? 'block' : 'none';
     dd.classList.toggle('hidden');
     // Close on outside click — single persistent listener
     if (!dd.classList.contains('hidden')) {
@@ -945,13 +1329,37 @@ const App = (() => {
 
   // ── Init ──────────────────────────────────────────────────
   async function boot() {
-    // Wait for state to finish loading from Supabase (or localStorage fallback)
+    // Wait for state to finish loading (localStorage first, then Supabase)
     try {
       await State.load();
     } catch (err) {
       console.warn('[App] State load error:', err);
     }
     init();
+
+    // BUG 5 FIX: After Supabase sync completes, re-render the UI
+    // so fresh cloud data replaces the localStorage snapshot
+    window.addEventListener('statesynced', () => {
+      console.log('[App] Supabase sync complete — refreshing UI');
+      const proj = State.getCurrentProject();
+      if (proj) {
+        // Re-render sidebar with updated totals
+        renderSidebar(proj);
+        // Re-render current view
+        if (currentView === 'overview' || currentView === 'dashboard') {
+          showOverview();
+        } else if (currentPhase && currentPhase >= 1 && currentPhase <= 10) {
+          showPhaseHub(currentPhase);
+        }
+        // Always refresh totals
+        if (typeof Financial !== 'undefined') Financial.updateAllTotals();
+      } else {
+        // No project after sync — show welcome
+        const projects = State.getProjects();
+        if (projects.length > 0) showWelcomeWithProjects(projects);
+        else showWelcome();
+      }
+    }, { once: false });
   }
 
   if (document.readyState === 'loading') {
@@ -963,13 +1371,18 @@ const App = (() => {
   return {
     init, startNewProject, openProject,
     wizardNext, wizardBack,
-    showPhase, showPhaseHub, showPhaseCategory, showInputCard, showInteriorHub,
-    showSubLedger, showTools,
+    showPhase, showPhaseHub, showPhaseCategory, showInputCard, showInteriorHub, showPhaseBills,
+    showMaterialCards, showLaborCards, showEntryForm,
+    showSubLedger, showLabourHub, showVendorHub, showInventoryHub, showRaBillsHub,
+    showTools, showColourLab,
     showDashboard: showDashboardHome,
     showOverview,
     toggleSidebar, toggleSidebarGroup, toggleAI, minimizeAI, closeAI,
     sendAIMessage, exportPDF, exportExcel,
-    toggleUserMenu, signOut,
+    toggleUserMenu, signOut, toast, showModal, closeModal,
+    // Delete system
+    showConfirmModal, closeConfirmModal, onConfirmInput, executeConfirmAction,
+    confirmDeleteProject, confirmDeleteProjectById, confirmDeleteAccount,
     toast,
   };
 })();

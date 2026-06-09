@@ -8,22 +8,30 @@
 <title>RECON — Construction Financial Ledger</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Barlow:wght@400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500;600;700&family=Barlow+Condensed:wght@600;700;800&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Barlow:wght@400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500;600;700&family=Barlow+Condensed:wght@600;700;800&display=swap" rel="stylesheet" crossorigin>
 <link rel="manifest" href="/manifest.json">
 <link rel="icon" href="/icons/icon.svg" type="image/svg+xml">
 <script>
+  // Unregister ALL old service workers first, then register fresh v10
   if ('serviceWorker' in navigator) {
-    window.addEventListener('load', () => {
-      navigator.serviceWorker.register('/sw.js').then(reg => {
-        console.log('[Service Worker] Registered:', reg.scope);
-      }).catch(err => {
+    window.addEventListener('load', async () => {
+      // Ensure any old SW is unregistered before registering new one
+      const registrations = await navigator.serviceWorker.getRegistrations();
+      for (const reg of registrations) {
+        await reg.unregister();
+        console.log('[SW] Unregistered old service worker');
+      }
+      try {
+        const reg = await navigator.serviceWorker.register('/sw.js');
+        console.log('[Service Worker] Registered v10:', reg.scope);
+      } catch (err) {
         console.log('[Service Worker] Registration failed:', err);
-      });
+      }
     });
   }
 </script>
 <!-- Main Styles -->
-<link rel="stylesheet" href="css/main.css">
+<link rel="stylesheet" href="css/main.css?v=10">
 </head>
 <body>
 
@@ -258,23 +266,24 @@
 @keyframes slideUp { from { transform: translateY(12px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
 </style>
 
-<script src="js/supabase-client.js"></script>
-<script src="js/icons.js"></script>
-<script src="js/state.js"></script>
-<script src="js/financial.js"></script>
-<script src="js/dashboard.js"></script>
-<script src="js/phases.js"></script>
-<script src="js/ai.js"></script>
+<script src="js/supabase-client.js?v=10"></script>
+<script src="js/icons.js?v=10"></script>
+<script src="js/state.js?v=10"></script>
+<script src="js/financial.js?v=10"></script>
+<script src="js/dashboard.js?v=10"></script>
+<script src="js/phases.js?v=10"></script>
+<script src="js/ai.js?v=10"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
-<script src="js/export.js"></script>
-<script src="js/colour-lab.js"></script>
-<script src="js/labour-vendors.js"></script>
-<script src="js/vendor-khata.js"></script>
-<script src="js/site-inventory.js"></script>
-<script src="js/ra-bills.js"></script>
-<script src="js/bill-scanner.js"></script>
-<script src="js/app.js"></script>
-<script src="js/phases-new-core.js"></script>
+<script src="js/export.js?v=10"></script>
+<script src="js/colour-lab.js?v=10"></script>
+<script src="js/labour-vendors.js?v=10"></script>
+<script src="js/vendor-khata.js?v=10"></script>
+<script src="js/site-inventory.js?v=10"></script>
+<script src="js/ra-bills.js?v=10"></script>
+<script src="js/bill-scanner.js?v=10"></script>
+<script src="js/phases-new-core.js?v=10"></script>
+<script src="js/flat-sales.js?v=10"></script>
+<script src="js/app.js?v=10"></script>
 <script>
   // Wait for Supabase + all icon helpers to be ready, then inject
   // the topbar SVGs. We do NOT redirect to auth.html here — that

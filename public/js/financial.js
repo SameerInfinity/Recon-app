@@ -327,19 +327,28 @@ const Financial = (() => {
     try {
       if (!phase || typeof phase !== 'object') return 0;
       const d = phase.data || {};
-      switch (phase.id) {
-        case 1:  return calcPhase1(d);
-        case 2:  return calcPhase2(d);
-        case 3:  return calcPhase3(d);
-        case 4:  return calcPhase4(d);
-        case 5:  return calcPhase5(d);
-        case 6:  return calcPhase6(d);
-        case 7:  return calcPhase7(d);
-        case 8:  return calcPhase8(d);
-        case 9:  return calcPhase9(d);
-        case 10: return calcPhase10(d);
-        default: return 0;
+
+      // Phases 1-9: entry-based model
+      // Sum all saved entries across all cards + scanned bills
+      // phases-new-core.js overrides this after it loads, but we also
+      // handle it here as a fallback so the old calc never returns stale ₹0
+      if (phase.id >= 1 && phase.id <= 9) {
+        let entryTotal = 0;
+        if (d.entries && typeof d.entries === 'object') {
+          Object.values(d.entries).forEach(arr => {
+            if (Array.isArray(arr)) {
+              arr.forEach(e => { entryTotal += parseFloat(e.total) || 0; });
+            }
+          });
+        }
+        const bills = (typeof State !== 'undefined' && State.getBills) ? (State.getBills(phase.id) || []) : (phase.bills || []);
+        const billTotal = bills.reduce((s, b) => s + (parseFloat(b.totalAmount) || 0), 0);
+        return entryTotal + billTotal;
       }
+
+      // Phase 10: Interior — uses its own detailed calc
+      if (phase.id === 10) return calcPhase10(d);
+      return 0;
     } catch (err) {
       console.warn('[Financial] computePhaseTotal error for phase', phase?.id, err.message);
       return 0;

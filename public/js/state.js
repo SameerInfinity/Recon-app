@@ -64,6 +64,21 @@ const State = (() => {
     return phases;
   }
 
+  function parseJsonIfNeeded(val) {
+    if (typeof val === 'string') {
+      try {
+        let parsed = val;
+        while (typeof parsed === 'string') {
+          parsed = JSON.parse(parsed);
+        }
+        return parsed || {};
+      } catch (e) {
+        return {};
+      }
+    }
+    return val || {};
+  }
+
   // 9 trade-based construction phases (1-9) + Interior (#10).
   // The 9 trades reflect the standard Indian contractor workflow:
   // civil structure, tiles, paint, electrical, fabrication, plumbing,
@@ -162,6 +177,7 @@ const State = (() => {
           try {
             await loadFromSupabase();
             console.log('[State] Loaded from Supabase');
+            _notifySynced(); // Tell app.js to re-render with fresh data
           } catch (err) {
             console.warn('[State] Supabase load failed, using localStorage:', err.message);
           }
@@ -176,11 +192,19 @@ const State = (() => {
     _loadResolvers.forEach(r => r());
     _loadResolvers = [];
 
-    // Notify any listeners waiting for load
+    // Notify listeners waiting for initial load
     if (typeof window !== 'undefined') {
       window.dispatchEvent(new CustomEvent('stateloaded'));
     }
     return store;
+  }
+
+  // Called after Supabase sync completes — triggers a UI re-render
+  // so fresh cloud data is shown even if localStorage rendered first
+  function _notifySynced() {
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('statesynced'));
+    }
   }
 
   function onLoaded(cb) {
@@ -196,6 +220,11 @@ const State = (() => {
         // Add any missing phases (e.g. phase 10 added to schema)
         if (Array.isArray(store.projects)) {
           store.projects.forEach(p => {
+            if (Array.isArray(p.phases)) {
+              p.phases.forEach(ph => {
+                ph.data = parseJsonIfNeeded(ph.data);
+              });
+            }
             for (let i = 1; i <= 10; i++) {
               if (!p.phases.find(ph => ph.id === i)) {
                 const meta = DEFAULT_PHASE_META[i - 1];
@@ -210,6 +239,7 @@ const State = (() => {
             if (!p.materials) p.materials = [];
             if (!p.materialLogs) p.materialLogs = [];
             if (!p.raBills) p.raBills = [];
+            if (!p.buyers) p.buyers = [];
           });
         }
         const normalized = normalizePhaseIcons(store.projects);
@@ -264,7 +294,7 @@ const State = (() => {
         name: p.name,
         icon: p.icon,
         completion: p.completion || 0,
-        data: p.data || {},
+        data: parseJsonIfNeeded(p.data),
       }));
 
       // Fill missing phases (1-10: 9 trades + interior)
@@ -364,7 +394,7 @@ const State = (() => {
           name: p.name,
           icon: p.icon,
           completion: p.completion || 0,
-          data: JSON.stringify(p.data || {}),
+          data: p.data || {},
         }));
         const { error: migPhaseErr } = await client.from('phases').insert(phaseInserts);
         if (migPhaseErr) console.warn('[State] Migration phase insert warning:', migPhaseErr.message);
@@ -492,18 +522,23 @@ const State = (() => {
         archived: proj.archived || false,
       }).eq('id', proj.id);
 
-      // Update phases
+      // Update phases — .select() captures the returned UUID into _dbId
+      // so subsequent saves UPSERT the same row instead of inserting duplicates
       for (const phase of proj.phases) {
-        await client.from('phases').upsert({
+        const { data: upserted } = await client.from('phases').upsert({
           id: phase._dbId || undefined,
           project_id: proj.id,
           phase_number: phase.id,
           name: phase.name,
           icon: phase.icon,
           completion: phase.completion || 0,
-          data: JSON.stringify(phase.data || {}),
-        }, { onConflict: 'project_id,phase_number' });
+          data: phase.data || {},
+        }, { onConflict: 'project_id,phase_number' }).select('id').single();
+        // Write UUID back so next save hits the same row
+        if (upserted?.id && !phase._dbId) phase._dbId = upserted.id;
       }
+      // Persist _dbIds back to localStorage so they survive a page reload
+      saveLocal();
 
     } catch (err) {
       console.warn('[State] Supabase save error:', err.message);
@@ -582,6 +617,7 @@ const State = (() => {
       materials: [],
       materialLogs: [],
       raBills: [],
+      buyers: [],
       archived: false,
     };
 
@@ -614,7 +650,7 @@ const State = (() => {
           name: p.name,
           icon: p.icon,
           completion: 0,
-          data: JSON.stringify({}),
+          data: {},
         }));
         const { error: phaseErr } = await client.from('phases').insert(phaseInserts);
         if (phaseErr) console.warn('[State] Phase insert warning:', phaseErr.message);
@@ -1128,8 +1164,62 @@ const State = (() => {
     saveLocal();
   }
 
-  // Initial load (sync)
-  loadLocal();
+  // ── Flat Sales (Buyer Ledger) ─────────────────────────────
+  function addBuyer(buyer) {
+    const proj = getCurrentProject();
+    if (!proj) return null;
+    if (!proj.buyers) proj.buyers = [];
+    buyer.id = buyer.id || generateId();
+    buyer.createdAt = new Date().toISOString();
+    buyer.payments = buyer.payments || [];
+    proj.buyers.push(buyer);
+    saveLocal();
+    return buyer;
+  }
+
+  function updateBuyer(id, updates) {
+    const proj = getCurrentProject();
+    if (!proj || !proj.buyers) return;
+    const idx = proj.buyers.findIndex(b => b.id === id);
+    if (idx >= 0) Object.assign(proj.buyers[idx], updates);
+    saveLocal();
+  }
+
+  function deleteBuyer(id) {
+    const proj = getCurrentProject();
+    if (!proj || !proj.buyers) return;
+    proj.buyers = proj.buyers.filter(b => b.id !== id);
+    saveLocal();
+  }
+
+  function addBuyerPayment(buyerId, payment) {
+    const proj = getCurrentProject();
+    if (!proj || !proj.buyers) return null;
+    const buyer = proj.buyers.find(b => b.id === buyerId);
+    if (!buyer) return null;
+    if (!buyer.payments) buyer.payments = [];
+    payment.id = payment.id || generateId();
+    payment.createdAt = new Date().toISOString();
+    buyer.payments.push(payment);
+    saveLocal();
+    return payment;
+  }
+
+  function deleteBuyerPayment(buyerId, paymentId) {
+    const proj = getCurrentProject();
+    if (!proj || !proj.buyers) return;
+    const buyer = proj.buyers.find(b => b.id === buyerId);
+    if (!buyer || !buyer.payments) return;
+    buyer.payments = buyer.payments.filter(p => p.id !== paymentId);
+    saveLocal();
+  }
+
+  function getBuyers() {
+    const proj = getCurrentProject();
+    if (!proj) return [];
+    if (!proj.buyers) proj.buyers = [];
+    return proj.buyers;
+  }
 
   return {
     load, save, onLoaded,
@@ -1143,6 +1233,7 @@ const State = (() => {
     addMaterial, updateMaterial, deleteMaterial, addMaterialLog,
     addRaBill, updateRaBill, deleteRaBill,
     getBills, addBill, deleteBill,
+    getBuyers, addBuyer, updateBuyer, deleteBuyer, addBuyerPayment, deleteBuyerPayment,
     updateProjectInfo, deleteProject, archiveProject,
     get store() { return store; },
     get isCloud() { return _useSupabase; },

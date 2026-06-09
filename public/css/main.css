@@ -1961,3 +1961,36 @@ tfoot tr td {
   #ef-total { font-size: 18px !important; width: 130px !important; }
   .category-grid.three-card { grid-template-columns: 1fr; }
 }
+
+/* ── Flat Sales module ─────────────────────────────────────── */
+.fs-buyer-row {
+  background: var(--charcoal-mid);
+  border: 1px solid var(--charcoal-border);
+  border-radius: 12px;
+  padding: 20px;
+  cursor: pointer;
+  transition: border-color .15s, box-shadow .15s;
+}
+.fs-buyer-row:hover {
+  border-color: var(--amber-muted);
+  box-shadow: 0 4px 20px rgba(0,0,0,.3);
+}
+.fs-progress-bar {
+  background: var(--charcoal);
+  border-radius: 4px;
+  height: 6px;
+  overflow: hidden;
+  max-width: 400px;
+}
+.fs-progress-fill {
+  height: 100%;
+  background: var(--amber);
+  border-radius: 4px;
+  transition: width .3s;
+}
+.fs-proof-thumb {
+  height: 36px;
+  border-radius: 4px;
+  cursor: pointer;
+  object-fit: cover;
+}
