@@ -44,20 +44,24 @@
   // Each entry has: { id, date, fields, total, notes, billPhotoUrl, createdAt }
 
   function getEntries(phaseId, cardId) {
+    phaseId = Number(phaseId);
     const proj = State.getCurrentProject();
     if (!proj) return [];
-    const ph = proj.phases.find(p => p.id === phaseId);
+    const ph = proj.phases.find(p => Number(p.id) === Number(phaseId));
     if (!ph) return [];
+    if (!ph.data) ph.data = {};
     if (!ph.data.entries) ph.data.entries = {};
     if (!ph.data.entries[cardId]) ph.data.entries[cardId] = [];
     return ph.data.entries[cardId];
   }
 
   function saveEntry(phaseId, cardId, entry) {
+    phaseId = Number(phaseId);
     const proj = State.getCurrentProject();
     if (!proj) return;
-    const ph = proj.phases.find(p => p.id === phaseId);
+    const ph = proj.phases.find(p => Number(p.id) === Number(phaseId));
     if (!ph) return;
+    if (!ph.data) ph.data = {};
     if (!ph.data.entries) ph.data.entries = {};
     if (!ph.data.entries[cardId]) ph.data.entries[cardId] = [];
     // Upsert by id
@@ -68,26 +72,33 @@
   }
 
   function deleteEntry(phaseId, cardId, entryId) {
+    phaseId = Number(phaseId);
     const proj = State.getCurrentProject();
     if (!proj) return;
-    const ph = proj.phases.find(p => p.id === phaseId);
-    if (!ph || !ph.data.entries || !ph.data.entries[cardId]) return;
+    const ph = proj.phases.find(p => Number(p.id) === Number(phaseId));
+    if (!ph || !ph.data || !ph.data.entries || !ph.data.entries[cardId]) return;
     ph.data.entries[cardId] = ph.data.entries[cardId].filter(e => e.id !== entryId);
+    if (typeof State !== 'undefined' && State.deleteLocalImage) {
+      State.deleteLocalImage(entryId + '_bill');
+      State.deleteLocalImage(entryId + '_proof');
+    }
     State.save();
     Financial.scheduleUpdate();
   }
 
   // Sum all saved entries for a cardId
   function sumEntries(phaseId, cardId) {
+    phaseId = Number(phaseId);
     return getEntries(phaseId, cardId).reduce((s, e) => s + (parseFloat(e.total) || 0), 0);
   }
 
   // Sum all entries for a whole phase across all cards
   function sumAllEntries(phaseId) {
+    phaseId = Number(phaseId);
     const proj = State.getCurrentProject();
     if (!proj) return 0;
-    const ph = proj.phases.find(p => p.id === phaseId);
-    if (!ph || !ph.data.entries) return 0;
+    const ph = proj.phases.find(p => Number(p.id) === Number(phaseId));
+    if (!ph || !ph.data || !ph.data.entries) return 0;
     return Object.values(ph.data.entries).reduce((s, arr) => {
       return s + (Array.isArray(arr) ? arr.reduce((ss, e) => ss + (parseFloat(e.total) || 0), 0) : 0);
     }, 0);
@@ -108,10 +119,13 @@
     const billCount     = (State.getBills(phase.id)||[]).length;
 
     return `
-    ${Phases.phaseHeader(phase)}
-    <div style="margin-bottom:20px;background:var(--charcoal-mid);border:1px solid var(--charcoal-border);border-radius:var(--radius-lg);padding:14px 18px;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:12px">
-      <div style="font-size:11px;color:var(--text-muted);text-transform:uppercase;letter-spacing:.08em;font-weight:700">${phase.name} — Running Total</div>
-      <div id="hub-running-total-${phase.id}" style="font-family:var(--font-mono);font-size:26px;font-weight:700;color:var(--amber-light)">${F.fmtFull(phaseTotal)}</div>
+    <div class="breadcrumb" style="margin-bottom:12px">
+      <a onclick="App.showOverview()" style="cursor:pointer">Overview</a>
+      <span class="breadcrumb-sep">›</span>
+      <span class="breadcrumb-current">${phase.name}</span>
+    </div>
+    <div class="category-hub-header" style="margin-bottom:20px">
+      <div class="category-hub-title">${Phases.iconFor(phase.icon, 20)} <span style="margin-left:8px">${phase.name}</span></div>
     </div>
     <div class="category-grid" style="grid-template-columns:repeat(auto-fit,minmax(240px,1fr))">
 
@@ -143,21 +157,14 @@
         </div>
       </button>
 
-      <!-- Card 3: All Bills -->
-      <button class="category-card" onclick="App.showPhaseBills(${phase.id})">
-        <span class="category-card-arrow">${Phases.iconFor('arrowRight',14)}</span>
-        <span class="category-card-icon" style="font-size:32px">📸</span>
-        <div class="category-card-name">All Bills</div>
-        <div class="category-card-desc">View all scanned bills and receipts for this phase. AI extracts vendor, amount, and items from photos.</div>
-        <div class="category-card-meta">
-          <div class="category-card-progress">
-            <div class="category-card-progress-label" id="hub-bill-count-${phase.id}">${billCount} bill${billCount !== 1 ? 's' : ''} scanned</div>
-          </div>
-          <div class="category-card-cost" id="hub-bill-total-${phase.id}" style="color:var(--amber)">${F.fmt(billTotal)}</div>
-        </div>
-      </button>
-
-    </div>`;
+    </div>
+    
+    <!-- Running Total Box (moved to bottom) -->
+    <div style="margin-top:24px;margin-bottom:20px;background:var(--charcoal-mid);border:1px solid var(--charcoal-border);border-radius:var(--radius-lg);padding:14px 18px;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:12px">
+      <div style="font-size:11px;color:var(--text-muted);text-transform:uppercase;letter-spacing:.08em;font-weight:700">Running Total</div>
+      <div id="hub-running-total-${phase.id}" style="font-family:var(--font-mono);font-size:26px;font-weight:700;color:var(--amber-light)">${F.fmtFull(phaseTotal)}</div>
+    </div>
+    <div style="display:none"><div id="phase-total-${phase.id}"></div><div id="budget-bar-${phase.id}"></div></div>`;
   }
 
   // ── Entry form renderer ────────────────────────────────────
@@ -174,11 +181,72 @@
       let ctrl = '';
       const bStyle = 'background:var(--charcoal);border:1px solid var(--charcoal-border);color:var(--text-primary);padding:8px 10px;border-radius:6px;font-family:var(--font-body);font-size:13px;width:100%;box-sizing:border-box';
       if (f.type === 'select') {
-        ctrl = `<select id="ef-${f.key}" style="${bStyle}"><option value="">— Select —</option>${f.options.map(o=>`<option>${o}</option>`).join('')}</select>`;
+        if (f.key === 'mode') {
+          ctrl = `
+            <select id="ef-mode" style="${bStyle}" onchange="Phases._handlePaymentModeChange(this)">
+              <option value="">— Select —</option>
+              ${f.options.map(o => `<option>${o}</option>`).join('')}
+            </select>
+            
+            <!-- Cheque Number (Conditional) -->
+            <div id="ef-cheque-wrap" style="display:none; margin-top:10px">
+              <label style="font-size:10px; font-weight:700; text-transform:uppercase; letter-spacing:.1em; color:var(--text-muted); margin-bottom:4px; display:block">Cheque Number</label>
+              <input type="text" id="ef-cheque-no" placeholder="Enter cheque number" style="${bStyle}">
+            </div>
+
+            <!-- UPI ID (Conditional) -->
+            <div id="ef-upi-wrap" style="display:none; margin-top:10px">
+              <label style="font-size:10px; font-weight:700; text-transform:uppercase; letter-spacing:.1em; color:var(--text-muted); margin-bottom:4px; display:block">UPI ID</label>
+              <input type="text" id="ef-upi-id" placeholder="e.g. UPI ID / Phone" style="${bStyle}">
+            </div>
+
+            <!-- Payment Proof (Visible for all selected payments) -->
+            <div id="ef-proof-wrap" style="display:none; margin-top:10px">
+              <label style="font-size:10px; font-weight:700; text-transform:uppercase; letter-spacing:.1em; color:var(--text-muted); margin-bottom:4px; display:block">Payment Proof Photo (Optional)</label>
+              <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap">
+                <input type="file" id="ef-payment-proof" accept="image/*" style="display:none" onchange="Phases._handlePaymentProofUpload(this)">
+                <input type="file" id="ef-payment-proof-cam" accept="image/*" capture="environment" style="display:none" onchange="Phases._handlePaymentProofUpload(this)">
+                ${/Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent) ? `
+                  <button type="button" onclick="document.getElementById('ef-payment-proof-cam').click()" style="background:var(--charcoal); border:1px solid var(--charcoal-border); color:var(--text-secondary); padding:8px 14px; border-radius:6px; font-size:12px; cursor:pointer; white-space:nowrap">${Icons.render('camera', 14)} Take Photo</button>
+                  <button type="button" onclick="document.getElementById('ef-payment-proof').click()" style="background:var(--charcoal); border:1px solid var(--charcoal-border); color:var(--text-secondary); padding:8px 14px; border-radius:6px; font-size:12px; cursor:pointer; white-space:nowrap">${Icons.render('plus', 14)} Upload Proof</button>
+                ` : `
+                  <button type="button" onclick="document.getElementById('ef-payment-proof').click()" style="background:var(--charcoal); border:1px solid var(--charcoal-border); color:var(--text-secondary); padding:8px 14px; border-radius:6px; font-size:12px; cursor:pointer; white-space:nowrap">${Icons.render('camera', 14)} Upload Proof</button>
+                `}
+                <span id="ef-proof-status" style="font-size:11px; color:var(--text-muted)">No proof</span>
+              </div>
+            </div>
+          `;
+        } else {
+          ctrl = `<select id="ef-${f.key}" style="${bStyle}"><option value="">— Select —</option>${f.options.map(o=>`<option>${o}</option>`).join('')}</select>`;
+        }
       } else if (f.type === 'date') {
         ctrl = `<input type="date" id="ef-${f.key}" style="${bStyle}" oninput="Phases._entryAutoCalc('${phase.id}','${card.id}')">`;
       } else if (f.type === 'number') {
-        ctrl = `<input type="number" id="ef-${f.key}" placeholder="${f.placeholder||'0'}" step="any" min="0" style="${bStyle};font-family:var(--font-mono)" oninput="Phases._entryAutoCalc('${phase.id}','${card.id}')">`;
+        const isQty = f.key.toLowerCase().includes('qty') || f.key.toLowerCase().includes('quantity') || f.label.toLowerCase().includes('qty') || f.label.toLowerCase().includes('quantity') || f.key.toLowerCase().includes('area') || f.key.toLowerCase().includes('length');
+        if (isQty) {
+          const defaultUnit = (k => {
+            const lk = k.toLowerCase();
+            if (lk.includes('kg')) return 'kg';
+            if (lk.includes('brass')) return 'brass';
+            if (lk.includes('bag')) return 'bags';
+            if (lk.includes('ltr') || lk.includes('litre')) return 'L';
+            if (lk.includes('mtr') || lk.includes('meter')) return 'm';
+            if (lk.includes('sqft')) return 'sqft';
+            if (lk.includes('rft')) return 'rft';
+            return 'pcs';
+          })(f.key);
+          const units = ['pcs', 'kg', 'bags', 'brass', 'L', 'm', 'sqft', 'rft', 'ton', 'cft', 'nos'];
+          ctrl = `
+            <div style="display:flex; gap:8px; align-items:center; width:100%">
+              <input type="number" id="ef-${f.key}" placeholder="${f.placeholder||'0'}" step="any" min="0" style="${bStyle}; flex:1; font-family:var(--font-mono)" oninput="Phases._entryAutoCalc('${phase.id}','${card.id}')">
+              <select id="ef-${f.key}-unit" style="width:80px; height:36px; background:var(--charcoal-mid); border:1px solid var(--charcoal-border); color:var(--amber); font-size:12px; font-weight:700; outline:none; cursor:pointer; padding:0 10px; border-radius:6px; font-family:var(--font-body); box-sizing:border-box">
+                ${units.map(u => `<option value="${u}" ${u === defaultUnit ? 'selected' : ''}>${u}</option>`).join('')}
+              </select>
+            </div>
+          `;
+        } else {
+          ctrl = `<input type="number" id="ef-${f.key}" placeholder="${f.placeholder||'0'}" step="any" min="0" style="${bStyle};font-family:var(--font-mono)" oninput="Phases._entryAutoCalc('${phase.id}','${card.id}')">`;
+        }
       } else {
         ctrl = `<input type="text" id="ef-${f.key}" placeholder="${f.placeholder||''}" style="${bStyle}" oninput="Phases._entryAutoCalc('${phase.id}','${card.id}')">`;
       }
@@ -195,13 +263,26 @@
       }
     }
 
+    const hasOnlyOneLabor = groupLabel === 'Labor Costing' && typeof getLaborCardsForPhase === 'function' && getLaborCardsForPhase(phase.id).length === 1;
+    let breadcrumbHtml = '';
+    if (hasOnlyOneLabor) {
+      breadcrumbHtml = `
+        <div class="breadcrumb" style="margin-bottom:12px">
+          <a onclick="App.showPhaseHub(${phase.id})" style="cursor:pointer">${phase.name}</a>
+          <span class="breadcrumb-sep">›</span>
+          <span class="breadcrumb-current">${groupLabel}</span>
+        </div>`;
+    } else {
+      breadcrumbHtml = `
+        <div class="breadcrumb" style="margin-bottom:12px">
+          <a onclick="${groupLabel === 'Labor Costing' ? `App.showLaborCards(${phase.id})` : `App.showMaterialCards(${phase.id})`};void 0" style="cursor:pointer">${groupLabel}</a>
+          <span class="breadcrumb-sep">›</span>
+          <span class="breadcrumb-current">${card.name}</span>
+        </div>`;
+    }
+
     return `
-    ${Phases.phaseHeader(phase)}
-    <div class="breadcrumb" style="margin-bottom:12px">
-      <a onclick="${groupLabel === 'Labor Costing' ? `App.showLaborCards(${phase.id})` : `App.showMaterialCards(${phase.id})`};void 0" style="cursor:pointer">${groupLabel}</a>
-      <span class="breadcrumb-sep">›</span>
-      <span class="breadcrumb-current">${card.name}</span>
-    </div>
+    ${breadcrumbHtml}
 
     <!-- Entry Form Card -->
     <div class="section-card" style="margin-bottom:20px">
@@ -220,9 +301,15 @@
           </div>
           <div class="field-group">
             <label style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.1em;color:var(--text-muted);margin-bottom:5px;display:block">Bill Photo (Optional — AI will auto-fill)</label>
-            <div style="display:flex;gap:8px;align-items:center">
-              <input type="file" id="ef-bill-photo" accept="image/*" capture="environment" style="display:none" onchange="Phases._handleEntryPhoto('${phase.id}','${card.id}',this)">
-              <button onclick="document.getElementById('ef-bill-photo').click()" style="background:var(--charcoal);border:1px solid var(--charcoal-border);color:var(--text-secondary);padding:8px 14px;border-radius:6px;font-size:12px;cursor:pointer;white-space:nowrap">📷 Click / Upload</button>
+            <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+              <input type="file" id="ef-bill-photo" accept="image/*" style="display:none" onchange="Phases._handleEntryPhoto('${phase.id}','${card.id}',this)">
+              <input type="file" id="ef-bill-photo-cam" accept="image/*" capture="environment" style="display:none" onchange="Phases._handleEntryPhoto('${phase.id}','${card.id}',this)">
+              ${/Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent) ? `
+                <button type="button" onclick="document.getElementById('ef-bill-photo-cam').click()" style="background:var(--charcoal);border:1px solid var(--charcoal-border);color:var(--text-secondary);padding:8px 12px;border-radius:6px;font-size:12px;cursor:pointer;white-space:nowrap">${Icons.render('camera', 12)} Camera</button>
+                <button type="button" onclick="document.getElementById('ef-bill-photo').click()" style="background:var(--charcoal);border:1px solid var(--charcoal-border);color:var(--text-secondary);padding:8px 12px;border-radius:6px;font-size:12px;cursor:pointer;white-space:nowrap">${Icons.render('plus', 12)} Gallery</button>
+              ` : `
+                <button type="button" onclick="document.getElementById('ef-bill-photo').click()" style="background:var(--charcoal);border:1px solid var(--charcoal-border);color:var(--text-secondary);padding:8px 14px;border-radius:6px;font-size:12px;cursor:pointer;white-space:nowrap">${Icons.render('camera', 14)} Click / Upload</button>
+              `}
               <span id="ef-photo-status" style="font-size:11px;color:var(--text-muted)">No photo</span>
             </div>
           </div>
@@ -276,57 +363,191 @@
     </div>`;
   }
 
-  // Render the previous entries table
+  // Extract representative vendor or label from entry fields
+  function getEntrySummary(e, card) {
+    if (!e || !e.fields) return '—';
+    const fields = e.fields;
+    
+    const vendor = fields.vendor || fields.payee || fields.supplier || fields.dealer || fields.contractor || fields.worker;
+    if (vendor) return vendor;
+
+    const brand = fields.brand || fields.item || fields.type || fields.product || fields.work || fields.use || fields.material;
+    if (brand) return brand;
+
+    for (const val of Object.values(fields)) {
+      if (val && typeof val === 'string' && val.length > 0 && val !== '__other__') {
+        return val;
+      }
+    }
+    return card.name;
+  }
+
+  // Render the previous entries as a clean, single-line mobile layout
   function renderPreviousEntries(phaseId, cardId) {
     const entries = getEntries(phaseId, cardId);
     if (!entries.length) {
       return `<div style="padding:24px;text-align:center;color:var(--text-muted);font-size:13px">No entries yet. Fill the form above and click Save Entry.</div>`;
     }
-    const rows = entries.map((e,i) => {
-      const fieldSummary = Object.entries(e.fields||{})
-        .filter(([k,v]) => v && k !== 'notes')
-        .slice(0,4)
-        .map(([k,v]) => `<span style="color:var(--text-secondary)">${k.replace(/_/g,' ')}: <strong>${v}</strong></span>`)
-        .join(' &nbsp;·&nbsp; ');
+    const allCards = getAllCardsForPhase(parseInt(phaseId));
+    const card = allCards.find(c => c.id === cardId) || { name: 'Entry' };
+
+    const rows = entries.map((e, i) => {
+      const summary = getEntrySummary(e, card);
       return `
-      <tr style="border-bottom:1px solid var(--charcoal-border)">
-        <td style="padding:10px 12px;font-family:var(--font-mono);font-size:12px;color:var(--text-muted);white-space:nowrap">${e.date || '—'}</td>
-        <td style="padding:10px 12px;font-size:12px;min-width:0;max-width:300px;word-break:break-word">${fieldSummary || e.notes || '—'}</td>
-        <td style="padding:10px 12px;font-size:11px;color:var(--text-muted);max-width:180px;word-break:break-word">${e.notes||''}</td>
-        ${e.billPhotoUrl ? `<td style="padding:10px 12px"><img src="${e.billPhotoUrl}" style="height:36px;border-radius:4px;cursor:pointer" onclick="Phases._viewPhoto('${e.billPhotoUrl}')"></td>` : '<td style="padding:10px 12px;color:var(--text-muted);font-size:11px">—</td>'}
-        <td style="padding:10px 12px;font-family:var(--font-mono);font-weight:700;color:var(--amber);text-align:right;white-space:nowrap">${F.fmtFull(e.total)}</td>
-        <td style="padding:10px 12px;text-align:right">
-          <button onclick="Phases._deleteEntry(${phaseId},'${cardId}','${e.id}')"
-            style="background:none;border:1px solid #C7796640;color:#C77966;padding:4px 8px;border-radius:4px;font-size:11px;cursor:pointer">Delete</button>
-        </td>
-      </tr>`;
+      <div class="m-list-row" style="display:flex; justify-content:space-between; align-items:center; padding:12px; border-bottom:1px solid var(--charcoal-border); gap:12px">
+        <div style="display:flex; flex-direction:column; min-width:0; flex:1">
+          <div style="font-family:var(--font-mono); font-size:11px; color:var(--text-muted); margin-bottom:2px">${escapeHtml(e.date || '—')}</div>
+          <div style="font-size:13px; font-weight:600; color:var(--text-primary); white-space:nowrap; overflow:hidden; text-overflow:ellipsis">
+            ${escapeHtml(summary)}
+          </div>
+        </div>
+        <div style="display:flex; align-items:center; gap:12px">
+          <div style="font-family:var(--font-mono); font-weight:700; color:var(--amber); font-size:14px; white-space:nowrap">${F.fmtFull(e.total)}</div>
+          <button onclick="Phases._viewEntryDetails(${phaseId}, '${escapeAttr(cardId)}', '${escapeAttr(e.id)}')" 
+            style="background:var(--charcoal); border:1px solid var(--charcoal-border); color:var(--text-secondary); padding:6px 12px; border-radius:6px; font-size:11px; font-family:inherit; cursor:pointer; font-weight:600">
+            View Details
+          </button>
+        </div>
+      </div>`;
     }).join('');
-    const total = entries.reduce((s,e) => s + (parseFloat(e.total)||0), 0);
+
+    const total = entries.reduce((s, e) => s + (parseFloat(e.total) || 0), 0);
     return `
-      <table style="width:100%;border-collapse:collapse">
-        <thead>
-          <tr style="border-bottom:2px solid var(--charcoal-border)">
-            <th style="padding:8px 12px;font-size:10px;text-transform:uppercase;color:var(--text-muted);text-align:left;letter-spacing:.08em">Date</th>
-            <th style="padding:8px 12px;font-size:10px;text-transform:uppercase;color:var(--text-muted);text-align:left">Details</th>
-            <th style="padding:8px 12px;font-size:10px;text-transform:uppercase;color:var(--text-muted);text-align:left">Notes</th>
-            <th style="padding:8px 12px;font-size:10px;text-transform:uppercase;color:var(--text-muted);text-align:left">Bill</th>
-            <th style="padding:8px 12px;font-size:10px;text-transform:uppercase;color:var(--text-muted);text-align:right">Amount</th>
-            <th></th>
-          </tr>
-        </thead>
-        <tbody>${rows}</tbody>
-        <tfoot>
-          <tr style="background:var(--charcoal-mid)">
-            <td colspan="4" style="padding:10px 12px;font-size:12px;font-weight:700;color:var(--text-secondary)">TOTAL</td>
-            <td style="padding:10px 12px;font-family:var(--font-mono);font-weight:700;font-size:16px;color:var(--amber);text-align:right">${F.fmtFull(total)}</td>
-            <td></td>
-          </tr>
-        </tfoot>
-      </table>`;
+      <div style="display:flex; flex-direction:column; background:var(--charcoal-surface); border-radius:var(--radius-md); overflow:hidden">
+        ${rows}
+        <div style="display:flex; justify-content:space-between; align-items:center; padding:12px 14px; background:var(--charcoal-mid); border-top:1px solid var(--charcoal-border)">
+          <span style="font-size:11px; font-weight:700; text-transform:uppercase; color:var(--text-secondary)">TOTAL</span>
+          <span style="font-family:var(--font-mono); font-weight:700; font-size:16px; color:var(--amber)">${F.fmtFull(total)}</span>
+        </div>
+      </div>`;
   }
 
   // Expose entry helpers on Phases for use in HTML onclick
   Phases._entryTotalOverride = false;
+
+  Phases._handlePaymentModeChange = function(selectEl) {
+    const val = selectEl.value;
+    const chequeWrap = document.getElementById('ef-cheque-wrap');
+    const upiWrap = document.getElementById('ef-upi-wrap');
+    const proofWrap = document.getElementById('ef-proof-wrap');
+    
+    if (chequeWrap) chequeWrap.style.display = (val === 'Cheque') ? 'block' : 'none';
+    if (upiWrap) upiWrap.style.display = (val === 'UPI') ? 'block' : 'none';
+    if (proofWrap) proofWrap.style.display = (val && val !== '__other__') ? 'block' : 'none';
+  };
+
+  Phases._handlePaymentProofUpload = async function(input) {
+    const file = input.files?.[0];
+    if (!file) return;
+    const statusEl = document.getElementById('ef-proof-status');
+    if (statusEl) statusEl.textContent = 'Processing…';
+
+    try {
+      const compressed = await BillScanner.compressImagePublic(file);
+      if (statusEl) {
+        statusEl.textContent = '📷 Proof ready';
+        statusEl.dataset.url = compressed;
+      }
+      App.toast('Payment proof uploaded successfully', 'success');
+    } catch(err) {
+      if (statusEl) statusEl.textContent = 'Upload failed';
+      App.toast('Error reading proof photo', 'error');
+    }
+  };
+
+  Phases._viewEntryDetails = function(phaseId, cardId, entryId) {
+    const entries = getEntries(parseInt(phaseId), cardId);
+    const e = entries.find(x => x.id === entryId);
+    if (!e) return;
+    const allCards = getAllCardsForPhase(parseInt(phaseId));
+    const card = allCards.find(c => c.id === cardId) || { name: 'Entry', fields: [] };
+
+    // Formatted fields
+    const fieldsHtml = Object.entries(e.fields || {})
+      .map(([k, v]) => {
+        if (!v || k === 'notes' || k.endsWith('_unit')) return '';
+        const fieldSpec = card.fields.find(f => f.key === k);
+        let label = fieldSpec ? fieldSpec.label : k.replace(/_/g, ' ');
+        if (k === 'cheque_no') label = 'Cheque Number';
+        if (k === 'upi_id') label = 'UPI ID';
+
+        let displayVal = escapeHtml(v);
+        const unitVal = e.fields[k + '_unit'];
+        if (unitVal) {
+          displayVal = `${escapeHtml(v)} <span style="color:var(--amber); font-weight:700; font-size:11px; margin-left:4px">${escapeHtml(unitVal)}</span>`;
+        }
+
+        return `
+        <div style="display:flex; justify-content:space-between; padding:8px 0; border-bottom:1px solid rgba(0,0,0,0.05)">
+          <span style="font-size:12px; color:var(--text-muted)">${escapeHtml(label)}</span>
+          <span style="font-size:13px; font-weight:600; color:var(--text-primary); text-align:right">${displayVal}</span>
+        </div>`;
+      }).join('');
+
+    const modalHtml = `
+      <h3 class="modal-title" style="margin-bottom:14px; display:flex; align-items:center; gap:8px">
+        ${Phases.iconFor(card.icon || 'listChecks', 18)} ${escapeHtml(card.name)} Details
+      </h3>
+      <div style="background:var(--charcoal-mid); border:1px solid var(--charcoal-border); border-radius:8px; padding:12px; margin-bottom:14px">
+        <div style="display:flex; justify-content:space-between; padding-bottom:8px; border-bottom:1px solid rgba(0,0,0,0.05); margin-bottom:8px">
+          <span style="font-size:12px; color:var(--text-muted)">Date</span>
+          <span style="font-family:var(--font-mono); font-size:13px; color:var(--text-primary)">${escapeHtml(e.date || '—')}</span>
+        </div>
+        ${fieldsHtml || `<div style="font-size:12px; color:var(--text-muted); padding:4px 0">No specific field details.</div>`}
+      </div>
+
+      ${e.notes ? `
+        <div style="margin-bottom:14px">
+          <label style="font-size:10px; font-weight:700; text-transform:uppercase; color:var(--text-muted)">Notes</label>
+          <div style="background:var(--charcoal-mid); border:1px solid var(--charcoal-border); border-radius:6px; padding:8px 10px; font-size:13px; color:var(--text-secondary); margin-top:4px; white-space:pre-wrap">${escapeHtml(e.notes)}</div>
+        </div>` : ''}
+
+      ${e.billPhotoUrl ? `
+        <div style="margin-bottom:14px">
+          <label style="font-size:10px; font-weight:700; text-transform:uppercase; color:var(--text-muted)">Bill Photo</label>
+          <div style="margin-top:6px">
+            <img src="${escapeAttr(State.getLocalImage(e.billPhotoUrl))}" style="width:100%; max-height:200px; object-fit:contain; border-radius:6px; border:1px solid var(--charcoal-border); cursor:zoom-in" onclick="Phases._viewPhoto(State.getLocalImage('${escapeAttr(e.billPhotoUrl)}'))">
+            <div style="font-size:10px; color:var(--text-muted); text-align:center; margin-top:4px">Tap image to zoom</div>
+          </div>
+        </div>` : ''}
+
+      ${e.paymentProofUrl ? `
+        <div style="margin-bottom:14px">
+          <label style="font-size:10px; font-weight:700; text-transform:uppercase; color:var(--text-muted)">Payment Proof</label>
+          <div style="margin-top:6px">
+            <img src="${escapeAttr(State.getLocalImage(e.paymentProofUrl))}" style="width:100%; max-height:200px; object-fit:contain; border-radius:6px; border:1px solid var(--charcoal-border); cursor:zoom-in" onclick="Phases._viewPhoto(State.getLocalImage('${escapeAttr(e.paymentProofUrl)}'))">
+            <div style="font-size:10px; color:var(--text-muted); text-align:center; margin-top:4px">Tap image to zoom</div>
+          </div>
+        </div>` : ''}
+
+      <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:20px; padding:12px; background:rgba(180,122,60,0.08); border:1px solid rgba(180,122,60,0.2); border-radius:8px">
+        <span style="font-size:12px; color:var(--text-secondary); font-weight:600">Total Amount</span>
+        <span style="font-family:var(--font-mono); font-weight:700; font-size:18px; color:var(--amber)">${F.fmtFull(e.total)}</span>
+      </div>
+
+      <div style="display:flex; gap:12px">
+        <button onclick="App.closeModal()" class="modal-btn-cancel" style="flex:1; padding:11px; border-radius:10px; cursor:pointer; font-size:13px; font-weight:700; font-family:inherit">Close</button>
+        <button onclick="App.closeModal(); Phases._deleteEntryModal(${phaseId}, '${escapeAttr(cardId)}', '${escapeAttr(e.id)}')" 
+          class="modal-btn-danger" style="flex:1; padding:11px; border-radius:10px; cursor:pointer; font-size:13px; font-weight:700; font-family:inherit; background:none; border:1.5px solid #C45D5220; color:#C45D52">
+          Delete Entry
+        </button>
+      </div>
+    `;
+
+    App.showModal(modalHtml);
+  };
+
+  Phases._deleteEntryModal = function(phaseId, cardId, entryId) {
+    App.showConfirmModal({
+      icon: Icons.render('trash', 24),
+      title: 'Delete Entry?',
+      body: 'This entry will be permanently removed from the phase history.',
+      confirmLabel: 'Delete',
+      onConfirm: async () => {
+        Phases._deleteEntry(phaseId, cardId, entryId);
+      }
+    });
+  };
 
   Phases._entryAutoCalc = function(phaseId, cardId) {
     // Reset the override flag so that changing other fields always
@@ -359,8 +580,27 @@
     const fieldVals = {};
     (Array.isArray(fieldsSpec) ? fieldsSpec : []).forEach(f => {
       const el = document.getElementById('ef-' + f.key);
-      if (el && el.value) fieldVals[f.key] = el.value;
+      if (el && el.value) {
+        fieldVals[f.key] = el.value;
+        const unitEl = document.getElementById('ef-' + f.key + '-unit');
+        if (unitEl && unitEl.value) {
+          fieldVals[f.key + '_unit'] = unitEl.value;
+        }
+      }
     });
+
+    const mode = fieldVals.mode || '';
+    if (mode === 'Cheque') {
+      const chequeNoEl = document.getElementById('ef-cheque-no');
+      if (chequeNoEl && chequeNoEl.value.trim()) {
+        fieldVals.cheque_no = chequeNoEl.value.trim();
+      }
+    } else if (mode === 'UPI') {
+      const upiIdEl = document.getElementById('ef-upi-id');
+      if (upiIdEl && upiIdEl.value.trim()) {
+        fieldVals.upi_id = upiIdEl.value.trim();
+      }
+    }
 
     // Require at least one field OR a total
     const hasAny = total > 0 || Object.values(fieldVals).some(v => v);
@@ -369,16 +609,45 @@
       return;
     }
 
+    const entryId = uid();
     const photoStatus = document.getElementById('ef-photo-status');
-    const billPhotoUrl = photoStatus?.dataset?.url || '';
+    let rawBillPhoto = photoStatus?.dataset?.url || '';
+    let billPhotoUrl = '';
+    if (rawBillPhoto) {
+      if (rawBillPhoto.startsWith('data:image')) {
+        const key = entryId + '_bill';
+        if (typeof State !== 'undefined' && State.saveLocalImage) {
+          State.saveLocalImage(key, rawBillPhoto);
+        }
+        billPhotoUrl = 'local-image://' + key;
+      } else {
+        billPhotoUrl = rawBillPhoto;
+      }
+    }
+
+    const proofStatus = document.getElementById('ef-proof-status');
+    let rawProofPhoto = proofStatus?.dataset?.url || '';
+    let paymentProofUrl = '';
+    if (rawProofPhoto) {
+      if (rawProofPhoto.startsWith('data:image')) {
+        const key = entryId + '_proof';
+        if (typeof State !== 'undefined' && State.saveLocalImage) {
+          State.saveLocalImage(key, rawProofPhoto);
+        }
+        paymentProofUrl = 'local-image://' + key;
+      } else {
+        paymentProofUrl = rawProofPhoto;
+      }
+    }
 
     const entry = {
-      id: uid(),
+      id: entryId,
       date,
       fields: fieldVals,
       total,
       notes,
       billPhotoUrl,
+      paymentProofUrl,
       createdAt: new Date().toISOString(),
     };
 
@@ -389,6 +658,20 @@
     if (totalEl) { totalEl.value = ''; }
     if (notesEl) { notesEl.value = ''; }
     if (photoStatus) { photoStatus.textContent = 'No photo'; delete photoStatus.dataset.url; }
+    
+    // Reset payment inputs
+    const chequeNoEl = document.getElementById('ef-cheque-no');
+    if (chequeNoEl) chequeNoEl.value = '';
+    const upiIdEl = document.getElementById('ef-upi-id');
+    if (upiIdEl) upiIdEl.value = '';
+    const chequeWrap = document.getElementById('ef-cheque-wrap');
+    if (chequeWrap) chequeWrap.style.display = 'none';
+    const upiWrap = document.getElementById('ef-upi-wrap');
+    if (upiWrap) upiWrap.style.display = 'none';
+    const proofWrap = document.getElementById('ef-proof-wrap');
+    if (proofWrap) proofWrap.style.display = 'none';
+    if (proofStatus) { proofStatus.textContent = 'No proof'; delete proofStatus.dataset.url; }
+
     (Array.isArray(fieldsSpec) ? fieldsSpec : []).forEach(f => {
       const el = document.getElementById('ef-' + f.key);
       if (el) { el.tagName === 'SELECT' ? (el.selectedIndex = 0) : (el.value = ''); }
@@ -421,7 +704,7 @@
       if (statusEl) { statusEl.textContent = '📷 Photo ready'; statusEl.dataset.url = compressed; }
 
       // Try AI scan
-      if (statusEl) statusEl.textContent = '🤖 Scanning…';
+      if (statusEl) statusEl.innerHTML = Icons.render('bot', 11) + ' Scanning…';
       try {
         const result = await BillScanner.scanBillWithAIPublic(compressed);
         if (result) {
@@ -440,7 +723,7 @@
             const totalEl = document.getElementById('ef-total');
             if (totalEl && !Phases._entryTotalOverride) totalEl.value = detectedTotal;
           }
-          if (statusEl) statusEl.textContent = '✅ AI filled fields';
+          if (statusEl) statusEl.innerHTML = Icons.render('check', 11) + ' AI filled fields';
           App.toast('AI auto-filled from bill photo', 'success');
         }
       } catch(aiErr) {
@@ -461,9 +744,10 @@
 
   // ── Material Hub: list of all material cards for a phase ──
   Phases.showMaterialHub = function(phaseId) {
+    phaseId = Number(phaseId);
     const proj = State.getCurrentProject();
     if (!proj) return;
-    const phase = proj.phases.find(p => p.id === phaseId);
+    const phase = proj.phases.find(p => Number(p.id) === Number(phaseId));
     if (!phase) return;
     const matCards = getMaterialCardsForPhase(phaseId);
     const content = document.getElementById('content-area');
@@ -496,9 +780,6 @@
             <div class="phase-title">${Phases.iconFor('blocks',22)} <span style="margin-left:8px">Material Costs — ${phase.name}</span></div>
             <div class="phase-subtitle">Tap any material category to add entries</div>
           </div>
-          <div class="phase-summary-box">
-            <div class="phase-total-display"><div class="phase-total-label">Material Total</div><div class="phase-total-amount" style="color:var(--amber)">${F.fmtFull(total)}</div></div>
-          </div>
         </div>
         <div class="category-grid">${rows}</div>
       </div>`;
@@ -507,9 +788,10 @@
 
   // ── Labor Hub ──────────────────────────────────────────────
   Phases.showLaborHub = function(phaseId) {
+    phaseId = Number(phaseId);
     const proj = State.getCurrentProject();
     if (!proj) return;
-    const phase = proj.phases.find(p => p.id === phaseId);
+    const phase = proj.phases.find(p => Number(p.id) === Number(phaseId));
     if (!phase) return;
     const labCards = getLaborCardsForPhase(phaseId);
     const content = document.getElementById('content-area');
@@ -542,9 +824,6 @@
             <div class="phase-title">${Phases.iconFor('userCircle',22)} <span style="margin-left:8px">Labor Costing — ${phase.name}</span></div>
             <div class="phase-subtitle">Tap any labor category to record payments</div>
           </div>
-          <div class="phase-summary-box">
-            <div class="phase-total-display"><div class="phase-total-label">Labor Total</div><div class="phase-total-amount" style="color:var(--amber)">${F.fmtFull(total)}</div></div>
-          </div>
         </div>
         <div class="category-grid">${rows}</div>
       </div>`;
@@ -570,7 +849,7 @@
 
   // ── Card classification helpers ───────────────────────────
   const LABOR_IDS = ['thekedar','tile_labor','painter_labor','electrician_labor',
-    'fab_labor','plumber_labor','pop_labor','lift_install','misc_expenses'];
+    'fab_labor','plumber_labor','pop_labor','lift_install','floor-prep','paint-prep']; // misc_expenses removed — it's a general expense, not labor
 
   function getAllCardsForPhase(phaseId) {
     const M = {
@@ -578,6 +857,7 @@
       4: ELEC_CARDS_REF,    5: FAB_CARDS_REF,
       6: [...PLUMB_EXT_REF, ...PLUMB_INT_REF],
       7: POP_CARDS_REF,     8: LIFT_CARDS_REF,    9: MISC_CARDS_REF,
+      10: INTERIOR_CARDS_REF,
     };
     return M[phaseId] || [];
   }
@@ -781,17 +1061,300 @@
       costFn: d => amtC(d,'amount') },
   ];
 
+  const INTERIOR_CARDS_REF = [
+    { id: 'floor-prep', name: 'Subfloor Preparation', icon: 'wrench', desc: 'Moisture readings, self-leveling, plywood overlay, vapor barrier.',
+      fields: [
+        { key: 'location', label: 'Item / Location', type: 'text', placeholder: 'e.g. Master Bedroom' },
+        { key: 'type', label: 'Prep Type', type: 'select', options: ['Self-Leveling Concrete', 'Plywood Overlay', 'Cement Board', 'Vapor Barrier', 'Moisture Sealer'] },
+        { key: 'labor_hours', label: 'Labor Hours', type: 'number', placeholder: '0' },
+        { key: 'labor_rate', label: 'Labor Rate (₹/hr)', type: 'number', placeholder: '0' },
+        { key: 'material_cost', label: 'Material Cost (₹)', type: 'number', placeholder: '0' }
+      ],
+      costFn: d => (P(d.labor_hours)||0)*(P(d.labor_rate)||0) + (P(d.material_cost)||0) },
+
+    { id: 'floor-finish', name: 'Finish Flooring', icon: 'ruler', desc: 'Per-zone flooring material, plank width, wear, transitions, grout color.',
+      fields: [
+        { key: 'zone', label: 'Flooring Zone / Room', type: 'text', placeholder: 'e.g. Living Room' },
+        { key: 'material', label: 'Material Type', type: 'select', options: ['LVP', 'Engineered Hardwood', 'Solid Hardwood', 'Carpet', 'Sheet Vinyl', 'Porcelain Tile', 'Laminate'] },
+        { key: 'coverage_sqft', label: 'Coverage Area (sqft)', type: 'number', placeholder: '0' },
+        { key: 'waste_pct', label: 'Waste %', type: 'number', placeholder: '10' },
+        { key: 'price_sqft', label: 'Material Price (₹/sqft)', type: 'number', placeholder: '0' },
+        { key: 'labor_rate_sqft', label: 'Labor Rate (₹/sqft)', type: 'number', placeholder: '0' },
+        { key: 'underlay_price_sqft', label: 'Underlay Price (₹/sqft)', type: 'number', placeholder: '0' },
+        { key: 'trans_strips_count', label: 'Transition Strips (count)', type: 'number', placeholder: '0' },
+        { key: 'trans_strip_price', label: 'Transition Price/each', type: 'number', placeholder: '0' },
+        { key: 'grout_color_code', label: 'Grout Color Code', type: 'text', placeholder: 'e.g. Mapei #38' }
+      ],
+      costFn: d => {
+        const cov = P(d.coverage_sqft)||0;
+        const waste = P(d.waste_pct)||0;
+        const price = P(d.price_sqft)||0;
+        const labor = P(d.labor_rate_sqft)||0;
+        const under = P(d.underlay_price_sqft)||0;
+        const strips = P(d.trans_strips_count)||0;
+        const sPrice = P(d.trans_strip_price)||0;
+        return (cov * (1 + waste/100) * price) + (cov * labor) + (cov * under) + (strips * sPrice);
+      } },
+
+    { id: 'cab-box', name: 'Cabinetry — Boxes & Doors', icon: 'sofa', desc: 'Class, core, door profile, LF by tier, install, millwork.',
+      fields: [
+        { key: 'cab_class', label: 'Cabinet Class', type: 'select', options: ['Stock / RTA', 'Semi-Custom', 'Full Custom'] },
+        { key: 'cab_core', label: 'Box Core Material', type: 'select', options: ['1/2" Plywood', '3/4" Plywood', 'Furniture Board / MDF'] },
+        { key: 'door_profile', label: 'Door Profile', type: 'select', options: ['Shaker', 'Flat Panel / Slab', 'Raised Panel', 'Glass-Front'] },
+        { key: 'cab_finish', label: 'Door Finish', type: 'select', options: ['Painted', 'Stained Wood', 'Thermofoil', 'Natural Veneer', 'Laminate'] },
+        { key: 'cab_base_lf', label: 'Base Cabinet LF', type: 'number', placeholder: '0' },
+        { key: 'cab_base_rate', label: 'Base $/LF', type: 'number', placeholder: '0' },
+        { key: 'cab_upper_lf', label: 'Upper Cabinet LF', type: 'number', placeholder: '0' },
+        { key: 'cab_upper_rate', label: 'Upper $/LF', type: 'number', placeholder: '0' },
+        { key: 'cab_pantry_lf', label: 'Pantry / Tall LF', type: 'number', placeholder: '0' },
+        { key: 'cab_pantry_rate', label: 'Pantry $/LF', type: 'number', placeholder: '0' },
+        { key: 'cab_install_rate', label: 'Cabinet Install Rate/LF', type: 'number', placeholder: '0' },
+        { key: 'millwork_lump', label: 'Millwork Lump (crown, fillers, etc)', type: 'number', placeholder: '0' }
+      ],
+      costFn: d => {
+        const base = P(d.cab_base_lf)||0;
+        const upper = P(d.cab_upper_lf)||0;
+        const pantry = P(d.cab_pantry_lf)||0;
+        const baseRate = P(d.cab_base_rate)||0;
+        const upperRate = P(d.cab_upper_rate)||0;
+        const pantryRate = P(d.cab_pantry_rate)||0;
+        const install = P(d.cab_install_rate)||0;
+        const lump = P(d.millwork_lump)||0;
+        return (base * baseRate) + (upper * upperRate) + (pantry * pantryRate) + ((base + upper + pantry) * install) + lump;
+      } },
+
+    { id: 'cab-hw', name: 'Cabinetry — Hardware', icon: 'wrenchScrew', desc: 'Glides, hinges, pulls, drawer boxes, soft-close adapters.',
+      fields: [
+        { key: 'glide_spec', label: 'Drawer Glide Spec', type: 'select', options: ['Under-mount Soft-Close', 'Side-mount Standard', 'Push-to-Open'] },
+        { key: 'hinge_spec', label: 'Hinge Spec', type: 'select', options: ['6-way Adjustable Concealed', 'Exposed Barrel', 'Soft-Close Concealed'] },
+        { key: 'pulls_knobs_count', label: 'Pulls & Knobs (count)', type: 'number', placeholder: '0' },
+        { key: 'pull_unit_price', label: 'Pull/Knob Unit Price', type: 'number', placeholder: '0' },
+        { key: 'drawer_box_count', label: 'Drawer Count (boxes)', type: 'number', placeholder: '0' },
+        { key: 'drawer_box_price', label: 'Drawer Box Unit Price', type: 'number', placeholder: '0' },
+        { key: 'softclose_price', label: 'Soft-Close Adapter $/unit', type: 'number', placeholder: '0' },
+        { key: 'hinge_qty', label: 'Hinge Qty', type: 'number', placeholder: '0' },
+        { key: 'hinge_unit_price', label: 'Hinge Unit Price', type: 'number', placeholder: '0' }
+      ],
+      costFn: d => {
+        const pulls = P(d.pulls_knobs_count)||0;
+        const pullPrice = P(d.pull_unit_price)||0;
+        const drawers = P(d.drawer_box_count)||0;
+        const drawerPrice = P(d.drawer_box_price)||0;
+        const hinges = P(d.hinge_qty)||0;
+        const hingePrice = P(d.hinge_unit_price)||0;
+        const softClose = P(d.softclose_price)||0;
+        return (pulls * pullPrice) + (drawers * drawerPrice) + (hinges * hingePrice) + (drawers * softClose);
+      } },
+
+    { id: 'door-slab', name: 'Doors — Slabs & Jambs', icon: 'door', desc: 'Style, core, jamb width, qty, slab/jamb/install pricing.',
+      fields: [
+        { key: 'location', label: 'Location / Description', type: 'text', placeholder: 'e.g. Master Bedroom' },
+        { key: 'style', label: 'Door Style', type: 'select', options: ['1-Panel', '2-Panel Shaker', '6-Panel Solid', 'Flush Solid Core', 'Bifold Closet', 'Barn Door', 'French Doors'] },
+        { key: 'core_type', label: 'Core Type', type: 'select', options: ['Solid Wood', 'Solid Core MDF', 'Hollow Core'] },
+        { key: 'jamb_width', label: 'Jamb Width', type: 'select', options: ['4-9/16"', '6-9/16"', 'Custom'] },
+        { key: 'qty', label: 'Quantity', type: 'number', placeholder: '1' },
+        { key: 'slab_price', label: 'Slab Unit Price', type: 'number', placeholder: '0' },
+        { key: 'jamb_set_price', label: 'Jamb Set Price', type: 'number', placeholder: '0' },
+        { key: 'install_price', label: 'Install Labor Price', type: 'number', placeholder: '0' }
+      ],
+      costFn: d => (P(d.qty)||0) * ((P(d.slab_price)||0) + (P(d.jamb_set_price)||0) + (P(d.install_price)||0)) },
+
+    { id: 'door-hw', name: 'Doors — Hardware', icon: 'key', desc: 'Hinge finish, passage/privacy/dummy sets, door stops.',
+      fields: [
+        { key: 'hinge_finish', label: 'Hinge Finish', type: 'select', options: ['Matte Black', 'Brushed Nickel', 'Satin Brass', 'Oil-Rubbed Bronze', 'Chrome', 'Polished Brass'] },
+        { key: 'hinge_finish_price', label: 'Hinge Price (per hinge)', type: 'number', placeholder: '0' },
+        { key: 'passage_count', label: 'Passage Sets (count)', type: 'number', placeholder: '0' },
+        { key: 'passage_price', label: 'Passage $/set', type: 'number', placeholder: '0' },
+        { key: 'privacy_count', label: 'Privacy Sets (count)', type: 'number', placeholder: '0' },
+        { key: 'privacy_price', label: 'Privacy $/set', type: 'number', placeholder: '0' },
+        { key: 'dummy_count', label: 'Dummy Sets (count)', type: 'number', placeholder: '0' },
+        { key: 'dummy_price', label: 'Dummy $/set', type: 'number', placeholder: '0' },
+        { key: 'door_stops_count', label: 'Door Stops (count)', type: 'number', placeholder: '0' },
+        { key: 'stop_type', label: 'Stop Type', type: 'select', options: ['Baseboard-mount', 'Hinge-pin', 'Floor-mount', 'Wall-mount'] },
+        { key: 'door_stop_price', label: 'Stop Unit Price', type: 'number', placeholder: '0' }
+      ],
+      costFn: d => {
+        const pass = P(d.passage_count)||0;
+        const passPrice = P(d.passage_price)||0;
+        const priv = P(d.privacy_count)||0;
+        const privPrice = P(d.privacy_price)||0;
+        const dummy = P(d.dummy_count)||0;
+        const dummyPrice = P(d.dummy_price)||0;
+        const stops = P(d.door_stops_count)||0;
+        const stopPrice = P(d.door_stop_price)||0;
+        const hingePrice = P(d.hinge_finish_price)||0;
+        return (pass * passPrice) + (priv * privPrice) + (dummy * dummyPrice) + (stops * stopPrice) + ((pass + priv + dummy + stops) * 3 * hingePrice);
+      } },
+
+    { id: 'trim-base', name: 'Trim & Millwork', icon: 'column', desc: 'Baseboard profiles, crown, wainscoting, casing by the foot.',
+      fields: [
+        { key: 'profile', label: 'Trim Profile', type: 'select', options: ['Speed Base 3-1/4"', 'Colonial 4-1/4"', 'Craftsman 1x4', 'MDF Flat 5-1/4"', 'Solid Pine'] },
+        { key: 'lf', label: 'Linear Feet (LF)', type: 'number', placeholder: '0' },
+        { key: 'price_lf', label: 'Material Price/LF', type: 'number', placeholder: '0' },
+        { key: 'labor_lf', label: 'Labor Cost/LF', type: 'number', placeholder: '0' },
+        { key: 'corners', label: 'Mitered Corners (count)', type: 'number', placeholder: '0' },
+        { key: 'corner_price', label: 'Corner Price/each', type: 'number', placeholder: '0' },
+        { key: 'casing_width', label: 'Door Casing Width (in)', type: 'number', placeholder: '3.5' },
+        { key: 'window_casing_style', label: 'Window Casing Style', type: 'select', options: ['Picture Frame', 'Stool & Apron', 'Craftsman', 'Modern Flat'] },
+        { key: 'crown_lf', label: 'Crown Molding (LF)', type: 'number', placeholder: '0' },
+        { key: 'crown_price_lf', label: 'Crown Material/LF', type: 'number', placeholder: '0' },
+        { key: 'crown_labor_lf', label: 'Crown Labor/LF', type: 'number', placeholder: '0' },
+        { key: 'wainscot_sqft', label: 'Wainscoting (sqft)', type: 'number', placeholder: '0' },
+        { key: 'wainscot_price', label: 'Wainscot Material/sqft', type: 'number', placeholder: '0' },
+        { key: 'wainscot_labor', label: 'Wainscot Labor/sqft', type: 'number', placeholder: '0' }
+      ],
+      costFn: d => {
+        const lf = P(d.lf)||0;
+        const priceLf = P(d.price_lf)||0;
+        const laborLf = P(d.labor_lf)||0;
+        const corners = P(d.corners)||0;
+        const cornerPrice = P(d.corner_price)||0;
+        const crown = P(d.crown_lf)||0;
+        const crownPrice = P(d.crown_price_lf)||0;
+        const crownLabor = P(d.crown_labor_lf)||0;
+        const wain = P(d.wainscot_sqft)||0;
+        const wainPrice = P(d.wainscot_price)||0;
+        const wainLabor = P(d.wainscot_labor)||0;
+        return (lf * (priceLf + laborLf)) + (corners * cornerPrice) + (crown * (crownPrice + crownLabor)) + (wain * (wainPrice + wainLabor));
+      } },
+
+    { id: 'trim-stair', name: 'Stair Components', icon: 'stairs', desc: 'Treads, risers, balusters, newel posts, stair labor.',
+      fields: [
+        { key: 'stair_tread', label: 'Stair Tread Material', type: 'select', options: ['Oak', 'Pine', 'Maple', 'MDF', 'Ipe'] },
+        { key: 'tread_count', label: 'Tread Count', type: 'number', placeholder: '0' },
+        { key: 'tread_price', label: 'Tread Unit Price', type: 'number', placeholder: '0' },
+        { key: 'riser_count', label: 'Riser Count', type: 'number', placeholder: '0' },
+        { key: 'riser_price', label: 'Riser Unit Price', type: 'number', placeholder: '0' },
+        { key: 'stair_labor_lump', label: 'Stair Labor Lump Sum', type: 'number', placeholder: '0' },
+        { key: 'baluster_style', label: 'Baluster Style', type: 'select', options: ['Iron Spindles', 'Wood Turned', 'Glass Panels', 'Box Newel + Plain', 'Stainless Cable'] },
+        { key: 'baluster_count', label: 'Baluster Count', type: 'number', placeholder: '0' },
+        { key: 'baluster_price', label: 'Baluster Unit Price', type: 'number', placeholder: '0' },
+        { key: 'newel_count', label: 'Newel Post Count', type: 'number', placeholder: '0' },
+        { key: 'newel_price', label: 'Newel Post Unit Price', type: 'number', placeholder: '0' }
+      ],
+      costFn: d => {
+        const treads = P(d.tread_count)||0;
+        const treadPrice = P(d.tread_price)||0;
+        const risers = P(d.riser_count)||0;
+        const riserPrice = P(d.riser_price)||0;
+        const lump = P(d.stair_labor_lump)||0;
+        const balusters = P(d.baluster_count)||0;
+        const balusterPrice = P(d.baluster_price)||0;
+        const newels = P(d.newel_count)||0;
+        const newelPrice = P(d.newel_price)||0;
+        return (treads * treadPrice) + (risers * riserPrice) + lump + (balusters * balusterPrice) + (newels * newelPrice);
+      } },
+
+    { id: 'paint-prep', name: 'Paint — Preparation', icon: 'paintbrush', desc: 'Caulk, wood filler, sandpaper, tape/plastic, primer gallons.',
+      fields: [
+        { key: 'surface', label: 'Surface Area / Location', type: 'text', placeholder: 'e.g. Trim & Walls' },
+        { key: 'caulk_tubes', label: 'Caulk Tubes (count)', type: 'number', placeholder: '0' },
+        { key: 'filler_tubs', label: 'Wood Filler Tubs (count)', type: 'number', placeholder: '0' },
+        { key: 'sandpaper_cost', label: 'Sandpaper Cost (₹)', type: 'number', placeholder: '0' },
+        { key: 'tape_plastic_cost', label: 'Tape & Plastic Cost (₹)', type: 'number', placeholder: '0' },
+        { key: 'primer_type', label: 'Primer Type', type: 'select', options: ['PVA Drywall Primer', 'Stain-Blocking Oil', 'High-Build', 'Bonding'] },
+        { key: 'primer_gallons', label: 'Primer Gallons Spec', type: 'number', placeholder: '0' },
+        { key: 'primer_price_gal', label: 'Primer Price/Gallon', type: 'number', placeholder: '0' }
+      ],
+      costFn: d => {
+        const caulk = P(d.caulk_tubes)||0;
+        const filler = P(d.filler_tubs)||0;
+        const sand = P(d.sandpaper_cost)||0;
+        const tape = P(d.tape_plastic_cost)||0;
+        const primG = P(d.primer_gallons)||0;
+        const primP = P(d.primer_price_gal)||0;
+        return (caulk * 8) + (filler * 25) + sand + tape + (primG * primP);
+      } },
+
+    { id: 'paint-coat', name: 'Paint — Coatings', icon: 'palette', desc: 'Surface sqft, coats, color code, coverage, $/gallon, labor.',
+      fields: [
+        { key: 'surface', label: 'Surface Area / Location', type: 'text', placeholder: 'e.g. Master Bedroom' },
+        { key: 'sqft', label: 'Area (sqft)', type: 'number', placeholder: '0' },
+        { key: 'coats', label: 'Coats Required', type: 'select', options: ['1', '2', '3'] },
+        { key: 'color_code', label: 'Color Code / Brand', type: 'text', placeholder: 'e.g. Sherwin Williams #7005' },
+        { key: 'coverage', label: 'Coverage (sqft/gal)', type: 'number', placeholder: '350' },
+        { key: 'price_per_gal', label: 'Paint Price per Gallon (₹)', type: 'number', placeholder: '0' },
+        { key: 'labor_sqft', label: 'Labor Rate (₹/sqft)', type: 'number', placeholder: '0' }
+      ],
+      costFn: d => {
+        const sqft = P(d.sqft)||0;
+        const coats = P(d.coats)||1;
+        const cov = P(d.coverage)||350;
+        const paintPrice = P(d.price_per_gal)||0;
+        const labor = P(d.labor_sqft)||0;
+        const gallons = cov > 0 ? Math.ceil((sqft * coats) / cov) : 0;
+        return (gallons * paintPrice) + (sqft * labor);
+      } },
+
+    { id: 'closet', name: 'Closet Systems', icon: 'shirt', desc: 'Wire/melamine/custom, LF, drawer units, accessories.',
+      fields: [
+        { key: 'closet_type', label: 'Closet System Type', type: 'select', options: ['Wire Shelving', 'Melamine Built-ins', 'Custom Wood', 'Modular (ClosetMaid / Elfa)'] },
+        { key: 'closet_lf', label: 'Linear Shelving Feet', type: 'number', placeholder: '0' },
+        { key: 'closet_rate_lf', label: 'Price per Linear Foot', type: 'number', placeholder: '0' },
+        { key: 'closet_install_lf', label: 'Install Rate per LF', type: 'number', placeholder: '0' },
+        { key: 'closet_drawer_count', label: 'Drawer Units (count)', type: 'number', placeholder: '0' },
+        { key: 'closet_drawer_price', label: 'Drawer Unit Price', type: 'number', placeholder: '0' },
+        { key: 'closet_accessories_lump', label: 'Accessories Lump Sum (₹)', type: 'number', placeholder: '0' }
+      ],
+      costFn: d => {
+        const lf = P(d.closet_lf)||0;
+        const rate = P(d.closet_rate_lf)||0;
+        const inst = P(d.closet_install_lf)||0;
+        const draw = P(d.closet_drawer_count)||0;
+        const drawPrice = P(d.closet_drawer_price)||0;
+        const acc = P(d.closet_accessories_lump)||0;
+        return (lf * (rate + inst)) + (draw * drawPrice) + acc;
+      } },
+
+    { id: 'glass', name: 'Glass & Mirrors', icon: 'mirror', desc: 'Shower enclosures, vanity mirrors, glass partitions.',
+      fields: [
+        { key: 'location', label: 'Item / Location', type: 'text', placeholder: 'e.g. Master Shower' },
+        { key: 'type', label: 'Type', type: 'select', options: ['Shower Enclosure', 'Vanity Mirror', 'Wall Mirror', 'Glass Partition', 'Backsplash Glass'] },
+        { key: 'width', label: 'Width (in)', type: 'number', placeholder: '0' },
+        { key: 'height', label: 'Height (in)', type: 'number', placeholder: '0' },
+        { key: 'qty', label: 'Quantity', type: 'number', placeholder: '1' },
+        { key: 'glass_material', label: 'Glass Type', type: 'select', options: ['Clear Tempered', 'Frosted', 'Low-Iron', 'Bronze Tint', 'Rain'] },
+        { key: 'unit_price', label: 'Unit Price', type: 'number', placeholder: '0' },
+        { key: 'install_price', label: 'Install Price', type: 'number', placeholder: '0' },
+        { key: 'shower_type', label: 'Shower Enclosure Type', type: 'select', options: ['Frameless Heavy Glass', 'Semi-Frameless', 'Framed', 'Sliding By-Pass'] },
+        { key: 'shower_lump', label: 'Shower Enclosure (lump)', type: 'number', placeholder: '0' },
+        { key: 'vanity_mirror_sqft', label: 'Vanity Mirror Sq Ft', type: 'number', placeholder: '0' },
+        { key: 'mirror_price_sqft', label: 'Mirror Price per Sq Ft', type: 'number', placeholder: '0' }
+      ],
+      costFn: d => {
+        const qty = P(d.qty)||0;
+        const up = P(d.unit_price)||0;
+        const inst = P(d.install_price)||0;
+        const lump = P(d.shower_lump)||0;
+        const sqft = P(d.vanity_mirror_sqft)||0;
+        const mp = P(d.mirror_price_sqft)||0;
+        return (qty * (up + inst)) + lump + (sqft * mp);
+      } },
+
+    { id: 'fixture', name: 'Custom Fixtures', icon: 'hammer', desc: 'Fireplace surrounds, built-ins, miscellaneous vendor items.',
+      fields: [
+        { key: 'item', label: 'Item / Description', type: 'text', placeholder: 'e.g. Fireplace Surround' },
+        { key: 'vendor', label: 'Vendor / Source', type: 'text', placeholder: 'e.g. Marble Supplier' },
+        { key: 'qty', label: 'Quantity', type: 'number', placeholder: '1' },
+        { key: 'unit_price', label: 'Unit Price', type: 'number', placeholder: '0' },
+        { key: 'labor', label: 'Labor / Installation', type: 'number', placeholder: '0' },
+        { key: 'confidence', label: 'Cost Confidence', type: 'select', options: ['Estimated', 'Quoted', 'Locked-PO', 'Invoiced'] }
+      ],
+      costFn: d => (P(d.qty)||0)*(P(d.unit_price)||0) + (P(d.labor)||0) }
+  ];
+
 // ── Patch financial.js to use entries for phase totals ────
-  // Override computePhaseTotal to use entry-based sums for phases 1-9
+  // Override computePhaseTotal to use entry-based sums for phases 1-10
   const _origComputePhaseTotal = Financial.computePhaseTotal;
   Financial.computePhaseTotal = function(phase) {
-    if (phase.id >= 1 && phase.id <= 9) {
-      return sumAllEntries(phase.id) + ((State.getBills && State.getBills(phase.id))||[]).reduce((s,b)=>s+(parseFloat(b.totalAmount)||0),0);
+    const pid = Number(phase?.id);
+    if (pid >= 1 && pid <= 10) {
+      return sumAllEntries(pid) + ((State.getBills && State.getBills(pid))||[]).reduce((s,b)=>s+(parseFloat(b.totalAmount)||0),0);
     }
     return _origComputePhaseTotal(phase);
   };
 
-  // ── Override renderTradePhases 1-9 with new 3-card hub ────
+  // ── Override renderTradePhases 1-10 with new 3-card hub ────
   const PHASE_CARD_MAP = {
     1: [CIVIL_CARDS_REF.filter(c=>!LABOR_IDS.includes(c.id)), CIVIL_CARDS_REF.filter(c=>LABOR_IDS.includes(c.id))],
     2: [TILES_CARDS_REF.filter(c=>!LABOR_IDS.includes(c.id)), TILES_CARDS_REF.filter(c=>LABOR_IDS.includes(c.id))],
@@ -802,6 +1365,7 @@
     7: [POP_CARDS_REF.filter(c=>!LABOR_IDS.includes(c.id)), POP_CARDS_REF.filter(c=>LABOR_IDS.includes(c.id))],
     8: [LIFT_CARDS_REF.filter(c=>!LABOR_IDS.includes(c.id)), LIFT_CARDS_REF.filter(c=>LABOR_IDS.includes(c.id))],
     9: [MISC_CARDS_REF.filter(c=>!LABOR_IDS.includes(c.id)), MISC_CARDS_REF.filter(c=>LABOR_IDS.includes(c.id))],
+    10: [INTERIOR_CARDS_REF.filter(c=>!LABOR_IDS.includes(c.id)), INTERIOR_CARDS_REF.filter(c=>LABOR_IDS.includes(c.id))],
   };
 
   function makeTradeRenderer(phaseId) {
@@ -811,14 +1375,14 @@
     };
   }
 
-  // Override renderPhaseHub for phases 1-9 to use new 3-card hub
+  // Override renderPhaseHub for phases 1-10 to use new 3-card hub
   const _origRenderPhaseHub = Phases.renderPhaseHub ? Phases.renderPhaseHub.bind(Phases) : null;
   Phases.renderPhaseHub = function(phase) {
-    if (phase.id >= 1 && phase.id <= 9) {
+    if (phase.id >= 1 && phase.id <= 10) {
       const [mat, lab] = PHASE_CARD_MAP[phase.id];
       return renderTradeHubNew(phase, mat, lab);
     }
-    // For Phase 10 and others, use original
+    // For other phases, use original
     return _origRenderPhaseHub ? _origRenderPhaseHub(phase) : '';
   };
 
@@ -831,12 +1395,13 @@
   Phases.renderTradePhase7 = makeTradeRenderer(7);
   Phases.renderTradePhase8 = makeTradeRenderer(8);
   Phases.renderTradePhase9 = makeTradeRenderer(9);
+  Phases.renderTradePhase10 = makeTradeRenderer(10);
 
-  // Override showInputCard for phases 1-9 to use new entry form
+  // Override showInputCard for phases 1-10 to use new entry form
   const _origShowInputCard = (typeof App !== 'undefined' && App.showInputCard) ? App.showInputCard.bind(App) : null;
   if (typeof App !== 'undefined') {
     App.showInputCard = function(phaseId, cardId) {
-      if (phaseId >= 1 && phaseId <= 9) {
+      if (phaseId >= 1 && phaseId <= 10) {
         const allCards = getAllCardsForPhase(phaseId);
         const card = allCards.find(c => c.id === cardId);
         if (card) {
@@ -853,9 +1418,10 @@
   // Called by Financial.updateAllTotals() to refresh hub card
   // costs without a full re-render.
   function updateHubTotals(phaseId) {
+    phaseId = Number(phaseId);
     const proj = State.getCurrentProject();
     if (!proj) return;
-    const phase = proj.phases.find(p => p.id === phaseId);
+    const phase = proj.phases.find(p => Number(p.id) === Number(phaseId));
     if (!phase) return;
     const [mat, lab] = PHASE_CARD_MAP[phaseId] || [[], []];
     const materialTotal = mat.reduce((s, c) => s + sumEntries(phaseId, c.id), 0);
@@ -877,6 +1443,8 @@
   }
 
   Phases.updateHubTotals = updateHubTotals;
+  Phases.getLaborCardsForPhase = getLaborCardsForPhase;
+  Phases.getAllCardsForPhase = getAllCardsForPhase;
 
   // BUG 6 FIX: Force immediate totals refresh now that the override is applied
   // This fixes the "₹0 in sidebar" issue when phases-new-core.js loads after
@@ -895,10 +1463,10 @@
   // Also expose renderCardListView and renderEntryForm on Phases so
   // App.showMaterialCards / App.showLaborCards / App.showEntryForm can call them
   Phases.renderCardListView = function(phaseId, isLabor) {
-    phaseId = parseInt(phaseId);
+    phaseId = Number(phaseId);
     const proj = State.getCurrentProject();
     if (!proj) return '<div style="padding:24px">No project loaded</div>';
-    const phase = proj.phases.find(p => p.id === phaseId);
+    const phase = proj.phases.find(p => Number(p.id) === Number(phaseId));
     if (!phase) return '';
     const cards = (Object.values(ALL_CARDS_REF[phaseId] || {})).filter(c =>
       isLabor ? LABOR_IDS.includes(c.id) : !LABOR_IDS.includes(c.id));
@@ -919,32 +1487,40 @@
       </button>`;
     }).join('');
     return `<div class="category-hub">
-      <div class="breadcrumb">
-        <a onclick="App.showPhaseHub(${phaseId})">← ${phase.name}</a>
+      <div class="breadcrumb" style="margin-bottom:12px">
+        <a onclick="App.showOverview()" style="cursor:pointer">Overview</a>
         <span class="breadcrumb-sep">›</span>
-        <span class="breadcrumb-current">${label}</span>
+        <span class="breadcrumb-current">${phase.name}</span>
       </div>
-      <div class="category-hub-header">
-        <div>
-          <div class="category-hub-title">${label} — ${phase.name}</div>
-          <div class="category-hub-subtitle">Tap any category to add entries</div>
-        </div>
-        <div class="category-hub-stat">
-          <span class="category-hub-stat-label">${label} Total</span>
-          <span class="category-hub-stat-value" style="color:var(--amber)">${F.fmtFull(total)}</span>
-        </div>
+      <div class="category-hub-header" style="margin-bottom:20px">
+        <div class="category-hub-title">${Phases.iconFor(phase.icon, 20)} <span style="margin-left:8px">${phase.name}</span></div>
       </div>
       <div class="category-grid">${cardHtml}</div>
+      
+      <!-- Section details & total box at the bottom -->
+      <div style="margin-top:24px;margin-bottom:20px;background:var(--charcoal-mid);border:1px solid var(--charcoal-border);border-radius:var(--radius-lg);padding:14px 18px">
+        <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:12px">
+          <div>
+            <div style="font-size:16px;font-weight:700;color:var(--text-primary)">${label}</div>
+            <div style="font-size:11px;color:var(--text-muted);margin-top:2px">Tap any category above to add entries</div>
+          </div>
+          <div style="font-size:11px;color:var(--text-muted);text-transform:uppercase;letter-spacing:.08em;font-weight:700">${label} Total</div>
+        </div>
+        <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:12px;border-top:1px solid rgba(255,255,255,0.05);padding-top:12px">
+          <div style="font-size:12px;color:var(--text-muted)">Running Total for this section</div>
+          <div style="font-family:var(--font-mono);font-size:26px;font-weight:700;color:var(--amber-light)">${F.fmtFull(total)}</div>
+        </div>
+      </div>
     </div>`;
   };
 
   Phases.renderEntryForm = function(phaseId, cardId) {
-    phaseId = parseInt(phaseId);
+    phaseId = Number(phaseId);
     // Delegate to showCardEntryForm which writes to content-area directly
     // Here we just trigger it and return the content-area html
     const proj = State.getCurrentProject();
     if (!proj) return '<div style="padding:24px">No project</div>';
-    const phase = proj.phases.find(p => p.id === phaseId);
+    const phase = proj.phases.find(p => Number(p.id) === Number(phaseId));
     if (!phase) return '';
     const allCards = getAllCardsForPhase(phaseId);
     const card = allCards.find(c => c.id === cardId);

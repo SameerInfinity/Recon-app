@@ -4,8 +4,8 @@
   "description": "Construction management tailored for Indian contractors.",
   "start_url": "/?source=pwa",
   "display": "standalone",
-  "background_color": "#0F172A",
-  "theme_color": "#0F172A",
+  "background_color": "#EAECEF",
+  "theme_color": "#EAECEF",
   "icons": [
     {
       "src": "/icons/icon.svg",

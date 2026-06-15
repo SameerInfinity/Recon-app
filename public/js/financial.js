@@ -14,8 +14,14 @@ const Financial = (() => {
     const n = parseFloat(amount) || 0;
     const sym = currency === 'INR' ? '₹' : '$';
     const locale = currency === 'INR' ? 'en-IN' : 'en-US';
-    if (n >= 10000000) return sym + (n / 10000000).toFixed(2) + ' Cr';
-    if (n >= 100000)   return sym + (n / 100000).toFixed(2) + ' L';
+    if (n >= 10000000) {
+      const v = n / 10000000;
+      return sym + (v % 1 === 0 ? v.toFixed(0) : parseFloat(v.toFixed(2))) + ' Cr';
+    }
+    if (n >= 100000) {
+      const v = n / 100000;
+      return sym + (v % 1 === 0 ? v.toFixed(0) : parseFloat(v.toFixed(2))) + ' L';
+    }
     return sym + n.toLocaleString(locale, { maximumFractionDigits: 0 });
   }
 
@@ -173,8 +179,13 @@ const Financial = (() => {
     const setVal = (id, val) => {
       const el = document.getElementById(id);
       if (!el) return;
-      if (el.tagName === 'INPUT') el.value = val.toFixed(2);
-      else el.textContent = fmt(val);
+      if (el.tagName === 'INPUT') {
+        if (document.activeElement !== el) {
+          el.value = val > 0 ? val.toFixed(2) : '';
+        }
+      } else {
+        el.textContent = fmt(val);
+      }
     };
 
     // Subfloor prep
@@ -327,12 +338,13 @@ const Financial = (() => {
     try {
       if (!phase || typeof phase !== 'object') return 0;
       const d = phase.data || {};
+      const pid = Number(phase.id);
 
       // Phases 1-9: entry-based model
       // Sum all saved entries across all cards + scanned bills
       // phases-new-core.js overrides this after it loads, but we also
       // handle it here as a fallback so the old calc never returns stale ₹0
-      if (phase.id >= 1 && phase.id <= 9) {
+      if (pid >= 1 && pid <= 9) {
         let entryTotal = 0;
         if (d.entries && typeof d.entries === 'object') {
           Object.values(d.entries).forEach(arr => {
@@ -341,13 +353,13 @@ const Financial = (() => {
             }
           });
         }
-        const bills = (typeof State !== 'undefined' && State.getBills) ? (State.getBills(phase.id) || []) : (phase.bills || []);
+        const bills = (typeof State !== 'undefined' && State.getBills) ? (State.getBills(pid) || []) : (phase.bills || []);
         const billTotal = bills.reduce((s, b) => s + (parseFloat(b.totalAmount) || 0), 0);
         return entryTotal + billTotal;
       }
 
       // Phase 10: Interior — uses its own detailed calc
-      if (phase.id === 10) return calcPhase10(d);
+      if (pid === 10) return calcPhase10(d);
       return 0;
     } catch (err) {
       console.warn('[Financial] computePhaseTotal error for phase', phase?.id, err.message);
@@ -363,6 +375,8 @@ const Financial = (() => {
     } catch { return 0; }
   }
 
+  let _lastSavedTotal = null;
+
   function updateAllTotals() {
     const proj = State.getCurrentProject();
     if (!proj) return;
@@ -370,12 +384,52 @@ const Financial = (() => {
     let projectTotal = 0;
     let materialTotal = 0, laborTotal = 0, equipTotal = 0;
 
+    // Real labor card IDs per phase — these are actual payout/labor cards, rest are materials
+    const LABOR_CARD_IDS = new Set([
+      'thekedar',          // Civil labor
+      'tile_labor',        // Tiling labor
+      'painter_labor',     // Painter labor
+      'electrician_labor', // Electrician labor
+      'fab_labor',         // Carpenter/fabricator labor
+      'plumber_labor',     // Plumber labor
+      'pop_labor',         // POP contractor labor
+      'lift_install',      // Lift installation crew
+      'misc_expenses',     // Misc site expenses (treat as other/equipment)
+      'floor-prep',        // Phase 10 subfloor prep labor
+      'paint-prep',        // Phase 10 paint prep labor
+    ]);
+
     proj.phases.forEach(phase => {
+      const pid = Number(phase.id);
       const phTotal = computePhaseTotal(phase);
       projectTotal += phTotal;
-      materialTotal += phTotal * 0.55;
-      laborTotal    += phTotal * 0.35;
-      equipTotal    += phTotal * 0.10;
+
+      // Build real material vs labor split from card-level data (phases 1–10)
+      if (pid >= 1 && pid <= 10) {
+        const entriesMap = phase.data?.entries || {};
+        const registry = (typeof Phases !== 'undefined' && Phases.CATEGORY_REGISTRY || {})[pid] || [];
+        registry.forEach(cat => {
+          let cardCost = 0;
+          const arr = entriesMap[cat.id];
+          if (Array.isArray(arr)) {
+            arr.forEach(e => { cardCost += parseFloat(e.total) || 0; });
+          }
+          if (LABOR_CARD_IDS.has(cat.id)) {
+            laborTotal += cardCost;
+          } else {
+            materialTotal += cardCost;
+          }
+        });
+        // Also add bills to materialTotal
+        const bills = (typeof State !== 'undefined' && State.getBills) ? (State.getBills(pid) || []) : [];
+        bills.forEach(b => {
+          materialTotal += parseFloat(b.totalAmount) || 0;
+        });
+      } else {
+        // Unknown phase — use a reasonable 60/40 split as estimate
+        materialTotal += phTotal * 0.60;
+        laborTotal    += phTotal * 0.40;
+      }
 
       updateEl(`phase-cost-${phase.id}`, fmt(phTotal));
 
@@ -391,12 +445,15 @@ const Financial = (() => {
         }
       }
 
-      // Update hub card costs for phases 1-9 (entry-based hub)
-      if (phase.id >= 1 && phase.id <= 9 && typeof Phases !== 'undefined' && typeof Phases.updateHubTotals === 'function') {
-        try { Phases.updateHubTotals(phase.id); } catch(e) { /* silent */ }
+      // Only update visible hub cards (element must exist in DOM)
+      if (phase.id >= 1 && phase.id <= 10 && typeof Phases !== 'undefined' && typeof Phases.updateHubTotals === 'function') {
+        const hubEl = document.getElementById(`hub-running-total-${phase.id}`);
+        if (hubEl) {
+          try { Phases.updateHubTotals(phase.id); } catch(e) { /* silent */ }
+        }
       }
 
-      // Update inner card totals for phase 10 (interior — old category registry)
+      // Update inner card totals for phase 10 (interior)
       if (phase.id === 10 && typeof Phases !== 'undefined' && Phases.CATEGORY_REGISTRY && Phases.CATEGORY_REGISTRY[phase.id]) {
         Phases.CATEGORY_REGISTRY[phase.id].forEach(cat => {
           const cardTotalEl = document.getElementById(`card-total-${phase.id}-${cat.id}`);
@@ -448,7 +505,12 @@ const Financial = (() => {
       if (pctEl) pctEl.textContent = Math.round(healthPct) + '%';
     }
 
-    State.save();
+    // Only save to localStorage if the total meaningfully changed
+    const totalRounded = Math.round(projectTotal);
+    if (totalRounded !== _lastSavedTotal) {
+      _lastSavedTotal = totalRounded;
+      State.save();
+    }
     return projectTotal;
   }
 

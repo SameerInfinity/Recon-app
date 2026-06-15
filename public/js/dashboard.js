@@ -1,185 +1,151 @@
-/* ═══════════════════════════════════════════
-   DASHBOARD.JS — Master Financial Dashboard
-   SVG Charts, Phase Breakdown, Variance Alerts
-   ═══════════════════════════════════════════ */
+/* ═══════════════════════════════════════════════════════════════
+   DASHBOARD.JS — Mobile-first project overview
+   - Hero financial card with health bar
+   - Stat cards (Spent / Remaining)
+   - Phase micro-cards (top 6 by spend, tap to drill)
+   - Variance alerts as mobile feed cards
+   ═══════════════════════════════════════════════════════════════ */
 
 const Dashboard = (() => {
   const F = Financial;
 
   function render() {
     const proj = State.getCurrentProject();
-    if (!proj) return '<div style="padding:40px;color:var(--text-muted)">No project loaded</div>';
+    if (!proj) return `<div class="m-empty"><div class="m-empty-icon"><svg viewBox="0 0 24 24" width="40" height="40" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M3 21V8l9-5 9 5v13"/><path d="M9 21v-8h6v8"/></svg></div><div class="m-empty-title">No project open</div></div>`;
 
     const total = F.computeProjectTotal(proj);
     const budget = proj.totalBudget || 0;
     const spent = total;
     const remaining = budget - spent;
-    const pct = budget > 0 ? Math.min(100, (spent / budget) * 100) : 0;
+    const pct = budget > 0 ? Math.min(150, (spent / budget) * 100) : 0;
+    const isOver = spent > budget && budget > 0;
 
-    // Phase data
-    const phaseData = proj.phases.map(ph => ({
-      ...ph,
-      total: F.computePhaseTotal(ph),
-    }));
+    const phaseData = (proj.phases || []).map(ph => ({ ...ph, total: F.computePhaseTotal(ph) }));
+    const sortedPhases = [...phaseData].sort((a, b) => b.total - a.total);
+    const topPhases = sortedPhases.slice(0, 6);
 
-    const maxPhase = Math.max(...phaseData.map(p => p.total), 1);
-
-    // Variance alerts
-    const phaseCount = Math.max(1, proj.phases.length);
-    const fairShare = budget / phaseCount;
+    // Only count phases that have actual cost or have been started for fair-share calculation
+    const activePhases = phaseData.filter(ph => ph.total > 0 || (ph.completion || 0) > 0);
+    const phaseCount = Math.max(1, phaseData.length);
+    const activeDenominator = Math.max(1, activePhases.length);
+    // Fair share = budget spread only across phases that are actually being used
+    const fairShare = budget / activeDenominator;
     const variances = phaseData
-      .filter(ph => budget > 0 && ph.total > fairShare)
+      .filter(ph => budget > 0 && ph.total > 0 && ph.total > fairShare)
       .map(ph => ({ ...ph, over: ph.total - fairShare }));
+
+    const avgComp = Math.round(phaseData.reduce((s, p) => s + (p.completion || 0), 0) / phaseCount);
+    const isLocal = !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(proj.id);
+    const syncBanner = isLocal ? `
+      <div class="m-sync-banner" style="background:var(--amber-glow); border: 1px dashed var(--amber); border-radius:var(--r-lg); padding:12px; margin-bottom:16px; display:flex; align-items:center; justify-content:space-between; gap:8px">
+        <div style="min-width:0; flex:1">
+          <div style="font-weight:700; font-size:13px; color:var(--amber)">Project lives on device only</div>
+          <div style="font-size:11px; color:var(--text-muted); margin-top:2px">Sync to Cloud to back up all data.</div>
+        </div>
+        <button class="m-btn m-btn-primary m-btn-sm" onclick="App.syncProjectToCloud('${escapeAttr(proj.id)}')" style="min-height:30px; font-size:12px; padding:6px 12px; flex-shrink:0">
+          Sync Project
+        </button>
+      </div>
+    ` : '';
 
     return `
     <div class="phase-workspace active">
-      <div class="phase-header">
-        <div class="phase-title-block">
-          <div class="phase-title">${Phases.iconFor('dashboard', 24)} <span style="margin-left:8px">Project Dashboard</span></div>
-          <div class="phase-subtitle">${proj.name} — Financial Overview</div>
+      ${syncBanner}
+
+      <!-- ESTIMATION CARD -->
+      ${typeof Estimation !== 'undefined' ? Estimation.renderCard() : ''}
+
+      <!-- HERO: total spend + health -->
+      <div class="m-hero-card">
+        <div class="m-hero-eyebrow">${escapeHtml(proj.name)}</div>
+        <div class="m-hero-amount">${F.fmtFull(spent)}</div>
+        <div class="m-hero-sub">${budget > 0 ? `of ${F.fmtFull(budget)} budget` : 'No budget set'}</div>
+        ${budget > 0 ? `
+          <div class="m-health-bar"><div class="m-health-fill ${isOver?'over':''}" style="width:${Math.min(100, pct)}%"></div></div>
+          <div class="m-health-meta">
+            <span>${Math.round(pct)}% used</span>
+            <span style="color:${remaining >= 0 ? 'var(--success)' : 'var(--warning)'}">
+              ${remaining >= 0 ? F.fmtFull(remaining) + ' left' : F.fmtFull(Math.abs(remaining)) + ' over'}
+            </span>
+          </div>` : ''}
+      </div>
+
+      <!-- STAT ROW -->
+      <div class="m-stat-row">
+        <div class="m-stat">
+          <div class="m-stat-label">Avg Completion</div>
+          <div class="m-stat-value">${avgComp}%</div>
+        </div>
+        <div class="m-stat">
+          <div class="m-stat-label">Active Phases</div>
+          <div class="m-stat-value">${phaseData.filter(p => (p.completion || 0) > 0 && (p.completion || 0) < 100).length}<span style="font-size:13px;color:var(--text-muted);font-weight:500"> / ${phaseCount}</span></div>
         </div>
       </div>
 
-      <!-- Stats Row -->
-      <div class="dashboard-grid">
-        <div class="stat-card">
-          <div class="stat-card-label">Total Budget</div>
-          <div class="stat-card-value">${F.fmtFull(budget)}</div>
-          <div class="stat-card-sub">Set at project creation</div>
-        </div>
-        <div class="stat-card" style="border-color:${spent > budget && budget > 0 ? 'rgba(239,68,68,0.3)' : 'var(--charcoal-border)'}">
-          <div class="stat-card-label">Total Spent</div>
-          <div class="stat-card-value" style="color:${spent > budget && budget > 0 ? 'var(--warning)' : 'var(--steel-light)'}">${F.fmtFull(spent)}</div>
-          <div class="stat-card-sub">${budget > 0 ? Math.round(pct) + '% of budget used' : 'No budget set'}</div>
-        </div>
-        <div class="stat-card">
-          <div class="stat-card-label">${remaining >= 0 ? 'Remaining' : 'Over Budget'}</div>
-          <div class="stat-card-value" style="color:${remaining >= 0 ? 'var(--success)' : 'var(--warning)'}">${F.fmtFull(Math.abs(remaining))}</div>
-          <div class="stat-card-sub">${budget > 0 ? (remaining >= 0 ? 'Available to spend' : `${Phases.iconFor('alert', 11)} Budget exceeded`) : 'Set a budget to track'}</div>
-        </div>
-      </div>
-
-      <!-- Budget Donut + Phase Breakdown -->
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:16px">
-        <div class="dashboard-chart-card">
-          <div class="dashboard-chart-title">Budget Utilization</div>
-          <div class="donut-container">
-            ${renderDonut(pct, spent, budget)}
-            <div class="donut-legend">
-              <div class="donut-legend-item">
-                <div class="donut-legend-dot" style="background:var(--amber)"></div>
-                <span>Spent: ${F.fmtFull(spent)}</span>
-              </div>
-              <div class="donut-legend-item">
-                <div class="donut-legend-dot" style="background:var(--charcoal-border)"></div>
-                <span>Remaining: ${F.fmtFull(Math.max(0, remaining))}</span>
-              </div>
-              <div class="donut-legend-item" style="margin-top:8px;padding-top:8px;border-top:1px solid var(--charcoal-border)">
-                <div class="donut-legend-dot" style="background:var(--steel)"></div>
-                <span>Avg completion: ${Math.round(proj.phases.reduce((s,p) => s + p.completion, 0) / Math.max(1, proj.phases.length))}%</span>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        <div class="dashboard-chart-card">
-          <div class="dashboard-chart-title">Cost Type Breakdown</div>
-          ${renderCostTypeBar(spent)}
-        </div>
-      </div>
-
-      <!-- Phase Breakdown -->
-      <div class="dashboard-chart-card">
-        <div class="dashboard-chart-title">Phase-by-Phase Cost Breakdown</div>
-        ${phaseData.map(ph => `
-          <div class="phase-bar-row" onclick="App.showPhase(${ph.id})">
-            <span class="phase-bar-label">${ph.icon} ${ph.name}</span>
-            <div class="phase-bar-outer">
-              <div class="phase-bar-fill" style="width:${maxPhase > 0 ? (ph.total / maxPhase * 100) : 0}%"></div>
-            </div>
-            <span class="phase-bar-value">${F.fmtFull(ph.total)}</span>
-          </div>
-        `).join('')}
-      </div>
-
+      <!-- VARIANCE ALERTS -->
       ${variances.length > 0 ? `
-      <!-- Variance Alerts -->
-      <div class="dashboard-chart-card" style="border-color:rgba(239,68,68,0.15)">
-        <div class="dashboard-chart-title" style="color:var(--warning);display:inline-flex;gap:6px;align-items:center">${Phases.iconFor('alert', 14)} Variance Alerts</div>
-        ${variances.map(v => `
-          <div class="variance-card" onclick="App.showPhase(${v.id})">
-            <div>
-              <span class="variance-label">${v.icon} ${v.name}</span>
-              <span style="font-size:11px;color:var(--text-muted);margin-left:8px">Phase ${v.id}</span>
+        <div class="m-section-title"><svg viewBox="0 0 24 24" width="16" height="16" style="vertical-align:middle;margin-right:6px" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg> Variance Alerts <span class="count">${variances.length}</span></div>
+        ${variances.slice(0, 3).map(v => `
+          <div class="m-alert-card" onclick="App.showPhaseHub(${v.id})">
+            <div class="badge">!</div>
+            <div class="body">
+              <div class="name">${escapeHtml(v.name)}</div>
+              <div class="meta">${v.completion}% complete · Phase ${v.id}</div>
             </div>
-            <span class="variance-amount">+${F.fmtFull(v.over)} over</span>
+            <div class="over">+${F.fmt(v.over)}</div>
           </div>
         `).join('')}
-      </div>` : ''}
+      ` : ''}
 
-      <!-- Subcontractor Summary -->
+      <!-- ACTIVE PHASES -->
+      <div class="m-section-title">Top Phases by Spend <span class="count">${topPhases.length}</span></div>
+      <div class="m-phase-grid">
+        ${topPhases.map(ph => {
+          const comp = ph.completion || 0;
+          return `<button class="m-phase-card" onclick="App.showPhaseHub(${ph.id})">
+            <span class="m-phase-card-icon">${Icons.render(ph.icon, 22)}</span>
+            <div class="m-phase-card-body">
+              <div class="m-phase-card-name">${escapeHtml(ph.name)}</div>
+              <div class="m-phase-card-meta">
+                <span>${comp}% complete</span>
+                <span>·</span>
+                <span class="m-phase-card-cost">${F.fmt(ph.total)}</span>
+              </div>
+              <div class="m-phase-card-progress"><i style="width:${comp}%"></i></div>
+            </div>
+            <span class="m-phase-card-chev">›</span>
+          </button>`;
+        }).join('')}
+      </div>
+
       ${renderSubSummary(proj)}
 
-      <!-- Project Info -->
-      <div class="dashboard-chart-card" style="margin-bottom:40px">
-        <div class="dashboard-chart-title">Project Details</div>
-        <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
-          <div style="font-size:12px;color:var(--text-muted)">Client: <span style="color:var(--text-secondary);font-weight:500">${proj.client || '—'}</span></div>
-          <div style="font-size:12px;color:var(--text-muted)">Address: <span style="color:var(--text-secondary);font-weight:500">${proj.address || '—'}</span></div>
-          <div style="font-size:12px;color:var(--text-muted)">Start Date: <span style="color:var(--text-secondary);font-weight:500">${proj.startDate || '—'}</span></div>
-          <div style="font-size:12px;color:var(--text-muted)">Target End: <span style="color:var(--text-secondary);font-weight:500">${proj.endDate || '—'}</span></div>
-          <div style="font-size:12px;color:var(--text-muted)">Type: <span style="color:var(--text-secondary);font-weight:500">${proj.type || 'residential'}</span></div>
-          <div style="font-size:12px;color:var(--text-muted)">Contingency: <span style="color:var(--text-secondary);font-weight:500">${proj.contingency || 10}%</span></div>
-        </div>
+      <!-- PROJECT META -->
+      <div class="m-section-title" style="display:flex;align-items:center;justify-content:space-between">
+        <span>Project Details</span>
+        <button onclick="App.showEditProjectModal()" style="background:none;border:none;color:var(--amber);cursor:pointer;font-size:12px;font-weight:700;display:inline-flex;align-items:center;gap:4px;font-family:inherit;padding:4px 8px;border-radius:6px;transition:background 0.15s" onmouseover="this.style.background='var(--amber-glow)'" onmouseout="this.style.background=''">
+          <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/></svg>
+          Edit
+        </button>
       </div>
+      <div class="m-list-group">
+        ${detailRow('Client',       proj.client || '—')}
+        ${detailRow('Address',      proj.address || '—')}
+        ${detailRow('Start Date',   proj.startDate || '—')}
+        ${detailRow('Target End',   proj.endDate || '—')}
+        ${detailRow('Type',         proj.type || 'residential')}
+        ${detailRow('Contingency',  (proj.contingency || 10) + '%')}
+      </div>
+
+      <div style="height:80px"></div>
     </div>`;
   }
 
-  function renderDonut(pct, spent, budget) {
-    const radius = 60;
-    const circumference = 2 * Math.PI * radius;
-    const filled = (pct / 100) * circumference;
-    const empty = circumference - filled;
-    const color = pct > 100 ? 'var(--warning)' : pct > 85 ? '#D9B68E' : 'var(--amber)';
-
-    return `
-    <svg class="donut-svg" viewBox="0 0 160 160">
-      <!-- Background ring -->
-      <circle cx="80" cy="80" r="${radius}" fill="none" stroke="var(--charcoal-border)" stroke-width="14" />
-      <!-- Filled ring -->
-      <circle cx="80" cy="80" r="${radius}" fill="none" stroke="${color}" stroke-width="14"
-        stroke-dasharray="${filled} ${empty}"
-        stroke-dashoffset="${circumference * 0.25}"
-        stroke-linecap="round"
-        style="transition: stroke-dasharray 1s var(--ease-out);" />
-      <!-- Center text -->
-      <text x="80" y="74" text-anchor="middle" class="donut-center-text" style="font-size:24px;font-weight:700">${Math.round(pct)}%</text>
-      <text x="80" y="94" text-anchor="middle" style="font-size:10px;fill:var(--text-muted);font-family:var(--font-body)">of budget</text>
-    </svg>`;
-  }
-
-  function renderCostTypeBar(total) {
-    const types = [
-      { label: 'Materials', pct: 55, color: 'var(--amber)' },
-      { label: 'Labor', pct: 35, color: 'var(--steel-light)' },
-      { label: 'Equipment', pct: 7, color: 'var(--purple)' },
-      { label: 'Permits & Fees', pct: 3, color: 'var(--success)' },
-    ];
-
-    return `
-    <div style="margin:16px 0">
-      <div style="display:flex;height:12px;border-radius:6px;overflow:hidden;margin-bottom:16px">
-        ${types.map(t => `<div style="width:${t.pct}%;background:${t.color};transition:width 0.6s var(--ease-out)" title="${t.label}: ${t.pct}%"></div>`).join('')}
-      </div>
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
-        ${types.map(t => `
-          <div style="display:flex;align-items:center;gap:8px;font-size:12px;color:var(--text-secondary)">
-            <div style="width:10px;height:10px;border-radius:3px;background:${t.color};flex-shrink:0"></div>
-            <span>${t.label}</span>
-            <span style="margin-left:auto;font-family:var(--font-mono);font-size:11px;color:var(--text-muted)">${t.pct}%</span>
-            <span style="font-family:var(--font-mono);font-size:11px;color:var(--steel-light)">${F.fmt(total * t.pct / 100)}</span>
-          </div>
-        `).join('')}
+  function detailRow(label, value) {
+    return `<div class="m-list-row" style="cursor:default">
+      <div class="body">
+        <div class="label" style="font-size:11px;text-transform:uppercase;letter-spacing:0.1em;color:var(--text-muted);font-weight:700">${escapeHtml(label)}</div>
+        <div class="desc" style="color:var(--text);font-size:14px;font-weight:600;margin-top:2px">${escapeHtml(value)}</div>
       </div>
     </div>`;
   }
@@ -187,29 +153,16 @@ const Dashboard = (() => {
   function renderSubSummary(proj) {
     const subs = proj.subcontractors || [];
     if (!subs.length) return '';
-
-    const totalContract = subs.reduce((s, sub) => s + F.parseNum(sub.contract), 0);
-    const totalPaid = subs.reduce((s, sub) => s + F.parseNum(sub.paid), 0);
-    const totalOwed = totalContract - totalPaid;
-
+    const contracted = subs.reduce((s, x) => s + F.parseNum(x.contract), 0);
+    const paid = subs.reduce((s, x) => s + F.parseNum(x.paid), 0);
+    const owed = contracted - paid;
     return `
-    <div class="dashboard-chart-card">
-      <div class="dashboard-chart-title">Subcontractor Payment Summary</div>
-      <div class="dashboard-grid" style="margin-bottom:0">
-        <div class="stat-card" style="padding:12px 14px">
-          <div class="stat-card-label">Total Contracted</div>
-          <div class="stat-card-value" style="font-size:18px">${F.fmtFull(totalContract)}</div>
-        </div>
-        <div class="stat-card" style="padding:12px 14px">
-          <div class="stat-card-label">Total Paid</div>
-          <div class="stat-card-value" style="font-size:18px;color:var(--success)">${F.fmtFull(totalPaid)}</div>
-        </div>
-        <div class="stat-card" style="padding:12px 14px">
-          <div class="stat-card-label">Outstanding</div>
-          <div class="stat-card-value" style="font-size:18px;color:${totalOwed > 0 ? '#D9B68E' : 'var(--success)'}">${F.fmtFull(totalOwed)}</div>
-        </div>
-      </div>
-    </div>`;
+      <div class="m-section-title">Subcontractors <span class="count">${subs.length}</span></div>
+      <div class="m-stat-row" style="grid-template-columns:1fr 1fr 1fr">
+        <div class="m-stat"><div class="m-stat-label">Contracted</div><div class="m-stat-value" style="font-size:15px">${F.fmt(contracted)}</div></div>
+        <div class="m-stat"><div class="m-stat-label">Paid</div><div class="m-stat-value success" style="font-size:15px">${F.fmt(paid)}</div></div>
+        <div class="m-stat"><div class="m-stat-label">Owed</div><div class="m-stat-value ${owed > 0 ? 'danger' : 'success'}" style="font-size:15px">${F.fmt(owed)}</div></div>
+      </div>`;
   }
 
   return { render };

@@ -2,325 +2,373 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, viewport-fit=cover">
 <meta name="description" content="RECON — AI-Powered Construction Management & Dynamic Financial Ledger for contractors and site builders.">
-<meta name="theme-color" content="#302D2E">
-<title>RECON — Construction Financial Ledger</title>
+<meta name="theme-color" content="#EAECEF">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<title>RECON — Construction Ledger</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Barlow:wght@400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500;600;700&family=Barlow+Condensed:wght@600;700;800&display=swap" rel="stylesheet" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Jost:wght@300;400;500;600;700;800;900&family=IBM+Plex+Mono:wght@400;500;600;700&display=swap" rel="stylesheet" crossorigin>
 <link rel="manifest" href="/manifest.json">
 <link rel="icon" href="/icons/icon.svg" type="image/svg+xml">
 <script>
-  // Unregister ALL old service workers first, then register fresh v10
   if ('serviceWorker' in navigator) {
-    window.addEventListener('load', async () => {
-      // Ensure any old SW is unregistered before registering new one
-      const registrations = await navigator.serviceWorker.getRegistrations();
-      for (const reg of registrations) {
-        await reg.unregister();
-        console.log('[SW] Unregistered old service worker');
-      }
-      try {
-        const reg = await navigator.serviceWorker.register('/sw.js');
-        console.log('[Service Worker] Registered v10:', reg.scope);
-      } catch (err) {
-        console.log('[Service Worker] Registration failed:', err);
-      }
-    });
+    const isLocal = window.location.hostname.includes('localhost') || 
+                    window.location.hostname.includes('127.0.0.1') || 
+                    window.location.hostname.startsWith('10.') || 
+                    window.location.hostname.startsWith('192.168.') ||
+                    window.location.protocol.startsWith('file') ||
+                    window.location.protocol.startsWith('capacitor') ||
+                    window.location.protocol.startsWith('ionic');
+                    
+    if (window.location.protocol === 'https:' && !isLocal) {
+      window.addEventListener('load', async () => {
+        try { await navigator.serviceWorker.register('/sw.js'); } catch(e){}
+      });
+    } else {
+      // Force unregister service worker during local development or WebView app runs
+      navigator.serviceWorker.getRegistrations().then(registrations => {
+        for (const reg of registrations) {
+          reg.unregister().then(unregistered => {
+            if (unregistered) console.log('[SW] Unregistered local development service worker');
+          });
+        }
+      });
+    }
   }
 </script>
-<!-- Main Styles -->
-<link rel="stylesheet" href="css/main.css?v=10">
+<link rel="stylesheet" href="css/main.css?v=22">
 </head>
 <body>
 
-<!-- WELCOME SCREEN -->
-<div id="welcome-screen" class="welcome-screen">
-  <div class="welcome-content">
-    <div class="welcome-logo">
-      <span class="logo-icon" id="welcome-logo-icon"></span>
-      <div>
-        <h1>RECON</h1>
-        <p class="logo-tagline">Site. Scope. Spend. — AI Construction Ledger</p>
-      </div>
-    </div>
-    <p class="welcome-desc">Track every rupee. Every phase. Every trade.<br>No spreadsheets. No chaos.</p>
-    <button class="btn-primary btn-xl" onclick="App.startNewProject()">
-      <span>+ Start a New Project</span>
-    </button>
-    <div id="existing-projects-list"></div>
-    <div id="signin-area" style="margin-top:24px">
-      <a href="/auth.html" style="display:inline-block;padding:8px 16px;color:var(--text-secondary);font-size:11px;text-decoration:none;border:1px solid var(--charcoal-border);border-radius:6px;letter-spacing:0.06em">Sign in to sync across devices</a>
-    </div>
+<!-- ─────────────── SPLASH SCREEN ─────────────── -->
+<div id="splash-screen">
+  <div class="splash-core">
+    <span class="splash-logo">
+      <img src="img/logo.png" alt="RECON" width="64" height="64">
+    </span>
+    <h1 class="splash-title">RECON</h1>
+    <p class="splash-tag">Site · Scope · Spend</p>
   </div>
+  <div class="splash-loader"><span></span></div>
 </div>
 
-<!-- PROJECT WIZARD -->
-<div id="project-wizard" class="project-wizard hidden">
-  <div class="wizard-container">
-    <div class="wizard-header">
-      <h2>New Project Setup</h2>
-      <div class="wizard-steps">
-        <div class="wizard-step active" data-step="1">1 · Info</div>
-        <div class="wizard-step" data-step="2">2 · Budget</div>
-        <div class="wizard-step" data-step="3">3 · Timeline</div>
-      </div>
-    </div>
-    <div id="wizard-body"></div>
-    <div class="wizard-nav">
-      <button class="btn-ghost" id="wizard-back" onclick="App.wizardBack()" style="display:none">← Back</button>
-      <button class="btn-primary" id="wizard-next" onclick="App.wizardNext()">Next →</button>
-    </div>
+<!-- ─────────────── ONBOARDING ─────────────── -->
+<div id="onboarding-screen" style="display:none">
+  <div class="onb-bg-wrap" id="onb-bg-wrap">
+    <div class="onb-bg onb-bg-a is-active" id="onb-bg" style="background-image:url('img/onboard-bg-1.jpg')"></div>
+    <div class="onb-bg onb-bg-b" id="onb-bg-next"></div>
+    <div class="onb-bg-vignette"></div>
   </div>
-</div>
 
-<!-- MAIN APP -->
-<div id="main-app" class="main-app hidden">
-
-  <!-- TOP BAR -->
-  <header class="top-bar">
-    <div class="top-bar-left">
-      <button class="hamburger" onclick="App.toggleSidebar()" title="Toggle Sidebar"><span style="display:inline-flex"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg></span></button>
-      <div class="app-brand">
-        <span class="brand-icon" id="brand-icon"></span>
-        <span class="brand-text">RECON</span>
-      </div>
-      <div class="project-name-display" id="current-project-name">—</div>
-    </div>
-    <div class="top-bar-center">
-      <div class="master-total-box">
-        <span class="total-label">Total Project Cost</span>
-        <span class="total-amount mono" id="master-total">₹0</span>
-      </div>
-    </div>
-    <div class="top-bar-right">
-      <div class="budget-health" id="budget-health-indicator">
-        <span class="health-label">Budget</span>
-        <span class="health-bar-wrap"><span class="health-bar" id="health-bar-fill"></span></span>
-        <span class="health-pct" id="health-pct">—</span>
-      </div>
-      <button class="btn-icon" title="Export PDF" onclick="App.exportPDF()"><span style="display:inline-flex" id="topbar-icon-pdf"></span></button>
-      <button class="btn-icon" title="Export CSV" onclick="App.exportExcel()"><span style="display:inline-flex" id="topbar-icon-csv"></span></button>
-      <button class="btn-icon ai-toggle-btn" title="AI Co-Pilot" onclick="App.toggleAI()" id="ai-toggle-btn">
-        <span style="display:inline-flex" id="topbar-icon-bot"></span> <span class="ai-pulse" id="ai-pulse"></span>
-      </button>
-      <div class="user-menu" id="user-menu" style="position:relative">
-        <button class="btn-icon" id="user-menu-btn" title="Account" onclick="App.toggleUserMenu()"><span style="display:inline-flex" id="topbar-icon-user"></span></button>
-        <div class="user-dropdown hidden" id="user-dropdown" style="position:absolute;right:0;top:100%;margin-top:8px;background:var(--charcoal-mid);border:1px solid var(--charcoal-border);border-radius:var(--radius-lg);padding:8px 4px;min-width:200px;box-shadow:var(--shadow-lg);z-index:200">
-          <div style="padding:8px 12px;font-size:11px;color:var(--text-muted);border-bottom:1px solid var(--charcoal-border);margin-bottom:4px" id="user-email-display">Not signed in</div>
-          <button onclick="App.confirmDeleteProject()" id="btn-delete-project" style="width:100%;text-align:left;padding:8px 12px;border:none;background:none;cursor:pointer;font-family:var(--font-body);font-size:12px;color:var(--text-secondary);border-radius:6px;font-weight:600" onmouseover="this.style.background='rgba(0,0,0,0.06)'" onmouseout="this.style.background='none'">🗑 Delete This Project</button>
-          <div style="height:1px;background:var(--charcoal-border);margin:4px 0"></div>
-          <button onclick="App.signOut()" style="width:100%;text-align:left;padding:8px 12px;border:none;background:none;cursor:pointer;font-family:var(--font-body);font-size:12px;color:var(--text-secondary);border-radius:6px;font-weight:600" onmouseover="this.style.background='rgba(0,0,0,0.06)'" onmouseout="this.style.background='none'">↪ Sign Out</button>
-          <button onclick="App.confirmDeleteAccount()" style="width:100%;text-align:left;padding:8px 12px;border:none;background:none;cursor:pointer;font-family:var(--font-body);font-size:12px;color:#DC2626;border-radius:6px;font-weight:600" onmouseover="this.style.background='rgba(220,38,38,0.06)'" onmouseout="this.style.background='none'">⚠ Delete My Account</button>
-        </div>
-      </div>
-    </div>
+  <header class="onb-topbar">
+    <span class="onb-brand">
+      <img src="img/logo.png" alt="" width="22" height="22">
+      <span>RECON</span>
+    </span>
+    <button class="onb-skip" id="onb-skip" type="button">Skip</button>
   </header>
 
-  <div class="app-body">
+  <div class="onb-stage" id="onb-stage">
+    <section class="onb-slide is-active" data-index="0">
+      <div class="onb-card">
+        <div class="onb-art">
+          <span class="onb-art-ring" aria-hidden="true"></span>
+          <span class="onb-art-glow" aria-hidden="true"></span>
+          <img src="img/onb1.jpg" alt="" loading="eager" width="280" height="280">
+        </div>
+        <div class="onb-step-badge">Built for builders</div>
+        <h2 class="onb-title">Track every rupee, down to the last bag of cement</h2>
+        <p class="onb-desc">A living financial ledger for your site — materials, labour and vendors, always balanced and always in your pocket.</p>
+      </div>
+    </section>
+    <section class="onb-slide" data-index="1">
+      <div class="onb-card">
+        <div class="onb-art">
+          <span class="onb-art-ring" aria-hidden="true"></span>
+          <span class="onb-art-glow" aria-hidden="true"></span>
+          <img src="img/onb2.jpg" alt="" loading="lazy" width="280" height="280">
+        </div>
+        <div class="onb-step-badge">Phase by phase</div>
+        <h2 class="onb-title">Plan, scope and watch every phase progress</h2>
+        <p class="onb-desc">From foundation to finishing — organise construction and interior work, RA bills and inventory in one clean flow.</p>
+      </div>
+    </section>
+    <section class="onb-slide" data-index="2">
+      <div class="onb-card">
+        <div class="onb-art">
+          <span class="onb-art-ring" aria-hidden="true"></span>
+          <span class="onb-art-glow" aria-hidden="true"></span>
+          <img src="img/onb3.jpg" alt="" loading="lazy" width="280" height="280">
+        </div>
+        <div class="onb-step-badge">Your smart sidekick</div>
+        <h2 class="onb-title">An AI Build Assistant that flags risks early</h2>
+        <p class="onb-desc">Get instant cost insights and risk checks as you build — you stay fully in control, it just keeps watch.</p>
+      </div>
+    </section>
+  </div>
 
-    <!-- LEFT SIDEBAR -->
-    <nav class="sidebar" id="sidebar">
-      <div class="sidebar-project-switcher">
-        <button class="btn-ghost-sm" onclick="App.showDashboard()" style="width:100%;text-align:left">⟵ All Projects</button>
+  <div class="onb-footer">
+    <div class="onb-progress" id="onb-progress" data-total="3" data-current="0">
+      <span class="onb-pill" data-i="0"></span>
+      <span class="onb-pill" data-i="1"></span>
+      <span class="onb-pill" data-i="2"></span>
+    </div>
+    <button class="onb-next" id="onb-next" type="button">
+      <span class="onb-next-label" id="onb-next-label">Next</span>
+      <span class="onb-next-arrow" aria-hidden="true">
+        <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M13 6l6 6-6 6"/></svg>
+      </span>
+    </button>
+  </div>
+</div>
+
+<!-- ─────────────── WELCOME / PROJECT PICKER ─────────────── -->
+<div id="welcome-screen" class="m-welcome">
+  <div class="m-welcome-hero">
+    <span class="m-welcome-logo" id="welcome-logo-icon"><img src="img/logo.png" alt="RECON" width="42" height="42"></span>
+    <h1 class="m-welcome-title">RECON</h1>
+    <p class="m-welcome-tag">Site. Scope. Spend.</p>
+    <p class="m-welcome-sub">Track every rupee. Every phase. Every trade — from your pocket.</p>
+  </div>
+  <button class="m-btn m-btn-primary m-btn-block" onclick="App.startNewProject()">
+    <span>＋  Start a New Project</span>
+  </button>
+  <div id="existing-projects-list" class="m-existing-list"></div>
+  <div id="signin-area" class="m-signin">
+    <a href="/auth.html">Sign in to sync across devices →</a>
+  </div>
+</div>
+
+<!-- ─────────────── PROJECT WIZARD ─────────────── -->
+<div id="project-wizard" class="m-wizard hidden">
+  <header class="m-appbar m-appbar--wizard">
+    <button class="m-iconbtn" onclick="App.wizardBack()" aria-label="Back">←</button>
+    <div class="m-appbar-title">New Project</div>
+    <div class="m-wizard-stepdots">
+      <span class="dot active" data-step="1"></span>
+      <span class="dot" data-step="2"></span>
+      <span class="dot" data-step="3"></span>
+    </div>
+  </header>
+  <div class="m-wizard-body" id="wizard-body"></div>
+  <div class="m-wizard-nav">
+    <button class="m-btn m-btn-ghost" id="wizard-back" onclick="App.wizardBack()" style="display:none">Back</button>
+    <button class="m-btn m-btn-text" id="wizard-skip" onclick="App.wizardSkip()" style="display:none">Skip</button>
+    <button class="m-btn m-btn-primary m-btn-grow" id="wizard-next" onclick="App.wizardNext()">Next  →</button>
+  </div>
+</div>
+
+<!-- ─────────────── MAIN APP SHELL ─────────────── -->
+<div id="main-app" class="m-app hidden">
+
+  <!-- DESKTOP SIDEBAR -->
+  <nav class="m-desktop-sidebar" id="desktop-sidebar" aria-label="Main navigation">
+    <div style="padding: 12px 14px 20px; border-bottom: 1px solid var(--border); margin-bottom: 8px;">
+      <div style="display: flex; align-items: center; gap: 10px;">
+        <img src="img/logo.png" width="28" height="28" alt="">
+        <span style="font-weight: 700; font-size: 18px; letter-spacing: -0.01em; color: var(--text); font-family: var(--font-display);">RECON</span>
       </div>
-      <div class="phase-nav" id="phase-nav">
-        <!-- Phases injected by JS -->
+    </div>
+
+    <div class="ds-nav-section">Main</div>
+    <button class="ds-nav-item active" data-tab="dashboard" onclick="App.showHub('dashboard')">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12 12 4l9 8"/><path d="M5 10v10h14V10"/></svg>
+      <span>Dashboard</span>
+    </button>
+    <button class="ds-nav-item" data-tab="construction" onclick="App.showHub('construction')">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="4" rx="1"/><rect x="3" y="10" width="14" height="4" rx="1"/><rect x="3" y="16" width="10" height="4" rx="1"/></svg>
+      <span>Construction</span>
+    </button>
+    <button class="ds-nav-item" data-tab="interior" onclick="App.showHub('interior')">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="4" width="16" height="16" rx="2"/><path d="M9 4v16"/><path d="M4 12h16"/><path d="M4 8h16"/><path d="M4 16h16"/></svg>
+      <span>Interior Finish</span>
+    </button>
+
+    <div class="ds-nav-section">Ledgers</div>
+    <button class="ds-nav-item" data-tab="ledgers-labour" onclick="App.showHub('ledgers'); App.setLedgerTab('labour')">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="4"/><path d="M4 21c1.5-4 5-6 8-6s6.5 2 8 6"/></svg>
+      <span>Worker Attendance</span>
+    </button>
+    <button class="ds-nav-item" data-tab="ledgers-vendor" onclick="App.showHub('ledgers'); App.setLedgerTab('vendor')">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 4h12a3 3 0 0 1 3 3v13H7a3 3 0 0 1-3-3z"/><path d="M4 17h15"/><path d="M8 8h7M8 12h7"/></svg>
+      <span>Vendor Khata</span>
+    </button>
+    <button class="ds-nav-item" data-tab="ledgers-inventory" onclick="App.showHub('ledgers'); App.setLedgerTab('inventory')">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></svg>
+      <span>Site Inventory</span>
+    </button>
+
+    <div class="ds-nav-section">Operations</div>
+    <button class="ds-nav-item" data-tab="rabills" onclick="App.showRaBillsHub()">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg>
+      <span>RA Bills</span>
+    </button>
+    <button class="ds-nav-item" data-tab="subcontractors" onclick="App.showSubLedger()">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+      <span>Subcontractors</span>
+    </button>
+    <button class="ds-nav-item" data-tab="flatsales" onclick="App.showFlatSales()">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>
+      <span>Flat Sales</span>
+    </button>
+
+    <div class="ds-nav-section">Tools</div>
+    <button class="ds-nav-item" data-tab="more" onclick="App.showHub('more')">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/><circle cx="5" cy="12" r="1"/></svg>
+      <span>More & Export</span>
+    </button>
+  </nav>
+
+  <!-- TOP APP BAR -->
+  <header class="m-appbar">
+    <button class="m-iconbtn" onclick="App.showProjectPicker()" title="All projects" aria-label="Projects">
+      <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></svg>
+    </button>
+    <div class="m-appbar-title-wrap">
+      <div style="display:flex; align-items:center; gap:6px;">
+        <span class="m-appbar-eyebrow" style="margin:0">Active Project</span>
+        <span id="sync-status-badge" class="sync-badge"></span>
       </div>
-      <div class="sidebar-footer">
-        <div class="sidebar-totals">
-          <div class="sidebar-total-row">
-            <span>Materials</span>
-            <span class="mono" id="sb-materials">₹0</span>
-          </div>
-          <div class="sidebar-total-row">
-            <span>Labor</span>
-            <span class="mono" id="sb-labor">₹0</span>
-          </div>
-          <div class="sidebar-total-row">
-            <span>Equipment</span>
-            <span class="mono" id="sb-equipment">₹0</span>
-          </div>
-          <div class="sidebar-total-row bold">
-            <span>TOTAL</span>
-            <span class="mono" id="sb-total">₹0</span>
-          </div>
+      <div class="m-appbar-title" id="current-project-name">—</div>
+    </div>
+    <button class="m-iconbtn m-iconbtn--accent" onclick="App.toggleAI()" title="AI Build Assistant" aria-label="AI Assistant" id="ai-toggle-btn">
+      <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="7" width="18" height="13" rx="3"/><path d="M12 2v5"/><circle cx="9" cy="13" r="1.2"/><circle cx="15" cy="13" r="1.2"/><path d="M9 17h6"/></svg>
+      <span class="m-ai-pulse" id="ai-pulse"></span>
+    </button>
+    <button class="m-iconbtn" onclick="App.toggleUserMenu()" title="Account" aria-label="Account" id="user-menu-btn">
+      <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="4"/><path d="M4 21c1.5-4 5-6 8-6s6.5 2 8 6"/></svg>
+    </button>
+  </header>
+
+  <!-- USER DROPDOWN -->
+  <div class="m-user-dropdown hidden" id="user-dropdown">
+    <div class="m-user-email" id="user-email-display">Not signed in</div>
+    <button class="m-menu-item" id="btn-delete-project" onclick="App.confirmDeleteProject()"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>  Delete this project</button>
+    <div class="m-menu-divider"></div>
+    <button class="m-menu-item" onclick="App.signOut()"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>  Sign out</button>
+    <button class="m-menu-item m-menu-item--danger" onclick="App.confirmDeleteAccount()"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>  Delete account</button>
+  </div>
+
+  <!-- SCROLLABLE CONTENT -->
+  <main class="m-content" id="content-area"></main>
+
+  <!-- FLOATING ACTION BUTTON (rendered conditionally by hubs) -->
+  <div id="fab-container"></div>
+
+  <!-- BOTTOM NAVIGATION BAR -->
+  <nav class="m-bottomnav" role="navigation">
+    <button class="m-tab active" data-tab="dashboard" onclick="App.showHub('dashboard')">
+      <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12 12 4l9 8"/><path d="M5 10v10h14V10"/></svg>
+      <span>Dashboard</span>
+    </button>
+    <button class="m-tab" data-tab="construction" onclick="App.showHub('construction')">
+      <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="4" rx="1"/><rect x="3" y="10" width="14" height="4" rx="1"/><rect x="3" y="16" width="10" height="4" rx="1"/></svg>
+      <span>Construction</span>
+    </button>
+    <button class="m-tab" data-tab="interior" onclick="App.showHub('interior')">
+      <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="4" width="16" height="16" rx="2"/><path d="M9 4v16"/><path d="M4 12h16"/><path d="M4 8h16"/><path d="M4 16h16"/></svg>
+      <span>Interior</span>
+    </button>
+    <button class="m-tab" data-tab="ledgers" onclick="App.showHub('ledgers')">
+      <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 4h12a3 3 0 0 1 3 3v13H7a3 3 0 0 1-3-3z"/><path d="M4 17h15"/><path d="M8 8h7M8 12h7"/></svg>
+      <span>Ledgers</span>
+    </button>
+    <button class="m-tab" data-tab="more" onclick="App.showHub('more')">
+      <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="5" cy="12" r="1.6"/><circle cx="12" cy="12" r="1.6"/><circle cx="19" cy="12" r="1.6"/></svg>
+      <span>More</span>
+    </button>
+  </nav>
+
+  <!-- RIGHT-SLIDE AI DRAWER -->
+  <div class="m-scrim" id="ai-scrim" onclick="App.closeAI()"></div>
+  <aside class="m-drawer" id="ai-drawer" aria-hidden="true">
+    <header class="m-drawer-head">
+      <div class="m-drawer-title">
+        <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="7" width="18" height="13" rx="3"/><path d="M12 2v5"/><circle cx="9" cy="13" r="1.2"/><circle cx="15" cy="13" r="1.2"/><path d="M9 17h6"/></svg>
+        <span>Build Assistant</span>
+        <span class="m-status-dot" id="ai-status-dot"></span>
+      </div>
+      <button class="m-iconbtn" onclick="App.closeAI()" aria-label="Close">✕</button>
+    </header>
+    <div class="m-drawer-watching" id="ai-watching">Watching: Dashboard</div>
+    <div class="m-drawer-messages" id="ai-messages">
+      <div class="ai-message ai-intro">
+        <div class="ai-msg-body">
+          <p>I'm your Build Assistant. As you fill in each section, I'll flag risks and help you think through costs.</p>
+          <p style="color:var(--text-muted);font-size:12px;margin-top:6px">You're always in control — I'm just the sidekick.</p>
         </div>
       </div>
-    </nav>
+    </div>
+    <div class="m-drawer-input">
+      <input type="text" id="ai-input" placeholder="Ask about costs, risks, specs…" onkeydown="if(event.key==='Enter') App.sendAIMessage()">
+      <button class="m-btn m-btn-primary m-btn-sm" onclick="App.sendAIMessage()">Send</button>
+    </div>
+  </aside>
 
-    <!-- MAIN CONTENT -->
-    <main class="content-area" id="content-area">
-      <!-- Phase workspaces injected here -->
-    </main>
+</div>
 
-    <!-- RIGHT AI DRAWER -->
-    <aside class="ai-drawer" id="ai-drawer">
-      <div class="ai-drawer-header">
-        <div class="ai-title">
-          <span id="ai-title-icon"></span>
-          <span>Build Assistant</span>
-          <span class="ai-status-dot" id="ai-status-dot"></span>
-        </div>
-        <div class="ai-controls">
-          <button class="btn-icon-sm" onclick="App.minimizeAI()" title="Minimize" id="ai-min-btn"></button>
-          <button class="btn-icon-sm" onclick="App.closeAI()" title="Close" id="ai-close-btn"></button>
-        </div>
-      </div>
-      <div class="ai-watching" id="ai-watching">Watching: Dashboard</div>
-      <div class="ai-messages" id="ai-messages">
-        <div class="ai-message ai-intro">
-          <span class="ai-msg-icon" id="ai-intro-icon"></span>
-          <div class="ai-msg-body">
-            <p>I'm your Build Assistant. As you fill in each section, I'll flag risks and help you think through costs.</p>
-            <p style="color:var(--text-muted);font-size:11px">You're always in control — I'm just the sidekick.</p>
-          </div>
-        </div>
-      </div>
-      <div class="ai-input-area">
-        <input type="text" class="ai-input" id="ai-input" placeholder="Ask about costs, risks, specs…" onkeydown="if(event.key==='Enter') App.sendAIMessage()">
-        <button class="btn-primary btn-sm" onclick="App.sendAIMessage()">Send</button>
-      </div>
-    </aside>
-
-  </div><!-- /app-body -->
-</div><!-- /main-app -->
-
-<!-- TOAST NOTIFICATIONS -->
+<!-- TOAST -->
 <div id="toast-container"></div>
 
-<!-- CONFIRM DELETE MODAL -->
-<div id="confirm-modal" class="confirm-modal-overlay hidden" onclick="App.closeConfirmModal(event)">
-  <div class="confirm-modal-box">
-    <div class="confirm-modal-icon" id="confirm-modal-icon">🗑</div>
-    <h3 class="confirm-modal-title" id="confirm-modal-title">Delete Project?</h3>
-    <p class="confirm-modal-body" id="confirm-modal-body">This action cannot be undone.</p>
-    <div class="confirm-modal-input-wrap" id="confirm-modal-input-wrap" style="display:none">
-      <label class="confirm-modal-input-label" id="confirm-modal-input-label">Type to confirm:</label>
-      <input class="confirm-modal-input" id="confirm-modal-input" type="text" placeholder="" oninput="App.onConfirmInput()">
+<!-- CONFIRM MODAL -->
+<div id="confirm-modal" class="m-modal-overlay hidden" onclick="App.closeConfirmModal(event)">
+  <div class="m-modal-box">
+    <div class="m-modal-icon" id="confirm-modal-icon"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg></div>
+    <h3 class="m-modal-title" id="confirm-modal-title">Delete?</h3>
+    <p class="m-modal-body" id="confirm-modal-body">This action cannot be undone.</p>
+    <div class="m-modal-input-wrap" id="confirm-modal-input-wrap" style="display:none">
+      <label class="m-modal-input-label" id="confirm-modal-input-label">Type to confirm:</label>
+      <input class="m-modal-input" id="confirm-modal-input" type="text" oninput="App.onConfirmInput()">
     </div>
-    <div class="confirm-modal-actions">
-      <button class="confirm-modal-cancel" onclick="App.closeConfirmModal()">Cancel</button>
-      <button class="confirm-modal-confirm" id="confirm-modal-btn" onclick="App.executeConfirmAction()">Delete</button>
+    <div class="m-modal-actions">
+      <button class="m-btn m-btn-ghost m-btn-grow" onclick="App.closeConfirmModal()">Cancel</button>
+      <button class="m-btn m-btn-danger m-btn-grow" id="confirm-modal-btn" onclick="App.executeConfirmAction()">Delete</button>
     </div>
   </div>
 </div>
 
-<style>
-.confirm-modal-overlay {
-  position: fixed; inset: 0; z-index: 9999;
-  background: rgba(0,0,0,0.45); backdrop-filter: blur(4px);
-  display: flex; align-items: center; justify-content: center;
-  animation: fadeIn 0.15s ease;
-}
-.confirm-modal-overlay.hidden { display: none; }
-.confirm-modal-box {
-  background: #FFFFFF; border-radius: 16px;
-  padding: 32px 28px; max-width: 400px; width: 90%;
-  box-shadow: 0 20px 60px rgba(0,0,0,0.18);
-  text-align: center; animation: slideUp 0.2s ease;
-}
-.confirm-modal-icon { font-size: 36px; margin-bottom: 12px; }
-.confirm-modal-title {
-  font-size: 18px; font-weight: 800; color: #1A1A2E;
-  margin-bottom: 10px; font-family: var(--font-body);
-}
-.confirm-modal-body {
-  font-size: 13px; color: #6B7280; line-height: 1.6;
-  margin-bottom: 20px;
-}
-.confirm-modal-input-wrap { margin-bottom: 20px; text-align: left; }
-.confirm-modal-input-label {
-  display: block; font-size: 11px; font-weight: 700;
-  color: #6B7280; text-transform: uppercase; letter-spacing: 0.08em;
-  margin-bottom: 6px;
-}
-.confirm-modal-input {
-  width: 100%; padding: 10px 12px; border: 1.5px solid #E5E7EB;
-  border-radius: 8px; font-size: 13px; font-family: var(--font-mono);
-  background: #F9FAFB; color: #1A1A2E; outline: none;
-  transition: border-color 0.2s;
-}
-.confirm-modal-input:focus { border-color: #007979; }
-.confirm-modal-actions {
-  display: flex; gap: 10px; justify-content: center;
-}
-.confirm-modal-cancel {
-  flex: 1; padding: 11px; border: 1.5px solid #E5E7EB;
-  background: none; border-radius: 10px; cursor: pointer;
-  font-size: 13px; font-weight: 700; color: #6B7280;
-  font-family: var(--font-body); transition: all 0.15s;
-}
-.confirm-modal-cancel:hover { background: #F3F4F6; }
-.confirm-modal-confirm {
-  flex: 1; padding: 11px; border: none;
-  background: #DC2626; color: #FFF; border-radius: 10px;
-  cursor: pointer; font-size: 13px; font-weight: 700;
-  font-family: var(--font-body); transition: all 0.15s;
-  opacity: 1;
-}
-.confirm-modal-confirm:hover:not(:disabled) { background: #B91C1C; }
-.confirm-modal-confirm:disabled { opacity: 0.4; cursor: not-allowed; }
-@keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
-@keyframes slideUp { from { transform: translateY(12px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
-</style>
+<!-- Hidden legacy placeholders (some modules reference these ids) -->
+<div style="display:none">
+  <span id="master-total"></span><span id="health-bar-fill"></span><span id="health-pct"></span>
+  <span id="sb-materials"></span><span id="sb-labor"></span><span id="sb-equipment"></span><span id="sb-total"></span>
+  <nav id="phase-nav"></nav><aside id="sidebar"></aside>
+  <span id="brand-icon"></span><span id="topbar-icon-pdf"></span><span id="topbar-icon-csv"></span>
+  <span id="topbar-icon-bot"></span><span id="topbar-icon-user"></span>
+  <span id="ai-title-icon"></span><span id="ai-intro-icon"></span>
+  <button id="ai-min-btn"></button><button id="ai-close-btn"></button>
+</div>
 
-<script src="js/supabase-client.js?v=10"></script>
-<script src="js/icons.js?v=10"></script>
-<script src="js/state.js?v=10"></script>
-<script src="js/financial.js?v=10"></script>
-<script src="js/dashboard.js?v=10"></script>
-<script src="js/phases.js?v=10"></script>
-<script src="js/ai.js?v=10"></script>
+<script src="js/security.js?v=1"></script>
+<script src="js/supabase-client.js?v=20"></script>
+<script src="js/onboarding.js?v=20"></script>
+<script src="js/icons.js?v=20"></script>
+<script src="js/state.js?v=20"></script>
+<script src="js/financial.js?v=20"></script>
+<script src="js/dashboard.js?v=20"></script>
+<script src="js/estimation.js?v=3"></script>
+<script src="js/phases.js?v=20"></script>
+<script src="js/ai.js?v=20"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
-<script src="js/export.js?v=10"></script>
-<script src="js/colour-lab.js?v=10"></script>
-<script src="js/labour-vendors.js?v=10"></script>
-<script src="js/vendor-khata.js?v=10"></script>
-<script src="js/site-inventory.js?v=10"></script>
-<script src="js/ra-bills.js?v=10"></script>
-<script src="js/bill-scanner.js?v=10"></script>
-<script src="js/phases-new-core.js?v=10"></script>
-<script src="js/flat-sales.js?v=10"></script>
-<script src="js/app.js?v=10"></script>
+<script src="js/export.js?v=20"></script>
+<script src="js/labour-vendors.js?v=20"></script>
+<script src="js/vendor-khata.js?v=20"></script>
+<script src="js/site-inventory.js?v=20"></script>
+<script src="js/ra-bills.js?v=20"></script>
+<script src="js/bill-scanner.js?v=20"></script>
+<script src="js/phases-new-core.js?v=20"></script>
+<script src="js/flat-sales.js?v=20"></script>
+<script src="js/app.js?v=20"></script>
 <script>
-  // Wait for Supabase + all icon helpers to be ready, then inject
-  // the topbar SVGs. We do NOT redirect to auth.html here — that
-  // can cause blank-page flashes. Instead, app.js's init() will
-  // detect unauthenticated state and show an inline sign-in prompt
-  // on the welcome screen.
-  function injectTopbarIcons() {
-    if (typeof Icons === 'undefined') return false;
-    const inj = (id, icon) => { const el = document.getElementById(id); if (el) el.innerHTML = icon; };
-    try {
-      inj('topbar-icon-pdf', Icons.render('fileText', 18));
-      inj('topbar-icon-csv', Icons.render('spreadsheet', 18));
-      inj('topbar-icon-bot', Icons.render('bot', 18));
-      inj('topbar-icon-user', Icons.render('user', 18));
-      inj('welcome-logo-icon', Icons.render('building', 40));
-      inj('brand-icon', Icons.render('building', 18));
-      inj('ai-title-icon', Icons.render('bot', 14));
-      inj('ai-intro-icon', Icons.render('userCircle', 14));
-      inj('ai-min-btn', Icons.render('minimize', 14));
-      inj('ai-close-btn', Icons.render('close', 14));
-    } catch (e) {
-      console.warn('[Icons] Failed to inject topbar icons:', e.message);
-    }
-    return true;
-  }
-  // Try injecting right now (icons.js is loaded already)
-  if (!injectTopbarIcons()) {
-    // Defer until next tick in case icons aren't ready
-    setTimeout(injectTopbarIcons, 50);
-  }
-  // Show user email in menu (if logged in)
+  // Sign-in email display
   if (typeof SupabaseClient !== 'undefined') {
-    SupabaseClient.onReady((sb) => {
-      const user = SupabaseClient.getUser && SupabaseClient.getUser();
-      if (user) {
+    SupabaseClient.onReady && SupabaseClient.onReady(() => {
+      const u = SupabaseClient.getUser && SupabaseClient.getUser();
+      if (u) {
         const el = document.getElementById('user-email-display');
-        if (el) el.textContent = user.email;
+        if (el) el.textContent = u.email;
       }
     });
   }

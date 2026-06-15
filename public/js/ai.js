@@ -1,7 +1,5 @@
 /* ═══════════════════════════════════════════
-   AI.JS — Build Assistant Co-Pilot v3
-   Rule-based triggers + Server-proxied Gemini
-   API key is server-side in .env
+   AI.JS
    ═══════════════════════════════════════════ */
 
 const AI = (() => {
@@ -101,7 +99,7 @@ const AI = (() => {
       : (icon || '');
 
     const actionsHtml = actions.map(a =>
-      `<button class="ai-action-btn" onclick="this.parentElement.parentElement.remove()">${a}</button>`
+      `<button class="ai-action-btn" onclick="this.parentElement.parentElement.remove()">${escapeHtml(a)}</button>`
     ).join('');
 
     const msg = document.createElement('div');
@@ -109,7 +107,7 @@ const AI = (() => {
     msg.innerHTML = `
       <div class="ai-msg-icon">${iconHtml}</div>
       <div class="ai-msg-body">
-        <div class="ai-msg-type">${title}</div>
+        <div class="ai-msg-type">${escapeHtml(title)}</div>
         <p>${body}</p>
         ${actionsHtml ? `<div class="ai-action-btns">${actionsHtml}</div>` : ''}
       </div>`;
@@ -277,7 +275,7 @@ const AI = (() => {
     const projContext = proj ? buildFullProjectContext(proj) : 'No project loaded.';
 
     // Add user message to UI
-    addMessage('user', 'user', 'You', text, []);
+    addMessage('user', 'user', 'You', escapeHtml(text), []);
     const container = document.getElementById('ai-messages');
     if (container) {
       const lastMsg = container.lastElementChild;
@@ -376,8 +374,8 @@ Guidelines:
 
       conversationHistory.push({ role: 'model', parts: [{ text: replyText }] });
 
-      // Format markdown
-      replyText = replyText
+      // Format markdown (escape HTML first to prevent XSS injection from AI)
+      replyText = escapeHtml(replyText)
         .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
         .replace(/\*(.+?)\*/g, '<em>$1</em>')
         .replace(/\n/g, '<br>');

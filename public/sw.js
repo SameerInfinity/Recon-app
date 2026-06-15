@@ -50,6 +50,9 @@ self.addEventListener('fetch', event => {
   // Never intercept non-GET
   if (event.request.method !== 'GET') return;
 
+  // Only intercept HTTP/HTTPS schemes (avoid capacitor://, file://, etc.)
+  if (url.protocol !== 'http:' && url.protocol !== 'https:') return;
+
   // Never intercept: Supabase, CDN API calls, /api/ routes, auth calls
   if (
     url.hostname.includes('supabase.co') ||
@@ -66,14 +69,25 @@ self.addEventListener('fetch', event => {
     return;
   }
 
-  // JS, CSS, HTML → Network-Only (never cache, always fetch fresh from server)
+  // JS, CSS, HTML → Network-First (always try fetch fresh first, fallback to cache if offline)
   if (
     url.pathname.endsWith('.js') ||
     url.pathname.endsWith('.css') ||
+    url.pathname === '/' ||
     url.pathname === '/index.html' ||
     url.pathname === '/auth.html'
   ) {
-    event.respondWith(fetch(event.request));
+    event.respondWith(
+      fetch(event.request)
+        .then(response => {
+          if (response && response.status === 200 && response.type === 'basic') {
+            const cacheCopy = response.clone();
+            caches.open(STATIC_CACHE).then(cache => cache.put(event.request, cacheCopy));
+          }
+          return response;
+        })
+        .catch(() => caches.match(event.request))
+    );
     return;
   }
 

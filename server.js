@@ -8,12 +8,75 @@ require('dotenv').config();
 const express = require('express');
 const path = require('path');
 const cors = require('cors');
+const helmet = require('helmet');
 
 const app = express();
 const PORT = process.env.PORT || 8080;
+const IS_PRODUCTION = process.env.NODE_ENV === 'production';
 
 // ── Middleware ──────────────────────────────
-app.use(cors());
+
+// Security headers (X-Content-Type-Options, X-Frame-Options,
+// Strict-Transport-Security, Referrer-Policy, etc.)
+app.use(helmet({
+  contentSecurityPolicy: {
+    directives: {
+      defaultSrc: ["'self'"],
+      scriptSrc: ["'self'", "'unsafe-inline'", "https://cdn.jsdelivr.net", "https://cdnjs.cloudflare.com"],
+      styleSrc: ["'self'", "'unsafe-inline'", "https://fonts.googleapis.com"],
+      scriptSrcAttr: ["'unsafe-inline'"],
+      styleSrcAttr: ["'unsafe-inline'"],
+      fontSrc: ["'self'", "https://fonts.gstatic.com"],
+      connectSrc: [
+        "'self'", 
+        "https://*.supabase.co", 
+        "https://generativelanguage.googleapis.com",
+        "ws:",
+        "wss:"
+      ],
+      imgSrc: ["'self'", "data:", "blob:", "https://*.supabase.co"],
+      frameSrc: ["'none'"],
+      upgradeInsecureRequests: IS_PRODUCTION ? [] : null,
+    },
+  },
+  crossOriginEmbedderPolicy: false,  // needed for CDN scripts
+}));
+
+// CORS — restrict to known origins
+const ALLOWED_ORIGINS = [
+  'http://localhost:8080',
+  'http://localhost:3000',
+  'http://localhost',      // Android local assets origin
+  'capacitor://localhost', // iOS Capacitor local assets origin
+  'ionic://localhost',     // Ionic iOS local assets origin
+];
+if (process.env.PRODUCTION_URL) ALLOWED_ORIGINS.push(process.env.PRODUCTION_URL);
+
+app.use(cors({
+  origin: (origin, callback) => {
+    // Allow requests with no origin (mobile apps, curl, server-to-server)
+    if (!origin || 
+        ALLOWED_ORIGINS.includes(origin) || 
+        (!IS_PRODUCTION && (origin.startsWith('http://10.') || origin.startsWith('http://192.168.')))) {
+      callback(null, true);
+    } else {
+      callback(new Error('Not allowed by CORS'));
+    }
+  },
+  credentials: true,
+  methods: ['GET', 'POST'],
+}));
+
+// HTTPS redirect in production
+if (IS_PRODUCTION) {
+  app.use((req, res, next) => {
+    if (req.headers['x-forwarded-proto'] !== 'https') {
+      return res.redirect(301, `https://${req.hostname}${req.url}`);
+    }
+    next();
+  });
+}
+
 app.use(express.json({ limit: '1mb' }));
 
 // Serve static frontend — set aggressive no-cache for code assets
@@ -41,12 +104,7 @@ app.get('/api/config', (req, res) => {
 app.get('/api/health', (req, res) => {
   res.json({
     status: 'ok',
-    timestamp: new Date().toISOString(),
-    services: {
-      supabase: !!process.env.SUPABASE_URL,
-      upstash: !!process.env.UPSTASH_REDIS_REST_URL,
-      gemini: !!process.env.GEMINI_API_KEY,
-    }
+    timestamp: new Date().toISOString()
   });
 });
 
@@ -90,11 +148,27 @@ app.post('/api/ai/chat', async (req, res) => {
     });
   }
 
-  // Rate limiting (user identified by auth token or IP)
-  const userId = req.headers['x-user-id'] || req.ip;
+  // Rate limiting (user identified by verified JWT or IP — never trust client headers)
+  let rateLimitId = req.ip;
+  const authHeader = req.headers['authorization'];
+  if (authHeader?.startsWith('Bearer ') && process.env.SUPABASE_URL) {
+    try {
+      const verifyRes = await fetch(`${process.env.SUPABASE_URL}/auth/v1/user`, {
+        headers: {
+          'Authorization': authHeader,
+          'apikey': process.env.SUPABASE_ANON_KEY,
+        }
+      });
+      if (verifyRes.ok) {
+        const user = await verifyRes.json();
+        if (user?.id) rateLimitId = user.id;
+      }
+    } catch (e) { /* fall back to IP */ }
+  }
+
   if (ratelimit) {
     try {
-      const { success, limit, remaining, reset } = await ratelimit.limit(userId);
+      const { success, limit, remaining, reset } = await ratelimit.limit(rateLimitId);
       res.set('X-RateLimit-Limit', limit);
       res.set('X-RateLimit-Remaining', remaining);
       res.set('X-RateLimit-Reset', reset);
@@ -112,8 +186,9 @@ app.post('/api/ai/chat', async (req, res) => {
     }
   }
 
-  // Proxy to Gemini
-  const { systemInstruction, contents, generationConfig } = req.body;
+  // Server-side input validation
+  const { contents, generationConfig } = req.body;
+  // Never trust client-sent systemInstruction — hardcode it server-side
 
   if (!contents || !Array.isArray(contents)) {
     return res.status(400).json({
@@ -122,16 +197,75 @@ app.post('/api/ai/chat', async (req, res) => {
     });
   }
 
+  // Validate message count and size
+  if (contents.length > 12) {
+    return res.status(400).json({ error: 'Too many messages', message: 'Maximum 12 messages per request' });
+  }
+  for (const msg of contents) {
+    const textLen = msg.parts?.reduce((sum, p) => sum + (p.text?.length || 0), 0) || 0;
+    if (textLen > 100000) {
+      return res.status(400).json({ error: 'Message too long', message: 'Individual message exceeds 100KB' });
+    }
+  }
+
   try {
     const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${geminiKey}`;
+
+    const CHAT_SYSTEM_INSTRUCTION = {
+      parts: [{
+        text: `You are Build Assistant, an expert construction cost advisor embedded in RECON — a construction financial ledger app for Indian contractors and site builders.
+
+You help with: Cost estimation and budget management in INR, Material selection and alternatives with local pricing, Construction best practices and ISI/BIS standards, Risk identification and mitigation, Phase-specific construction guidance, Subcontractor negotiation strategies.
+
+IMPORTANT: The user's COMPLETE project data is provided in the first user turn. USE THIS DATA to answer precisely. Never guess or invent values.
+
+Guidelines:
+- Quote exact figures from the data (use the ₹ symbol, lakhs/crores where appropriate).
+- Address the contractor directly as "you".
+- Respond concisely unless the user asked for a list/breakdown.`
+      }]
+    };
+
+    const OCR_SYSTEM_INSTRUCTION = {
+      parts: [{
+        text: `You are an OCR and data extraction assistant for Indian construction bills ("Kachha" bills, GST invoices).
+Extract the details from the uploaded bill image.
+Strictly return a JSON object (no markdown, no backticks, just raw JSON).
+Schema:
+{
+  "vendor": "String (Name of the shop/hardware store, or 'Unknown Shop')",
+  "date": "String (YYYY-MM-DD format if found, else empty string)",
+  "totalAmount": "Number (The final total amount on the bill)",
+  "items": [
+    {
+      "desc": "String (Item name/description)",
+      "qty": "Number",
+      "rate": "Number",
+      "amount": "Number"
+    }
+  ]
+}`
+      }]
+    };
+
+    // Determine the system instruction to use
+    let serverSystemInstruction = CHAT_SYSTEM_INSTRUCTION;
+    const clientInstructionText = req.body.systemInstruction?.parts?.[0]?.text || '';
+    const hasImage = contents.some(msg => 
+      msg.parts?.some(part => part.inlineData)
+    );
+
+    if (hasImage || clientInstructionText.includes('OCR') || clientInstructionText.includes('construction bills')) {
+      serverSystemInstruction = OCR_SYSTEM_INSTRUCTION;
+    }
 
     const response = await fetch(geminiUrl, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        systemInstruction,
+        systemInstruction: serverSystemInstruction,
         contents,
-        generationConfig: generationConfig || {
+        generationConfig: {
           temperature: 0.7,
           maxOutputTokens: 2048,
           topP: 0.9,
@@ -211,7 +345,10 @@ app.post('/api/user/delete', async (req, res) => {
 
   } catch (err) {
     console.error('[Delete User] Error:', err.message);
-    return res.status(500).json({ error: 'Server error', message: err.message });
+    return res.status(500).json({
+      error: 'Server error',
+      message: IS_PRODUCTION ? 'An internal error occurred' : err.message
+    });
   }
 });
 
@@ -242,3 +379,4 @@ async function start() {
 }
 
 start();
+

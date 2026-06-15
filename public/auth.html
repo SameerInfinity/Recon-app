@@ -4,157 +4,179 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <meta name="description" content="RECON — Sign in to your construction management dashboard.">
+<meta name="theme-color" content="#EAECEF">
+<meta name="apple-mobile-web-app-capable" content="yes">
 <title>RECON — Sign In</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Barlow:wght@400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500;600;700&family=Barlow+Condensed:wght@600;700;800&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Jost:wght@300;400;500;600;700;800;900&family=IBM+Plex+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
 <style>
-  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
   html { font-size: 14px; -webkit-font-smoothing: antialiased; }
+  :root {
+    --bg: #EAECEF; /* light silver-gray */
+    --card: rgba(255,255,255,0.72); /* semi-transparent white */
+    --text: #1C2024; /* deep charcoal */
+    --text-2: #434950; /* dark slate gray */
+    --text-muted: #6F7680; /* cool gray */
+    --amber: #7B4626; /* copper brown */
+    --amber-soft: #965934; /* lighter copper */
+    --border: rgba(67, 73, 80, 0.14); /* cool border */
+    --r-md: 16px; --r-lg: 22px; --r-pill: 999px;
+    --ease: cubic-bezier(0.2,0.8,0.2,1);
+  }
   body {
-    font-family: 'Barlow', sans-serif;
-    background: linear-gradient(135deg, #1B1B1E 0%, #232022 100%);
-    color: #F5E4CC;
-    min-height: 100vh;
+    font-family: 'Jost', system-ui, -apple-system, sans-serif;
+    background: var(--bg); color: var(--text);
+    min-height: 100vh; overflow-x: hidden;
     display: flex; align-items: center; justify-content: center;
+    padding: 24px 0;
     background-image:
-      radial-gradient(ellipse at 30% 60%, rgba(158,119,88,0.20) 0%, transparent 60%),
-      radial-gradient(ellipse at 70% 30%, rgba(201,160,124,0.15) 0%, transparent 50%);
+      radial-gradient(ellipse 80% 50% at 80% 6%, rgba(190,195,205,0.30), transparent 55%),
+      radial-gradient(ellipse 70% 45% at 10% 98%, rgba(123,70,38,0.18), transparent 55%);
   }
+  /* floating warm orbs */
+  body::before, body::after {
+    content: ''; position: fixed; border-radius: 50%; z-index: 0; pointer-events: none;
+    background: radial-gradient(circle, rgba(123,70,38,0.15), transparent 70%); filter: blur(6px);
+  }
+  body::before { width: 300px; height: 300px; top: -90px; left: -80px; animation: float 10s ease-in-out infinite alternate; }
+  body::after  { width: 360px; height: 360px; bottom: -120px; right: -90px; background: radial-gradient(circle, rgba(150,160,175,0.20), transparent 70%); animation: float 12s ease-in-out infinite alternate-reverse; }
+  @keyframes float { 0% { transform: translate(0,0); } 100% { transform: translate(26px,-20px); } }
 
-  .auth-container {
-    width: 100%; max-width: 420px; padding: 20px;
-  }
+  .auth-container { width: 100%; max-width: 420px; padding: 20px; position: relative; z-index: 1; }
 
-  .auth-logo {
-    text-align: center; margin-bottom: 32px;
+  .auth-logo { text-align: center; margin-bottom: 26px; animation: rise 600ms var(--ease) both; }
+  .auth-logo-icon {
+    width: 72px; height: 72px; margin: 0 auto 14px;
+    display: flex; align-items: center; justify-content: center;
   }
-  .auth-logo-icon { font-size: 40px; margin-bottom: 8px; filter: drop-shadow(0 4px 12px rgba(158,119,88,0.4)); }
+  .auth-logo-icon img { width: 100%; height: 100%; object-fit: contain; filter: drop-shadow(0 4px 16px rgba(0,0,0,0.15)); }
   .auth-logo h1 {
-    font-family: 'Barlow Condensed', sans-serif;
-    font-size: 28px; font-weight: 800;
-    background: linear-gradient(135deg, #9E7758, #ECD1B4);
-    -webkit-background-clip: text; -webkit-text-fill-color: transparent;
-    background-clip: text; letter-spacing: 0.06em;
+    font-family: 'Jost', sans-serif;
+    font-size: 26px; font-weight: 600; letter-spacing: 0.02em;
+    background: linear-gradient(160deg, var(--amber-soft) 0%, var(--amber) 50%, var(--text) 100%);
+    -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent;
   }
-  .auth-logo p { font-size: 12px; color: #C9B49A; letter-spacing: 0.08em; text-transform: uppercase; }
+  .auth-logo p { font-size: 11px; color: var(--amber); letter-spacing: 0.18em; text-transform: uppercase; font-weight: 500; opacity: 0.9; margin-top: 4px; }
 
   .auth-card {
-    background: #4A4240;
-    border: 1px solid rgba(236,209,180,0.10);
-    border-radius: 16px;
-    padding: 32px 28px;
-    box-shadow: 0 8px 40px rgba(0,0,0,0.45);
+    background: var(--card);
+    border: 1px solid rgba(255,255,255,0.55);
+    border-radius: var(--r-lg);
+    padding: 30px 26px;
+    box-shadow: 0 18px 50px rgba(30,35,42,0.12), inset 0 1px 0 rgba(255,255,255,0.65);
+    backdrop-filter: blur(20px) saturate(160%);
+    -webkit-backdrop-filter: blur(20px) saturate(160%);
+    animation: rise 640ms 80ms var(--ease) both;
   }
+  @keyframes rise { from { opacity: 0; transform: translateY(16px); } to { opacity: 1; transform: translateY(0); } }
 
   .auth-tabs {
-    display: flex; gap: 4px; margin-bottom: 24px;
-    background: #302D2E; border-radius: 10px; padding: 3px;
+    display: flex; gap: 4px; margin-bottom: 22px;
+    background: rgba(220,224,230,0.5); border-radius: 12px; padding: 4px;
+    border: 1px solid var(--border);
   }
   .auth-tab {
-    flex: 1; padding: 10px; text-align: center;
-    font-size: 13px; font-weight: 700; border: none;
-    background: none; color: #C9B49A; cursor: pointer;
-    border-radius: 8px; transition: all 0.2s;
-    font-family: 'Barlow', sans-serif;
+    flex: 1; padding: 11px; text-align: center;
+    font-size: 13px; font-weight: 500; border: none;
+    background: none; color: var(--text-muted); cursor: pointer;
+    border-radius: 9px; transition: all 0.22s var(--ease);
+    font-family: inherit;
   }
   .auth-tab.active {
-    background: linear-gradient(135deg, #705748, #9E7758);
-    color: #F5E4CC;
-    box-shadow: 0 2px 8px rgba(158,119,88,0.30);
+    background: linear-gradient(135deg, var(--amber-soft), var(--amber));
+    color: #fff; box-shadow: 0 4px 12px rgba(123,70,38,0.30);
   }
-  .auth-tab:hover:not(.active) { color: #C9A07C; }
+  .auth-tab:hover:not(.active) { color: var(--amber); }
 
-  .auth-form { display: flex; flex-direction: column; gap: 16px; }
+  .auth-form { display: flex; flex-direction: column; gap: 15px; }
   .auth-form.hidden { display: none; }
 
-  .form-group { display: flex; flex-direction: column; gap: 5px; }
+  .form-group { display: flex; flex-direction: column; gap: 6px; }
   .form-label {
-    font-size: 10px; font-weight: 700; text-transform: uppercase;
-    letter-spacing: 0.1em; color: #C9B49A;
+    font-size: 10px; font-weight: 500; text-transform: uppercase;
+    letter-spacing: 0.08em; color: var(--amber); opacity: 0.92;
   }
   .form-input {
-    width: 100%; padding: 12px 14px; border: 1px solid rgba(236,209,180,0.22);
-    border-radius: 8px; background: #1B1B1E; color: #F5E4CC;
-    font-family: 'Barlow', sans-serif; font-size: 14px;
-    outline: none; transition: border-color 0.2s, box-shadow 0.2s;
+    width: 100%; padding: 13px 15px; border: 1.5px solid var(--border);
+    border-radius: 12px; background: rgba(255,255,255,0.72); color: var(--text);
+    font-family: inherit; font-size: 14px;
+    outline: none; transition: border-color 0.2s, box-shadow 0.2s, background 0.2s;
   }
   .form-input:focus {
-    border-color: #9E7758;
-    box-shadow: 0 0 0 3px rgba(158,119,88,0.20);
+    border-color: var(--amber); background: rgba(255,255,255,0.96);
+    box-shadow: 0 0 0 3px rgba(123,70,38,0.14);
   }
-  .form-input::placeholder { color: #8A7C6E; opacity: 0.9; }
+  .form-input::placeholder { color: var(--text-muted); opacity: 0.8; }
 
   .auth-btn {
-    width: 100%; padding: 14px; border: none;
-    background: linear-gradient(135deg, #705748, #9E7758);
-    color: #F5E4CC; font-family: 'Barlow', sans-serif;
-    font-size: 14px; font-weight: 700; border-radius: 10px;
-    cursor: pointer; transition: all 0.2s;
-    box-shadow: 0 2px 8px rgba(158,119,88,0.30);
-    letter-spacing: 0.03em;
+    width: 100%; min-height: 50px; padding: 14px; border: none;
+    background: linear-gradient(135deg, var(--amber-soft), var(--amber));
+    color: #fff; font-family: inherit; font-size: 14px; font-weight: 500;
+    border-radius: 14px; cursor: pointer; transition: all 0.2s var(--ease);
+    box-shadow: 0 8px 22px rgba(123,70,38,0.30); letter-spacing: 0.02em;
   }
-  .auth-btn:hover {
-    transform: translateY(-1px);
-    box-shadow: 0 4px 16px rgba(158,119,88,0.45);
-  }
-  .auth-btn:active { transform: translateY(0); }
-  .auth-btn:disabled {
-    opacity: 0.6; cursor: not-allowed; transform: none;
-    box-shadow: none;
-  }
+  .auth-btn:hover { transform: translateY(-1px); filter: brightness(1.05); box-shadow: 0 12px 28px rgba(123,70,38,0.38); }
+  .auth-btn:active { transform: scale(0.98); }
+  .auth-btn:disabled { opacity: 0.5; cursor: not-allowed; transform: none; box-shadow: none; }
 
-  .auth-link {
-    text-align: center; margin-top: 4px;
-  }
-  .auth-link a {
-    font-size: 12px; color: #C9A07C; text-decoration: none;
-    font-weight: 600;
-  }
+  .auth-link { text-align: center; margin-top: 2px; }
+  .auth-link a { font-size: 12px; color: var(--amber); text-decoration: none; font-weight: 500; }
   .auth-link a:hover { text-decoration: underline; }
 
   .auth-error {
-    background: rgba(199,121,102,0.10); border: 1px solid rgba(199,121,102,0.25);
-    border-radius: 8px; padding: 10px 14px; font-size: 12px;
-    color: #C77966; display: none; line-height: 1.4;
+    background: rgba(196,93,82,0.07); border: 1px solid rgba(196,93,82,0.2);
+    border-radius: 12px; padding: 11px 14px; font-size: 12px;
+    color: #C45D52; display: none; line-height: 1.4;
   }
   .auth-error.visible { display: block; }
-
   .auth-success {
-    background: rgba(168,184,156,0.10); border: 1px solid rgba(168,184,156,0.25);
-    border-radius: 8px; padding: 10px 14px; font-size: 12px;
-    color: #A8B89C; display: none; line-height: 1.4;
+    background: rgba(110,155,106,0.08); border: 1px solid rgba(110,155,106,0.22);
+    border-radius: 12px; padding: 11px 14px; font-size: 12px;
+    color: #6E9B6A; display: none; line-height: 1.4;
   }
   .auth-success.visible { display: block; }
 
   .auth-divider {
     display: flex; align-items: center; gap: 12px;
-    margin: 4px 0; color: #C9B49A; font-size: 11px;
+    margin: 2px 0; color: var(--text-muted); font-size: 11px;
     text-transform: uppercase; letter-spacing: 0.1em;
   }
-  .auth-divider::before, .auth-divider::after {
-    content: ''; flex: 1; height: 1px; background: rgba(236,209,180,0.10);
-  }
+  .auth-divider::before, .auth-divider::after { content: ''; flex: 1; height: 1px; background: var(--border); }
 
-  .auth-footer {
-    text-align: center; margin-top: 24px; font-size: 11px; color: #C9B49A;
+  .auth-footer { text-align: center; margin-top: 22px; font-size: 11px; color: var(--text-muted); font-weight: 500; }
+
+  .auth-back {
+    display: inline-flex; align-items: center; gap: 6px;
+    margin-bottom: 18px; font-size: 12px; font-weight: 500;
+    color: var(--text-muted); text-decoration: none;
+    background: rgba(255,255,255,0.6); border: 1px solid var(--border);
+    padding: 8px 14px; border-radius: var(--r-pill);
+    backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px);
   }
+  .auth-back:active { transform: scale(0.96); }
 
   .spinner {
     display: inline-block; width: 16px; height: 16px;
-    border: 2px solid rgba(236,209,180,0.30);
-    border-top-color: #F5E4CC;
+    border: 2px solid rgba(123,70,38,0.20); border-top-color: var(--amber);
     border-radius: 50%; animation: spin 0.6s linear infinite;
     vertical-align: middle; margin-right: 6px;
   }
   @keyframes spin { to { transform: rotate(360deg); } }
+  @media (prefers-reduced-motion: reduce) {
+    *, ::before, ::after { animation-duration: 0.01ms !important; transition-duration: 0.01ms !important; }
+  }
 </style>
 </head>
 <body>
 
 <div class="auth-container">
+  <a href="/" class="auth-back">← Back to home</a>
   <div class="auth-logo">
-    <div class="auth-logo-icon" id="auth-logo-icon"></div>
+    <div class="auth-logo-icon" id="auth-logo-icon">
+      <img src="img/logo.png" alt="RECON" width="40" height="40">
+    </div>
     <h1>RECON</h1>
     <p>Site · Scope · Spend</p>
   </div>
@@ -178,7 +200,7 @@
       </div>
       <div class="form-group">
         <label class="form-label" for="login-password">Password</label>
-        <input class="form-input" type="password" id="login-password" placeholder="••••••••" required autocomplete="current-password" minlength="6">
+        <input class="form-input" type="password" id="login-password" placeholder="••••••••" required autocomplete="current-password" minlength="8">
       </div>
       <button type="submit" class="auth-btn" id="login-btn">Sign In</button>
       <div class="auth-link">
@@ -198,14 +220,14 @@
       </div>
       <div class="form-group">
         <label class="form-label" for="register-password">Password</label>
-        <input class="form-input" type="password" id="register-password" placeholder="Min. 6 characters" required autocomplete="new-password" minlength="6">
+        <input class="form-input" type="password" id="register-password" placeholder="Min. 8 characters" required autocomplete="new-password" minlength="8">
       </div>
       <button type="submit" class="auth-btn" id="register-btn">Create Account</button>
     </form>
 
     <!-- Forgot Password Form -->
     <form class="auth-form hidden" id="forgot-form" onsubmit="AuthUI.handleForgotPassword(event)">
-      <p style="font-size:13px;color:#ECD1B4;line-height:1.5;margin-bottom:4px">Enter your email and we'll send you a password reset link.</p>
+      <p style="font-size:13px;color:#3E5A6E;line-height:1.5;margin-bottom:4px">Enter your email and we'll send you a password reset link.</p>
       <div class="form-group">
         <label class="form-label" for="forgot-email">Email Address</label>
         <input class="form-input" type="email" id="forgot-email" placeholder="you@company.com" required autocomplete="email">
@@ -222,17 +244,14 @@
   </div>
 </div>
 
+<script src="js/security.js?v=1"></script>
 <script src="js/supabase-client.js"></script>
 <script src="js/icons.js"></script>
 <script>
-// Inject the brand SVG icon
-(function(){
-  const el = document.getElementById('auth-logo-icon');
-  if (el && typeof Icons !== 'undefined') el.innerHTML = Icons.render('building', 40);
-})();
-</script>
-<script>
 const AuthUI = (() => {
+  let loginAttempts = 0;
+  let lockoutUntil = 0;
+
   function switchTab(tab) {
     hideMessages();
     document.getElementById('login-form').classList.toggle('hidden', tab !== 'login');
@@ -253,23 +272,34 @@ const AuthUI = (() => {
 
   function showError(msg) {
     const el = document.getElementById('auth-error');
-    el.textContent = msg; el.classList.add('visible');
-    document.getElementById('auth-success').classList.remove('visible');
+    if (el) {
+      el.textContent = escapeHtml(msg);
+      el.classList.add('visible');
+    }
+    const succEl = document.getElementById('auth-success');
+    if (succEl) succEl.classList.remove('visible');
   }
 
   function showSuccess(msg) {
     const el = document.getElementById('auth-success');
-    el.textContent = msg; el.classList.add('visible');
-    document.getElementById('auth-error').classList.remove('visible');
+    if (el) {
+      el.textContent = escapeHtml(msg);
+      el.classList.add('visible');
+    }
+    const errEl = document.getElementById('auth-error');
+    if (errEl) errEl.classList.remove('visible');
   }
 
   function hideMessages() {
-    document.getElementById('auth-error').classList.remove('visible');
-    document.getElementById('auth-success').classList.remove('visible');
+    const errEl = document.getElementById('auth-error');
+    if (errEl) errEl.classList.remove('visible');
+    const succEl = document.getElementById('auth-success');
+    if (succEl) succEl.classList.remove('visible');
   }
 
   function setLoading(btnId, loading) {
     const btn = document.getElementById(btnId);
+    if (!btn) return;
     btn.disabled = loading;
     if (loading) {
       btn.dataset.originalText = btn.textContent;
@@ -282,6 +312,12 @@ const AuthUI = (() => {
   async function handleLogin(e) {
     e.preventDefault();
     hideMessages();
+
+    if (Date.now() < lockoutUntil) {
+      const remainingSecs = Math.ceil((lockoutUntil - Date.now()) / 1000);
+      return showError(`Too many login attempts. Locked out for ${remainingSecs} seconds.`);
+    }
+
     const email = document.getElementById('login-email').value.trim();
     const password = document.getElementById('login-password').value;
 
@@ -290,10 +326,18 @@ const AuthUI = (() => {
     setLoading('login-btn', true);
     try {
       await SupabaseClient.signIn(email, password);
+      loginAttempts = 0;
       showSuccess('Signed in! Redirecting...');
       setTimeout(() => { window.location.href = '/'; }, 500);
     } catch (err) {
-      showError(err.message || 'Sign in failed. Check your credentials.');
+      loginAttempts++;
+      if (loginAttempts >= 5) {
+        lockoutUntil = Date.now() + 60000; // 60 seconds lockout
+        loginAttempts = 0;
+        showError('Too many failed login attempts. Please wait 60 seconds.');
+      } else {
+        showError(err.message || 'Sign in failed. Check your credentials.');
+      }
     }
     setLoading('login-btn', false);
   }
@@ -306,13 +350,15 @@ const AuthUI = (() => {
     const password = document.getElementById('register-password').value;
 
     if (!name || !email || !password) return showError('Please fill in all fields');
-    if (password.length < 6) return showError('Password must be at least 6 characters');
+    if (password.length < 8) return showError('Password must be at least 8 characters');
+    if (!/[A-Z]/.test(password) || !/[0-9]/.test(password)) {
+      return showError('Password must contain at least one uppercase letter and one number');
+    }
 
     setLoading('register-btn', true);
     try {
       const data = await SupabaseClient.signUp(email, password, name);
       if (data.user && !data.session) {
-        // Email confirmation required
         showSuccess('Account created! Check your email to verify, then sign in.');
         switchTab('login');
       } else {
@@ -341,7 +387,6 @@ const AuthUI = (() => {
     setLoading('forgot-btn', false);
   }
 
-  // If already logged in, redirect to app
   SupabaseClient.onReady((sb) => {
     if (SupabaseClient.isAuthenticated()) {
       window.location.href = '/';

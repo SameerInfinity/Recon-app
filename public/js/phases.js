@@ -88,27 +88,14 @@ const Phases = (() => {
   }
 
   function phaseHeader(phase) {
-    const proj = State.getCurrentProject();
-    const budget = proj && proj.phases.length ? proj.totalBudget / proj.phases.length : 0;
     return `
     <div class="phase-header">
       <div class="phase-title-block">
         <div class="phase-title">${iconFor(phase.icon, 26)} <span style="margin-left:10px">${phase.name}</span></div>
         <div class="phase-subtitle">Phase ${phase.id} of ${phase.totalPhases || (State.getCurrentProject()?.phases.length || 9)} · Construction Financial Ledger</div>
       </div>
-      <div class="phase-summary-box">
-        ${budget > 0 ? `
-        <div class="budget-bar-container">
-          <div class="budget-bar-label"><span>Phase Budget</span><span>${F.fmt(budget)}</span></div>
-          <div class="budget-bar-outer"><div class="budget-bar-fill" id="budget-bar-${phase.id}" style="width:0%"></div></div>
-        </div>` : ''}
-        <div class="phase-total-display">
-          <div class="phase-total-label">Phase Total</div>
-          <div class="phase-total-amount" id="phase-total-${phase.id}">₹0</div>
-        </div>
-      </div>
-    </div>
-    ${completionBar(phase.id)}`;
+      <div style="display:none"><div id="phase-total-${phase.id}"></div><div id="budget-bar-${phase.id}"></div></div>
+    </div>`;
   }
 
   function toggleSection(id) {
@@ -627,7 +614,7 @@ const Phases = (() => {
         <span class="live-total-label" style="font-size:12px;color:var(--text-secondary)">${card.name} Total</span>
         <div class="currency-input-wrap" style="width:140px">
           <span class="currency-symbol">₹</span>
-          <input class="field-input mono" type="number" id="card-total-${phase.id}-${card.id}" value="${F.fmtFull(cost).replace(/[^0-9.]/g,'')}" style="font-size:18px;font-weight:700;color:var(--amber)" oninput="Phases.updateInputField(${phase.id},'${card.id}','_manual_total',this.value);Financial.scheduleUpdate()">
+          <input class="field-input mono" type="number" id="card-total-${phase.id}-${card.id}" value="${cost > 0 ? F.fmtFull(cost).replace(/[^0-9.]/g,'') : ''}" style="font-size:18px;font-weight:700;color:var(--amber)" oninput="Phases.updateInputField(${phase.id},'${card.id}','_manual_total',this.value);Financial.scheduleUpdate()">
         </div>
       </div>
     `)}`;
@@ -637,7 +624,7 @@ const Phases = (() => {
   function updateInputField(phaseId, cardId, fieldKey, value) {
     const proj = State.getCurrentProject();
     if (!proj) return;
-    const ph = proj.phases.find(p => p.id === phaseId);
+    const ph = proj.phases.find(p => Number(p.id) === Number(phaseId));
     if (!ph) return;
     if (!ph.data[cardId]) ph.data[cardId] = {};
     ph.data[cardId][fieldKey] = value;
@@ -1553,7 +1540,7 @@ const Phases = (() => {
   function delGenRow(phaseId, key, i, tbodyId, renderFn) {
     const proj = State.getCurrentProject();
     if (!proj) return;
-    const ph = proj.phases.find(p=>p.id===phaseId);
+    const ph = proj.phases.find(p=>Number(p.id)===Number(phaseId));
     if (ph.data[key]) ph.data[key].splice(i, 1);
     State.save();
     const tb = document.getElementById(tbodyId);
@@ -1564,7 +1551,7 @@ const Phases = (() => {
   function updateGenRow(phaseId, key, i, k, v) {
     const proj = State.getCurrentProject();
     if (!proj) return;
-    const ph = proj.phases.find(p=>p.id===phaseId);
+    const ph = proj.phases.find(p=>Number(p.id)===Number(phaseId));
     if (!ph.data[key]) ph.data[key] = [{}];
     if (!ph.data[key][i]) ph.data[key][i] = {};
     ph.data[key][i][k] = v;
@@ -1586,6 +1573,87 @@ const Phases = (() => {
     }
     
     State.save();
+    updateDomRowTotal(phaseId, key, i, ph.data[key][i]);
+  }
+
+  function updateDomRowTotal(phaseId, key, i, r) {
+    if (!r) return;
+    let rowId = '';
+    const prefixMap = {
+      'window_rows': 'wrow-',
+      'floor_prep_rows': 'fprow-',
+      'flooring_int_rows': 'fintrow-',
+      'door_slab_rows': 'dsrow-',
+      'trim_base_rows': 'tbrow-',
+      'paint_prep_rows': 'pprow-',
+      'paint_coat_rows': 'pcrow-',
+      'glass_rows': 'grow-',
+      'fixture_int_rows': 'fixrow-'
+    };
+    
+    if (prefixMap[key]) {
+      rowId = prefixMap[key] + i;
+    } else {
+      rowId = key + '-' + i;
+    }
+    
+    const rowEl = document.getElementById(rowId);
+    if (!rowEl) return;
+    
+    let total = 0;
+    if (key === 'window_rows') {
+      total = (parseFloat(r.qty) || 1) * (parseFloat(r.unit_price) || 0);
+    } else if (key === 'wire_variants') {
+      total = (parseFloat(r.qty) || 0) * (parseFloat(r.price_per_unit) || 0);
+    } else if (key === 'blocking_rows') {
+      total = (parseFloat(r.qty) || 0) * (parseFloat(r.unit_cost) || 0);
+    } else if (key === 'flooring_rows') {
+      const area = parseFloat(r.area) || 0;
+      const waste = parseFloat(r.waste_pct !== undefined ? r.waste_pct : 10) / 100;
+      const price = parseFloat(r.price) || 0;
+      const labor = parseFloat(r.labor_rate) || 0;
+      const underlay = parseFloat(r.underlay_price) || 0;
+      total = (area * (1 + waste)) * price + area * labor + area * underlay;
+    } else if (key === 'floor_prep_rows') {
+      total = (parseFloat(r.labor_hours) || 0) * (parseFloat(r.labor_rate) || 0) + (parseFloat(r.material_cost) || 0);
+    } else if (key === 'flooring_int_rows') {
+      const coverage = parseFloat(r.coverage_sqft) || 0;
+      const waste = parseFloat(r.waste_pct !== undefined ? r.waste_pct : 10) / 100;
+      const price = parseFloat(r.price) || 0;
+      const labor = parseFloat(r.labor_rate) || 0;
+      const underlay = parseFloat(r.underlay_price) || 0;
+      total = (coverage * (1 + waste)) * price + coverage * labor + coverage * underlay;
+    } else if (key === 'door_slab_rows') {
+      const qty = parseFloat(r.qty) || 0;
+      total = qty * (parseFloat(r.slab_price) || 0) + qty * (parseFloat(r.jamb_set_price) || 0) + qty * (parseFloat(r.install_price) || 0);
+    } else if (key === 'trim_base_rows') {
+      total = (parseFloat(r.lf) || 0) * (parseFloat(r.price_lf) || 0) + (parseFloat(r.lf) || 0) * (parseFloat(r.labor_lf) || 0) + (parseFloat(r.corners) || 0) * (parseFloat(r.corner_price) || 0);
+    } else if (key === 'paint_prep_rows') {
+      total = (parseFloat(r.caulk_tubes) || 0) * 8 + (parseFloat(r.filler_tubs) || 0) * 25 + (parseFloat(r.sandpaper_cost) || 0) + (parseFloat(r.tape_plastic_cost) || 0);
+    } else if (key === 'paint_coat_rows') {
+      const sqft = parseFloat(r.sqft) || 0;
+      const coats = parseFloat(r.coats) || 0;
+      const coverage = parseFloat(r.coverage) || 0;
+      const price = parseFloat(r.price_per_gal) || 0;
+      const labor = parseFloat(r.labor_sqft) || 0;
+      const gallons = coverage > 0 ? (sqft * coats) / coverage : 0;
+      total = gallons * price + sqft * labor;
+    } else if (key === 'glass_rows') {
+      const qty = parseFloat(r.qty) || 0;
+      total = qty * (parseFloat(r.unit_price) || 0) + qty * (parseFloat(r.install) || 0);
+    } else if (key === 'fixture_int_rows') {
+      const qty = parseFloat(r.qty) || 0;
+      total = qty * (parseFloat(r.unit_price) || 0) + (parseFloat(r.labor) || 0);
+    } else if (key === 'countertop_rows') {
+      total = (parseFloat(r.area) || 0) * (parseFloat(r.price) || 0) + (parseFloat(r.cutouts) || 0) * 500 + (parseFloat(r.labor) || 0);
+    } else if (key === 'receptacle_rows' || key === 'switch_rows' || key === 'fixture_rows' || key === 'faucet_rows') {
+      total = (parseFloat(r.count) || 0) * (parseFloat(r.unit_price) || 0);
+    }
+    
+    const computedCell = rowEl.querySelector('.computed');
+    if (computedCell) {
+      computedCell.textContent = Financial.fmt(total);
+    }
   }
 
   // ─── PHASE 4: MEP Rough-In ────────────────────────────────
@@ -1643,7 +1711,7 @@ const Phases = (() => {
     const ph = proj.phases.find(p=>p.id===4);
     const rows = (ph && ph.data.wire_variants) || [{}];
     return rows.map((r,i)=>`
-      <tr>
+      <tr id="wire_variants-${i}">
         <td class="input-td"><input type="text" value="${r.gauge||''}" placeholder="e.g. 12 AWG" oninput="Phases.updateGenRowData(4,'wire_variants',${i},'gauge',this.value)" style="width:90px;background:var(--charcoal);border:1px solid var(--charcoal-border);color:var(--text-primary);padding:6px;border-radius:4px;font-size:12px"></td>
         <td class="input-td"><input type="text" value="${r.cable_type||''}" placeholder="e.g. NM-B" oninput="Phases.updateGenRowData(4,'wire_variants',${i},'cable_type',this.value)" style="width:90px;background:var(--charcoal);border:1px solid var(--charcoal-border);color:var(--text-primary);padding:6px;border-radius:4px;font-size:12px"></td>
         <td class="input-td"><input type="number" value="${r.qty||''}" placeholder="0" oninput="Phases.updateGenRowData(4,'wire_variants',${i},'qty',this.value);Financial.scheduleUpdate()" style="width:70px;background:var(--charcoal);border:1px solid var(--charcoal-border);color:var(--text-primary);padding:6px;border-radius:4px;font-family:var(--font-mono);font-size:13px"></td>
@@ -1661,7 +1729,7 @@ const Phases = (() => {
     const rows = (ph && ph.data.blocking_rows) || [];
     if (!rows.length) return '<tr><td colspan="7" style="color:var(--text-muted);font-size:12px;padding:12px">No blocking locations added yet.</td></tr>';
     return rows.map((r,i)=>`
-      <tr>
+      <tr id="blocking_rows-${i}">
         <td class="input-td"><input type="text" value="${r.location||''}" placeholder="Room name" oninput="Phases.updateGenRowData(4,'blocking_rows',${i},'location',this.value)" style="width:120px;background:var(--charcoal);border:1px solid var(--charcoal-border);color:var(--text-primary);padding:6px;border-radius:4px;font-size:12px"></td>
         <td class="input-td"><select onchange="Phases.updateGenRowData(4,'blocking_rows',${i},'purpose',this.value)" style="background:var(--charcoal);border:1px solid var(--charcoal-border);color:var(--text-primary);padding:6px;border-radius:4px;font-size:12px"><option>Kitchen Cabinets</option><option>Floating Vanities</option><option>TV Mount</option><option>Grab Bars</option><option>Heavy Mirrors</option></select></td>
         <td class="input-td"><select onchange="Phases.updateGenRowData(4,'blocking_rows',${i},'lumber_size',this.value)" style="background:var(--charcoal);border:1px solid var(--charcoal-border);color:var(--text-primary);padding:6px;border-radius:4px;font-size:12px"><option>2×4</option><option>2×6</option><option>2×10</option></select></td>
@@ -1747,7 +1815,7 @@ const Phases = (() => {
     const ph = proj.phases.find(p=>p.id===6);
     const rows = (ph && ph.data.flooring_rows) || [{}];
     return rows.map((r,i)=>`
-      <tr>
+      <tr id="flooring_rows-${i}">
         <td class="input-td"><input type="text" value="${r.room||''}" placeholder="Room name" oninput="Phases.updateGenRowData(6,'flooring_rows',${i},'room',this.value)" style="width:100px;background:var(--charcoal);border:1px solid var(--charcoal-border);color:var(--text-primary);padding:6px;border-radius:4px;font-size:12px"></td>
         <td class="input-td"><select onchange="Phases.updateGenRowData(6,'flooring_rows',${i},'type',this.value);Financial.scheduleUpdate()" style="background:var(--charcoal);border:1px solid var(--charcoal-border);color:var(--text-primary);padding:6px;border-radius:4px;font-size:11px"><option>Engineered Hardwood</option><option>Solid Hardwood</option><option>LVP</option><option>Porcelain Tile</option><option>Polished Concrete</option><option>Carpet</option></select></td>
         <td class="input-td"><input type="number" value="${r.area||''}" placeholder="0" oninput="Phases.updateGenRowData(6,'flooring_rows',${i},'area',this.value);Financial.scheduleUpdate()" style="width:70px;background:var(--charcoal);border:1px solid var(--charcoal-border);color:var(--text-primary);padding:6px;border-radius:4px;font-family:var(--font-mono);font-size:13px"></td>
@@ -1821,7 +1889,7 @@ const Phases = (() => {
     if (!rows.length) return '<tr><td colspan="5" style="color:var(--text-muted);font-size:12px;padding:10px">None added yet.</td></tr>';
     const opts = typeOptions.map(o=>`<option>${o}</option>`).join('');
     return rows.map((r,i)=>`
-      <tr>
+      <tr id="${key}-${i}">
         <td class="input-td"><select onchange="Phases.updateGenRowData(${phaseId},'${key}',${i},'type',this.value)" style="background:var(--charcoal);border:1px solid var(--charcoal-border);color:var(--text-primary);padding:6px;border-radius:4px;font-size:12px;min-width:130px">${opts}</select></td>
         <td class="input-td"><input type="number" value="${r.count||''}" placeholder="0" oninput="Phases.updateGenRowData(${phaseId},'${key}',${i},'count',this.value);Financial.scheduleUpdate()" style="width:60px;background:var(--charcoal);border:1px solid var(--charcoal-border);color:var(--text-primary);padding:6px;border-radius:4px;font-family:var(--font-mono);font-size:13px"></td>
         <td class="input-td"><input type="number" value="${r.unit_price||''}" placeholder="0" oninput="Phases.updateGenRowData(${phaseId},'${key}',${i},'unit_price',this.value);Financial.scheduleUpdate()" style="width:90px;background:var(--charcoal);border:1px solid var(--charcoal-border);color:var(--text-primary);padding:6px;border-radius:4px;font-family:var(--font-mono);font-size:13px"></td>
@@ -1846,7 +1914,7 @@ const Phases = (() => {
     const rows = (ph && ph.data.countertop_rows) || [];
     if (!rows.length) return '<tr><td colspan="10" style="color:var(--text-muted);font-size:12px;padding:10px">No countertop zones added.</td></tr>';
     return rows.map((r,i)=>`
-      <tr>
+      <tr id="countertop_rows-${i}">
         <td class="input-td"><input type="text" value="${r.zone||''}" placeholder="Kitchen" oninput="Phases.updateGenRowData(7,'countertop_rows',${i},'zone',this.value)" style="width:80px;background:var(--charcoal);border:1px solid var(--charcoal-border);color:var(--text-primary);padding:6px;border-radius:4px;font-size:11px"></td>
         <td class="input-td"><select onchange="Phases.updateGenRowData(7,'countertop_rows',${i},'material',this.value)" style="background:var(--charcoal);border:1px solid var(--charcoal-border);color:var(--text-primary);padding:6px;border-radius:4px;font-size:11px"><option>Quartz</option><option>Granite</option><option>Marble</option><option>Quartzite</option><option>Solid Surface</option><option>Butcher Block</option></select></td>
         <td class="input-td"><select onchange="Phases.updateGenRowData(7,'countertop_rows',${i},'thickness',this.value)" style="background:var(--charcoal);border:1px solid var(--charcoal-border);color:var(--text-primary);padding:6px;border-radius:4px;font-size:11px"><option>20mm</option><option>30mm</option></select></td>
@@ -2163,33 +2231,17 @@ const Phases = (() => {
   // ─── PHASE 9: Interior ────────────────────────────────────
   function renderPhase9(phase) {
     return `
-    ${phaseHeader(phase)}
 
     ${phaseSectionCard('p10-flooring-prep', '9A · Flooring — Subfloor Preparation', `
       <div style="font-size:11px;color:var(--text-muted);margin-bottom:12px">Moisture readings and prep work that gate the finish floor install.</div>
-      <table class="line-table">
-        <thead><tr>
-          <th>Zone / Room</th><th>Prep Type</th><th>Moisture %</th>
-          <th>Prep Labor (hrs)</th><th>Labor Rate/hr</th>
-          <th>Material Cost</th><th class="right">Line Total</th><th></th>
-        </tr></thead>
-        <tbody id="floor-prep-rows">${renderFloorPrepRows()}</tbody>
-      </table>
+      <div id="floor-prep-rows">${renderFloorPrepRows()}</div>
       ${addRowBtn('Prep Zone', 'Phases.addFloorPrepRow()')}
       ${liveTotal('p10-floor-prep-total', 'Subfloor Prep Total')}
     `)}
 
     ${phaseSectionCard('p10-flooring-finish', '9A · Flooring — Finish Material Ledger', `
       <div style="font-size:11px;color:var(--text-muted);margin-bottom:12px">One row per finish-flooring product. Waste % is auto-applied to coverage.</div>
-      <table class="line-table">
-        <thead><tr>
-          <th>Zone</th><th>Material</th><th>Plank W (in)</th><th>Wear (mil)</th>
-          <th>Coverage (sq ft)</th><th>Waste %</th>
-          <th>Unit Price/sf</th><th>Labor/sf</th>
-          <th>Underlay/sf</th><th class="right">Total</th><th></th>
-        </tr></thead>
-        <tbody id="flooring-int-rows">${renderFlooringIntRows()}</tbody>
-      </table>
+      <div id="flooring-int-rows">${renderFlooringIntRows()}</div>
       ${addRowBtn('Flooring Zone', 'Phases.addFlooringIntRow()')}
       ${fieldRow(3,
         field('Transition Strips (count)', monoInp('trans_strips_count','0')),
@@ -2247,15 +2299,7 @@ const Phases = (() => {
     `)}
 
     ${phaseSectionCard('p10-doors-slab', '9C · Interior Doors — Slabs & Jambs', `
-      <table class="line-table">
-        <thead><tr>
-          <th>Location</th><th>Door Style</th><th>Core Type</th>
-          <th>Jamb Width</th><th>Qty</th>
-          <th>Slab Price</th><th>Jamb Set</th><th>Install</th>
-          <th class="right">Total</th><th></th>
-        </tr></thead>
-        <tbody id="door-slab-rows">${renderDoorSlabRows()}</tbody>
-      </table>
+      <div id="door-slab-rows">${renderDoorSlabRows()}</div>
       ${addRowBtn('Door', 'Phases.addDoorSlabRow()')}
       ${fieldRow(2,
         field('Door Swing Schedule Verified', `<select class="field-select" id="swing_verified"><option value="false">Pending</option><option value="true">Verified</option></select>`),
@@ -2289,15 +2333,7 @@ const Phases = (() => {
 
     ${phaseSectionCard('p10-trim-base', '9D · Trim Carpentry — Base, Casing & Specialty Millwork', `
       <div style="font-size:11px;color:var(--text-muted);margin-bottom:12px">Baseboard & casing by linear foot, with waste and mitered-corner allowances.</div>
-      <table class="line-table">
-        <thead><tr>
-          <th>Profile / Style</th><th>Height (in)</th><th>Linear Ft</th>
-          <th>Price/LF</th><th>Labor/LF</th>
-          <th>Corner Count</th><th>$/corner</th>
-          <th class="right">Total</th><th></th>
-        </tr></thead>
-        <tbody id="trim-base-rows">${renderTrimBaseRows()}</tbody>
-      </table>
+      <div id="trim-base-rows">${renderTrimBaseRows()}</div>
       ${addRowBtn('Baseboard Profile', 'Phases.addTrimBaseRow()')}
       ${fieldRow(2,
         field('Door Casing Width (in)', monoInp('casing_width','3.5')),
@@ -2341,15 +2377,7 @@ const Phases = (() => {
 
     ${phaseSectionCard('p10-paint-prep', '9E · Paint — Surface Preparation', `
       <div style="font-size:11px;color:var(--text-muted);margin-bottom:12px">Joint compound, caulking, sanding — the prep that determines finish quality.</div>
-      <table class="line-table">
-        <thead><tr>
-          <th>Surface</th><th>Prep Task</th>
-          <th>Caulk Tubes</th><th>Wood Filler Tubs</th>
-          <th>Sandpaper / Discs</th><th>Tape & Plastic</th>
-          <th class="right">Line Cost</th><th></th>
-        </tr></thead>
-        <tbody id="paint-prep-rows">${renderPaintPrepRows()}</tbody>
-      </table>
+      <div id="paint-prep-rows">${renderPaintPrepRows()}</div>
       ${addRowBtn('Prep Surface', 'Phases.addPaintPrepRow()')}
       ${fieldRow(2,
         field('Primer Type', sel('primer_type', ['PVA Drywall Primer','Stain-Blocking Oil','High-Build','Bonding'])),
@@ -2362,15 +2390,7 @@ const Phases = (() => {
 
     ${phaseSectionCard('p10-paint-coat', '9E · Paint — Coatings & Coverage', `
       <div style="font-size:11px;color:var(--text-muted);margin-bottom:12px">Coverage auto-computed from sq ft input.</div>
-      <table class="line-table">
-        <thead><tr>
-          <th>Surface Type</th><th>Sq Ft</th><th>Coats</th>
-          <th>Color Code / Sheen</th><th>Coverage (sqft/gal)</th>
-          <th>$/Gallon</th><th>Labor/sqft</th>
-          <th class="right">Total</th><th></th>
-        </tr></thead>
-        <tbody id="paint-coat-rows">${renderPaintCoatRows()}</tbody>
-      </table>
+      <div id="paint-coat-rows">${renderPaintCoatRows()}</div>
       ${addRowBtn('Coating Surface', 'Phases.addPaintCoatRow()')}
       ${field('Coats Required (1/2/3)', sel('coats_required', ['1','2','3']))}
       ${liveTotal('p10-paint-coat-total', 'Paint Coatings Total')}
@@ -2394,14 +2414,7 @@ const Phases = (() => {
     `)}
 
     ${phaseSectionCard('p10-glass', '9F · Custom Additions — Glass, Mirrors & Enclosures', `
-      <table class="line-table">
-        <thead><tr>
-          <th>Item / Location</th><th>Type</th><th>Width (in)</th><th>Height (in)</th>
-          <th>Qty</th><th>Glass Type</th><th>Unit Price</th><th>Install</th>
-          <th class="right">Total</th><th></th>
-        </tr></thead>
-        <tbody id="glass-rows">${renderGlassRows()}</tbody>
-      </table>
+      <div id="glass-rows">${renderGlassRows()}</div>
       ${addRowBtn('Glass Item', 'Phases.addGlassRow()')}
       ${fieldRow(2,
         field('Shower Enclosure Type', sel('shower_type', ['Frameless Heavy Glass','Semi-Frameless','Framed','Sliding By-Pass'])),
@@ -2416,15 +2429,7 @@ const Phases = (() => {
 
     ${phaseSectionCard('p10-fixtures', '9F · Custom Additions — Misc Fixtures & Built-ins', `
       <div style="font-size:11px;color:var(--text-muted);margin-bottom:12px">Anything that doesn't fit elsewhere: fireplace surrounds, window seats, built-in benches, etc.</div>
-      <table class="line-table">
-        <thead><tr>
-          <th>Item / Description</th><th>Vendor / Source</th>
-          <th>Qty</th><th>Cost Confidence</th>
-          <th>Unit Price</th><th>Labor</th>
-          <th class="right">Total</th><th></th>
-        </tr></thead>
-        <tbody id="fixture-rows">${renderFixtureIntRows()}</tbody>
-      </table>
+      <div id="fixture-rows">${renderFixtureIntRows()}</div>
       ${addRowBtn('Fixture / Built-in', 'Phases.addFixtureIntRow()')}
       ${liveTotal('p10-fixture-total', 'Custom Fixtures Total')}
     `)}`;
@@ -2435,73 +2440,112 @@ const Phases = (() => {
   function renderFloorPrepRows() {
     const proj = State.getCurrentProject();
     if (!proj) return '';
-    const ph = proj.phases.find(p => p.id === 9);
+    const ph = proj.phases.find(p => p.id === 10);
     const rows = (ph && ph.data.floor_prep_rows) || [{}];
-    return rows.map((r, i) => `
-      <tr id="fprow-${i}">
-        <td class="input-td"><input type="text" value="${r.zone||''}" placeholder="Living Room" oninput="Phases.updateGenRowData(9,'floor_prep_rows',${i},'zone',this.value)" style="width:110px;background:var(--charcoal);border:1px solid var(--charcoal-border);color:var(--text-primary);padding:6px 8px;border-radius:4px;font-size:12px"></td>
-        <td class="input-td"><select onchange="Phases.updateGenRowData(9,'floor_prep_rows',${i},'prep_type',this.value)" style="background:var(--charcoal);border:1px solid var(--charcoal-border);color:var(--text-primary);padding:6px;border-radius:4px;font-size:11px">
-          <option ${r.prep_type==='Self-Leveling Compound'?'selected':''}>Self-Leveling Compound</option>
-          <option ${r.prep_type==='Plywood Overlay'?'selected':''}>Plywood Overlay</option>
-          <option ${r.prep_type==='Crack Isolation Membrane'?'selected':''}>Crack Isolation Membrane</option>
-          <option ${r.prep_type==='Vapor Barrier'?'selected':''}>Vapor Barrier</option>
-        </select></td>
-        <td class="input-td"><input type="number" value="${r.moisture_pct||''}" step="0.1" min="0" max="100" placeholder="0.0" oninput="Phases.updateGenRowData(9,'floor_prep_rows',${i},'moisture_pct',this.value)" style="width:60px;background:var(--charcoal);border:1px solid var(--charcoal-border);color:var(--text-primary);padding:6px;border-radius:4px;font-family:var(--font-mono);font-size:12px"></td>
-        <td class="input-td"><input type="number" value="${r.labor_hours||''}" min="0" step="0.5" placeholder="0" oninput="Phases.updateGenRowData(9,'floor_prep_rows',${i},'labor_hours',this.value);Financial.scheduleUpdate()" style="width:60px;background:var(--charcoal);border:1px solid var(--charcoal-border);color:var(--text-primary);padding:6px;border-radius:4px;font-family:var(--font-mono);font-size:12px"></td>
-        <td class="input-td"><input type="number" value="${r.labor_rate||''}" min="0" placeholder="0" oninput="Phases.updateGenRowData(9,'floor_prep_rows',${i},'labor_rate',this.value);Financial.scheduleUpdate()" style="width:80px;background:var(--charcoal);border:1px solid var(--charcoal-border);color:var(--text-primary);padding:6px;border-radius:4px;font-family:var(--font-mono);font-size:12px"></td>
-        <td class="input-td"><input type="number" value="${r.material_cost||''}" min="0" placeholder="0" oninput="Phases.updateGenRowData(9,'floor_prep_rows',${i},'material_cost',this.value);Financial.scheduleUpdate()" style="width:90px;background:var(--charcoal);border:1px solid var(--charcoal-border);color:var(--text-primary);padding:6px;border-radius:4px;font-family:var(--font-mono);font-size:12px"></td>
-        <td class="computed">${F.fmt(F.add(F.mul(r.labor_hours, r.labor_rate), r.material_cost))}</td>
-        <td><button class="delete-row-btn" onclick="Phases.delGenRow(9,'floor_prep_rows',${i},'floor-prep-rows',Phases.renderFloorPrepRows)">${Icons.render('trash', 12)}</button></td>
-      </tr>`).join('');
+    const iStyle = 'background:var(--charcoal);border:1px solid var(--charcoal-border);color:var(--text-primary);padding:8px 10px;border-radius:6px;font-size:13px;width:100%;box-sizing:border-box';
+    const monoStyle = iStyle + ';font-family:var(--font-mono)';
+    return rows.map((r, i) => {
+      const total = F.add(F.mul(r.labor_hours, r.labor_rate), r.material_cost);
+      return `
+      <div id="fprow-${i}" style="background:var(--charcoal-mid);border:1px solid var(--charcoal-border);border-radius:10px;padding:14px;margin-bottom:10px;position:relative">
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:10px">
+          <div><div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:var(--text-muted);margin-bottom:4px">Zone / Room</div>
+            <input type="text" value="${r.zone||''}" placeholder="Living Room" oninput="Phases.updateGenRowData(10,'floor_prep_rows',${i},'zone',this.value)" style="${iStyle}"></div>
+          <div><div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:var(--text-muted);margin-bottom:4px">Prep Type</div>
+            <select onchange="Phases.updateGenRowData(10,'floor_prep_rows',${i},'prep_type',this.value)" style="${iStyle}">
+              <option ${r.prep_type==='Self-Leveling Compound'?'selected':''}>Self-Leveling Compound</option>
+              <option ${r.prep_type==='Plywood Overlay'?'selected':''}>Plywood Overlay</option>
+              <option ${r.prep_type==='Crack Isolation Membrane'?'selected':''}>Crack Isolation Membrane</option>
+              <option ${r.prep_type==='Vapor Barrier'?'selected':''}>Vapor Barrier</option>
+            </select></div>
+        </div>
+        <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;margin-bottom:10px">
+          <div><div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:var(--text-muted);margin-bottom:4px">Moisture %</div>
+            <input type="number" value="${r.moisture_pct||''}" step="0.1" min="0" max="100" placeholder="0.0" oninput="Phases.updateGenRowData(10,'floor_prep_rows',${i},'moisture_pct',this.value)" style="${monoStyle}"></div>
+          <div><div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:var(--text-muted);margin-bottom:4px">Labor (hrs)</div>
+            <input type="number" value="${r.labor_hours||''}" min="0" step="0.5" placeholder="0" oninput="Phases.updateGenRowData(10,'floor_prep_rows',${i},'labor_hours',this.value);Financial.scheduleUpdate()" style="${monoStyle}"></div>
+          <div><div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:var(--text-muted);margin-bottom:4px">Rate/hr</div>
+            <input type="number" value="${r.labor_rate||''}" min="0" placeholder="0" oninput="Phases.updateGenRowData(10,'floor_prep_rows',${i},'labor_rate',this.value);Financial.scheduleUpdate()" style="${monoStyle}"></div>
+        </div>
+        <div style="display:flex;justify-content:space-between;align-items:center;gap:10px">
+          <div style="flex:1"><div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:var(--text-muted);margin-bottom:4px">Material Cost</div>
+            <input type="number" value="${r.material_cost||''}" min="0" placeholder="0" oninput="Phases.updateGenRowData(10,'floor_prep_rows',${i},'material_cost',this.value);Financial.scheduleUpdate()" style="${monoStyle}"></div>
+          <div style="text-align:right">
+            <div style="font-size:10px;color:var(--text-muted);margin-bottom:2px">Line Total</div>
+            <div class="computed" style="font-family:var(--font-mono);font-size:17px;font-weight:700;color:var(--amber)">${F.fmt(total)}</div>
+          </div>
+          <button class="delete-row-btn" onclick="Phases.delGenRow(10,'floor_prep_rows',${i},'floor-prep-rows',Phases.renderFloorPrepRows)" style="margin-top:16px">${Icons.render('trash', 14)}</button>
+        </div>
+      </div>`;
+    }).join('');
   }
-  function addFloorPrepRow() { addGenRow(9, 'floor_prep_rows', 'floor-prep-rows', renderFloorPrepRows); }
+  function addFloorPrepRow() { addGenRow(10, 'floor_prep_rows', 'floor-prep-rows', renderFloorPrepRows); }
 
   function renderFlooringIntRows() {
     const proj = State.getCurrentProject();
     if (!proj) return '';
-    const ph = proj.phases.find(p => p.id === 9);
+    const ph = proj.phases.find(p => p.id === 10);
     const rows = (ph && ph.data.flooring_int_rows) || [{}];
+    const iStyle = 'background:var(--charcoal);border:1px solid var(--charcoal-border);color:var(--text-primary);padding:8px 10px;border-radius:6px;font-size:13px;width:100%;box-sizing:border-box';
+    const monoStyle = iStyle + ';font-family:var(--font-mono)';
     return rows.map((r, i) => {
       const coverage = F.parseNum(r.coverage_sqft);
       const wastePct = F.parseNum(r.waste_pct) / 100;
       const adjCoverage = coverage * (1 + wastePct);
-      const total = F.add(
-        F.mul(adjCoverage, r.price),
-        F.mul(coverage, r.labor_rate),
-        F.mul(coverage, r.underlay_price)
-      );
+      const total = F.add(F.mul(adjCoverage, r.price), F.mul(coverage, r.labor_rate), F.mul(coverage, r.underlay_price));
       return `
-      <tr id="fintrow-${i}">
-        <td class="input-td"><input type="text" value="${r.zone||''}" placeholder="Master BR" oninput="Phases.updateGenRowData(9,'flooring_int_rows',${i},'zone',this.value)" style="width:90px;background:var(--charcoal);border:1px solid var(--charcoal-border);color:var(--text-primary);padding:6px 8px;border-radius:4px;font-size:12px"></td>
-        <td class="input-td"><select onchange="Phases.updateGenRowData(9,'flooring_int_rows',${i},'material',this.value);Financial.scheduleUpdate()" style="background:var(--charcoal);border:1px solid var(--charcoal-border);color:var(--text-primary);padding:6px;border-radius:4px;font-size:11px;min-width:130px">
-          <option ${r.material==='Solid Hardwood'?'selected':''}>Solid Hardwood</option>
-          <option ${r.material==='Engineered Wood'?'selected':''}>Engineered Wood</option>
-          <option ${r.material==='LVP'?'selected':''}>LVP</option>
-          <option ${r.material==='LVT'?'selected':''}>LVT</option>
-          <option ${r.material==='Porcelain Tile'?'selected':''}>Porcelain Tile</option>
-          <option ${r.material==='Ceramic Tile'?'selected':''}>Ceramic Tile</option>
-          <option ${r.material==='Broadloom Carpet'?'selected':''}>Broadloom Carpet</option>
-          <option ${r.material==='Carpet Tile'?'selected':''}>Carpet Tile</option>
-        </select></td>
-        <td class="input-td"><input type="number" value="${r.plank_width||''}" min="0" step="0.125" placeholder="0" oninput="Phases.updateGenRowData(9,'flooring_int_rows',${i},'plank_width',this.value)" style="width:55px;background:var(--charcoal);border:1px solid var(--charcoal-border);color:var(--text-primary);padding:6px;border-radius:4px;font-family:var(--font-mono);font-size:12px"></td>
-        <td class="input-td"><input type="number" value="${r.wear_layer||''}" min="0" placeholder="0" oninput="Phases.updateGenRowData(9,'flooring_int_rows',${i},'wear_layer',this.value)" style="width:55px;background:var(--charcoal);border:1px solid var(--charcoal-border);color:var(--text-primary);padding:6px;border-radius:4px;font-family:var(--font-mono);font-size:12px"></td>
-        <td class="input-td"><input type="number" value="${r.coverage_sqft||''}" min="0" step="any" placeholder="0" oninput="Phases.updateGenRowData(9,'flooring_int_rows',${i},'coverage_sqft',this.value);Financial.scheduleUpdate()" style="width:80px;background:var(--charcoal);border:1px solid var(--charcoal-border);color:var(--text-primary);padding:6px;border-radius:4px;font-family:var(--font-mono);font-size:12px"></td>
-        <td class="input-td"><input type="number" value="${r.waste_pct||10}" min="0" max="50" oninput="Phases.updateGenRowData(9,'flooring_int_rows',${i},'waste_pct',this.value);Financial.scheduleUpdate()" style="width:55px;background:var(--charcoal);border:1px solid var(--charcoal-border);color:var(--text-primary);padding:6px;border-radius:4px;font-family:var(--font-mono);font-size:12px"></td>
-        <td class="input-td"><input type="number" value="${r.price||''}" min="0" step="any" placeholder="0" oninput="Phases.updateGenRowData(9,'flooring_int_rows',${i},'price',this.value);Financial.scheduleUpdate()" style="width:80px;background:var(--charcoal);border:1px solid var(--charcoal-border);color:var(--text-primary);padding:6px;border-radius:4px;font-family:var(--font-mono);font-size:12px"></td>
-        <td class="input-td"><input type="number" value="${r.labor_rate||''}" min="0" step="any" placeholder="0" oninput="Phases.updateGenRowData(9,'flooring_int_rows',${i},'labor_rate',this.value);Financial.scheduleUpdate()" style="width:75px;background:var(--charcoal);border:1px solid var(--charcoal-border);color:var(--text-primary);padding:6px;border-radius:4px;font-family:var(--font-mono);font-size:12px"></td>
-        <td class="input-td"><input type="number" value="${r.underlay_price||''}" min="0" step="any" placeholder="0" oninput="Phases.updateGenRowData(9,'flooring_int_rows',${i},'underlay_price',this.value);Financial.scheduleUpdate()" style="width:75px;background:var(--charcoal);border:1px solid var(--charcoal-border);color:var(--text-primary);padding:6px;border-radius:4px;font-family:var(--font-mono);font-size:12px"></td>
-        <td class="computed">${F.fmt(total)}</td>
-        <td><button class="delete-row-btn" onclick="Phases.delGenRow(9,'flooring_int_rows',${i},'flooring-int-rows',Phases.renderFlooringIntRows)">${Icons.render('trash', 12)}</button></td>
-      </tr>`;
+      <div id="fintrow-${i}" style="background:var(--charcoal-mid);border:1px solid var(--charcoal-border);border-radius:10px;padding:14px;margin-bottom:10px">
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:10px">
+          <div><div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:var(--text-muted);margin-bottom:4px">Zone</div>
+            <input type="text" value="${r.zone||''}" placeholder="Master BR" oninput="Phases.updateGenRowData(10,'flooring_int_rows',${i},'zone',this.value)" style="${iStyle}"></div>
+          <div><div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:var(--text-muted);margin-bottom:4px">Material</div>
+            <select onchange="Phases.updateGenRowData(10,'flooring_int_rows',${i},'material',this.value);Financial.scheduleUpdate()" style="${iStyle}">
+              <option ${r.material==='Solid Hardwood'?'selected':''}>Solid Hardwood</option>
+              <option ${r.material==='Engineered Wood'?'selected':''}>Engineered Wood</option>
+              <option ${r.material==='LVP'?'selected':''}>LVP</option>
+              <option ${r.material==='LVT'?'selected':''}>LVT</option>
+              <option ${r.material==='Porcelain Tile'?'selected':''}>Porcelain Tile</option>
+              <option ${r.material==='Ceramic Tile'?'selected':''}>Ceramic Tile</option>
+              <option ${r.material==='Broadloom Carpet'?'selected':''}>Broadloom Carpet</option>
+              <option ${r.material==='Carpet Tile'?'selected':''}>Carpet Tile</option>
+            </select></div>
+        </div>
+        <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;margin-bottom:10px">
+          <div><div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:var(--text-muted);margin-bottom:4px">Coverage (sqft)</div>
+            <input type="number" value="${r.coverage_sqft||''}" min="0" step="any" placeholder="0" oninput="Phases.updateGenRowData(10,'flooring_int_rows',${i},'coverage_sqft',this.value);Financial.scheduleUpdate()" style="${monoStyle}"></div>
+          <div><div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:var(--text-muted);margin-bottom:4px">Waste %</div>
+            <input type="number" value="${r.waste_pct||10}" min="0" max="50" oninput="Phases.updateGenRowData(10,'flooring_int_rows',${i},'waste_pct',this.value);Financial.scheduleUpdate()" style="${monoStyle}"></div>
+          <div><div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:var(--text-muted);margin-bottom:4px">Plank W (in)</div>
+            <input type="number" value="${r.plank_width||''}" min="0" step="0.125" placeholder="0" oninput="Phases.updateGenRowData(10,'flooring_int_rows',${i},'plank_width',this.value)" style="${monoStyle}"></div>
+        </div>
+        <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;margin-bottom:10px">
+          <div><div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:var(--text-muted);margin-bottom:4px">Price/sqft</div>
+            <input type="number" value="${r.price||''}" min="0" step="any" placeholder="0" oninput="Phases.updateGenRowData(10,'flooring_int_rows',${i},'price',this.value);Financial.scheduleUpdate()" style="${monoStyle}"></div>
+          <div><div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:var(--text-muted);margin-bottom:4px">Labor/sqft</div>
+            <input type="number" value="${r.labor_rate||''}" min="0" step="any" placeholder="0" oninput="Phases.updateGenRowData(10,'flooring_int_rows',${i},'labor_rate',this.value);Financial.scheduleUpdate()" style="${monoStyle}"></div>
+          <div><div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:var(--text-muted);margin-bottom:4px">Underlay/sqft</div>
+            <input type="number" value="${r.underlay_price||''}" min="0" step="any" placeholder="0" oninput="Phases.updateGenRowData(10,'flooring_int_rows',${i},'underlay_price',this.value);Financial.scheduleUpdate()" style="${monoStyle}"></div>
+        </div>
+        <div style="display:flex;justify-content:space-between;align-items:center">
+          <div style="font-size:10px;color:var(--text-muted)">Wear Layer: <input type="number" value="${r.wear_layer||''}" min="0" placeholder="mil" oninput="Phases.updateGenRowData(10,'flooring_int_rows',${i},'wear_layer',this.value)" style="width:60px;${monoStyle.replace('width:100%;','')}background:var(--charcoal)"></div>
+          <div style="text-align:right">
+            <div style="font-size:10px;color:var(--text-muted);margin-bottom:2px">Total</div>
+            <div class="computed" style="font-family:var(--font-mono);font-size:17px;font-weight:700;color:var(--amber)">${F.fmt(total)}</div>
+          </div>
+          <button class="delete-row-btn" onclick="Phases.delGenRow(10,'flooring_int_rows',${i},'flooring-int-rows',Phases.renderFlooringIntRows)">${Icons.render('trash', 14)}</button>
+        </div>
+      </div>`;
     }).join('');
   }
-  function addFlooringIntRow() { addGenRow(9, 'flooring_int_rows', 'flooring-int-rows', renderFlooringIntRows); }
+  function addFlooringIntRow() { addGenRow(10, 'flooring_int_rows', 'flooring-int-rows', renderFlooringIntRows); }
 
   function renderDoorSlabRows() {
     const proj = State.getCurrentProject();
     if (!proj) return '';
-    const ph = proj.phases.find(p => p.id === 9);
+    const ph = proj.phases.find(p => p.id === 10);
     const rows = (ph && ph.data.door_slab_rows) || [{}];
+    const iStyle = 'background:var(--charcoal);border:1px solid var(--charcoal-border);color:var(--text-primary);padding:8px 10px;border-radius:6px;font-size:13px;width:100%;box-sizing:border-box';
+    const monoStyle = iStyle + ';font-family:var(--font-mono)';
     return rows.map((r, i) => {
       const qty = F.parseNum(r.qty);
       const lineTotal = F.add(
@@ -2510,41 +2554,76 @@ const Phases = (() => {
         F.mul(qty, r.install_price)
       );
       return `
-      <tr id="dsrow-${i}">
-        <td class="input-td"><input type="text" value="${r.location||''}" placeholder="Bedroom 2" oninput="Phases.updateGenRowData(9,'door_slab_rows',${i},'location',this.value)" style="width:100px;background:var(--charcoal);border:1px solid var(--charcoal-border);color:var(--text-primary);padding:6px 8px;border-radius:4px;font-size:12px"></td>
-        <td class="input-td"><select onchange="Phases.updateGenRowData(9,'door_slab_rows',${i},'style',this.value)" style="background:var(--charcoal);border:1px solid var(--charcoal-border);color:var(--text-primary);padding:6px;border-radius:4px;font-size:11px">
-          <option ${r.style==='Flush'?'selected':''}>Flush</option>
-          <option ${r.style==='1-Panel'?'selected':''}>1-Panel</option>
-          <option ${r.style==='2-Panel'?'selected':''}>2-Panel</option>
-          <option ${r.style==='5-Panel'?'selected':''}>5-Panel</option>
-          <option ${r.style==='French'?'selected':''}>French</option>
-          <option ${r.style==='Barn'?'selected':''}>Barn</option>
-        </select></td>
-        <td class="input-td"><select onchange="Phases.updateGenRowData(9,'door_slab_rows',${i},'core',this.value)" style="background:var(--charcoal);border:1px solid var(--charcoal-border);color:var(--text-primary);padding:6px;border-radius:4px;font-size:11px">
-          <option ${r.core==='Solid Core'?'selected':''}>Solid Core</option>
-          <option ${r.core==='Hollow Core'?'selected':''}>Hollow Core</option>
-          <option ${r.core==='Solid Wood'?'selected':''}>Solid Wood</option>
-          <option ${r.core==='MDF'?'selected':''}>MDF</option>
-        </select></td>
-        <td class="input-td"><select onchange="Phases.updateGenRowData(9,'door_slab_rows',${i},'jamb_width',this.value)" style="background:var(--charcoal);border:1px solid var(--charcoal-border);color:var(--text-primary);padding:6px;border-radius:4px;font-size:11px">
-          <option ${r.jamb_width==='4-9/16'?'selected':''}>4-9/16</option>
-          <option ${r.jamb_width==='6-9/16'?'selected':''}>6-9/16</option>
-        </select></td>
-        <td class="input-td"><input type="number" value="${r.qty||1}" min="1" oninput="Phases.updateGenRowData(9,'door_slab_rows',${i},'qty',this.value);Phases.recomputeDoorCount();Financial.scheduleUpdate()" style="width:50px;background:var(--charcoal);border:1px solid var(--charcoal-border);color:var(--text-primary);padding:6px;border-radius:4px;font-family:var(--font-mono);font-size:12px"></td>
-        <td class="input-td"><input type="number" value="${r.slab_price||''}" min="0" step="any" placeholder="0" oninput="Phases.updateGenRowData(9,'door_slab_rows',${i},'slab_price',this.value);Financial.scheduleUpdate()" style="width:80px;background:var(--charcoal);border:1px solid var(--charcoal-border);color:var(--text-primary);padding:6px;border-radius:4px;font-family:var(--font-mono);font-size:12px"></td>
-        <td class="input-td"><input type="number" value="${r.jamb_set_price||''}" min="0" step="any" placeholder="0" oninput="Phases.updateGenRowData(9,'door_slab_rows',${i},'jamb_set_price',this.value);Financial.scheduleUpdate()" style="width:75px;background:var(--charcoal);border:1px solid var(--charcoal-border);color:var(--text-primary);padding:6px;border-radius:4px;font-family:var(--font-mono);font-size:12px"></td>
-        <td class="input-td"><input type="number" value="${r.install_price||''}" min="0" step="any" placeholder="0" oninput="Phases.updateGenRowData(9,'door_slab_rows',${i},'install_price',this.value);Financial.scheduleUpdate()" style="width:75px;background:var(--charcoal);border:1px solid var(--charcoal-border);color:var(--text-primary);padding:6px;border-radius:4px;font-family:var(--font-mono);font-size:12px"></td>
-        <td class="computed">${F.fmt(lineTotal)}</td>
-        <td><button class="delete-row-btn" onclick="Phases.delGenRow(9,'door_slab_rows',${i},'door-slab-rows',Phases.renderDoorSlabRows);Phases.recomputeDoorCount()">${Icons.render('trash', 12)}</button></td>
-      </tr>`;
+      <div id="dsrow-${i}" style="background:var(--charcoal-mid);border:1px solid var(--charcoal-border);border-radius:10px;padding:14px;margin-bottom:10px;position:relative">
+        <div class="field-row cols-2" style="margin-bottom:10px">
+          <div>
+            <div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:var(--text-muted);margin-bottom:4px">Location</div>
+            <input type="text" value="${r.location||''}" placeholder="Bedroom 2" oninput="Phases.updateGenRowData(10,'door_slab_rows',${i},'location',this.value)" style="${iStyle}">
+          </div>
+          <div>
+            <div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:var(--text-muted);margin-bottom:4px">Style</div>
+            <select onchange="Phases.updateGenRowData(10,'door_slab_rows',${i},'style',this.value)" style="${iStyle}">
+              <option ${r.style==='Flush'?'selected':''}>Flush</option>
+              <option ${r.style==='1-Panel'?'selected':''}>1-Panel</option>
+              <option ${r.style==='2-Panel'?'selected':''}>2-Panel</option>
+              <option ${r.style==='5-Panel'?'selected':''}>5-Panel</option>
+              <option ${r.style==='French'?'selected':''}>French</option>
+              <option ${r.style==='Barn'?'selected':''}>Barn</option>
+            </select>
+          </div>
+        </div>
+        <div class="field-row cols-2" style="margin-bottom:10px">
+          <div>
+            <div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:var(--text-muted);margin-bottom:4px">Core</div>
+            <select onchange="Phases.updateGenRowData(10,'door_slab_rows',${i},'core',this.value)" style="${iStyle}">
+              <option ${r.core==='Solid Core'?'selected':''}>Solid Core</option>
+              <option ${r.core==='Hollow Core'?'selected':''}>Hollow Core</option>
+              <option ${r.core==='Solid Wood'?'selected':''}>Solid Wood</option>
+              <option ${r.core==='MDF'?'selected':''}>MDF</option>
+            </select>
+          </div>
+          <div>
+            <div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:var(--text-muted);margin-bottom:4px">Jamb Width</div>
+            <select onchange="Phases.updateGenRowData(10,'door_slab_rows',${i},'jamb_width',this.value)" style="${iStyle}">
+              <option ${r.jamb_width==='4-9/16'?'selected':''}>4-9/16</option>
+              <option ${r.jamb_width==='6-9/16'?'selected':''}>6-9/16</option>
+            </select>
+          </div>
+        </div>
+        <div class="field-row cols-4" style="margin-bottom:10px">
+          <div>
+            <div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:var(--text-muted);margin-bottom:4px">Qty</div>
+            <input type="number" value="${r.qty||1}" min="1" oninput="Phases.updateGenRowData(10,'door_slab_rows',${i},'qty',this.value);Phases.recomputeDoorCount();Financial.scheduleUpdate()" style="${monoStyle}">
+          </div>
+          <div>
+            <div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:var(--text-muted);margin-bottom:4px">Slab Price</div>
+            <input type="number" value="${r.slab_price||''}" min="0" step="any" placeholder="0" oninput="Phases.updateGenRowData(10,'door_slab_rows',${i},'slab_price',this.value);Financial.scheduleUpdate()" style="${monoStyle}">
+          </div>
+          <div>
+            <div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:var(--text-muted);margin-bottom:4px">Jamb Price</div>
+            <input type="number" value="${r.jamb_set_price||''}" min="0" step="any" placeholder="0" oninput="Phases.updateGenRowData(10,'door_slab_rows',${i},'jamb_set_price',this.value);Financial.scheduleUpdate()" style="${monoStyle}">
+          </div>
+          <div>
+            <div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:var(--text-muted);margin-bottom:4px">Install</div>
+            <input type="number" value="${r.install_price||''}" min="0" step="any" placeholder="0" oninput="Phases.updateGenRowData(10,'door_slab_rows',${i},'install_price',this.value);Financial.scheduleUpdate()" style="${monoStyle}">
+          </div>
+        </div>
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-top:12px;padding-top:12px;border-top:1px solid var(--charcoal-border)">
+          <div>
+            <div style="font-size:10px;color:var(--text-muted);margin-bottom:2px">Line Total</div>
+            <div class="computed" style="font-family:var(--font-mono);font-size:17px;font-weight:700;color:var(--amber)">${F.fmt(lineTotal)}</div>
+          </div>
+          <button class="delete-row-btn" onclick="Phases.delGenRow(10,'door_slab_rows',${i},'door-slab-rows',Phases.renderDoorSlabRows);Phases.recomputeDoorCount()">${Icons.render('trash', 14)}</button>
+        </div>
+      </div>`;
     }).join('');
   }
-  function addDoorSlabRow() { addGenRow(9, 'door_slab_rows', 'door-slab-rows', renderDoorSlabRows); }
+  function addDoorSlabRow() { addGenRow(10, 'door_slab_rows', 'door-slab-rows', renderDoorSlabRows); }
   function recomputeDoorCount() {
     setTimeout(() => {
       const proj = State.getCurrentProject();
       if (!proj) return;
-      const ph = proj.phases.find(p => p.id === 9);
+      const ph = proj.phases.find(p => p.id === 10);
       const rows = (ph && ph.data.door_slab_rows) || [];
       const total = rows.reduce((s, r) => s + F.parseNum(r.qty), 0);
       const el = document.getElementById('door_count_total');
@@ -2555,8 +2634,10 @@ const Phases = (() => {
   function renderTrimBaseRows() {
     const proj = State.getCurrentProject();
     if (!proj) return '';
-    const ph = proj.phases.find(p => p.id === 9);
+    const ph = proj.phases.find(p => p.id === 10);
     const rows = (ph && ph.data.trim_base_rows) || [{}];
+    const iStyle = 'background:var(--charcoal);border:1px solid var(--charcoal-border);color:var(--text-primary);padding:8px 10px;border-radius:6px;font-size:13px;width:100%;box-sizing:border-box';
+    const monoStyle = iStyle + ';font-family:var(--font-mono)';
     return rows.map((r, i) => {
       const lf = F.parseNum(r.lf);
       const total = F.add(
@@ -2565,87 +2646,150 @@ const Phases = (() => {
         F.mul(F.parseNum(r.corners), r.corner_price)
       );
       return `
-      <tr id="tbrow-${i}">
-        <td class="input-td"><input type="text" value="${r.profile||''}" placeholder="5\" Colonial" oninput="Phases.updateGenRowData(9,'trim_base_rows',${i},'profile',this.value)" style="width:110px;background:var(--charcoal);border:1px solid var(--charcoal-border);color:var(--text-primary);padding:6px 8px;border-radius:4px;font-size:12px"></td>
-        <td class="input-td"><input type="number" value="${r.height_in||''}" min="0" step="0.25" placeholder="5" oninput="Phases.updateGenRowData(9,'trim_base_rows',${i},'height_in',this.value)" style="width:55px;background:var(--charcoal);border:1px solid var(--charcoal-border);color:var(--text-primary);padding:6px;border-radius:4px;font-family:var(--font-mono);font-size:12px"></td>
-        <td class="input-td"><input type="number" value="${r.lf||''}" min="0" step="any" placeholder="0" oninput="Phases.updateGenRowData(9,'trim_base_rows',${i},'lf',this.value);Financial.scheduleUpdate()" style="width:70px;background:var(--charcoal);border:1px solid var(--charcoal-border);color:var(--text-primary);padding:6px;border-radius:4px;font-family:var(--font-mono);font-size:12px"></td>
-        <td class="input-td"><input type="number" value="${r.price_lf||''}" min="0" step="any" placeholder="0" oninput="Phases.updateGenRowData(9,'trim_base_rows',${i},'price_lf',this.value);Financial.scheduleUpdate()" style="width:80px;background:var(--charcoal);border:1px solid var(--charcoal-border);color:var(--text-primary);padding:6px;border-radius:4px;font-family:var(--font-mono);font-size:12px"></td>
-        <td class="input-td"><input type="number" value="${r.labor_lf||''}" min="0" step="any" placeholder="0" oninput="Phases.updateGenRowData(9,'trim_base_rows',${i},'labor_lf',this.value);Financial.scheduleUpdate()" style="width:80px;background:var(--charcoal);border:1px solid var(--charcoal-border);color:var(--text-primary);padding:6px;border-radius:4px;font-family:var(--font-mono);font-size:12px"></td>
-        <td class="input-td"><input type="number" value="${r.corners||0}" min="0" oninput="Phases.updateGenRowData(9,'trim_base_rows',${i},'corners',this.value);Financial.scheduleUpdate()" style="width:60px;background:var(--charcoal);border:1px solid var(--charcoal-border);color:var(--text-primary);padding:6px;border-radius:4px;font-family:var(--font-mono);font-size:12px"></td>
-        <td class="input-td"><input type="number" value="${r.corner_price||''}" min="0" step="any" placeholder="0" oninput="Phases.updateGenRowData(9,'trim_base_rows',${i},'corner_price',this.value);Financial.scheduleUpdate()" style="width:80px;background:var(--charcoal);border:1px solid var(--charcoal-border);color:var(--text-primary);padding:6px;border-radius:4px;font-family:var(--font-mono);font-size:12px"></td>
-        <td class="computed">${F.fmt(total)}</td>
-        <td><button class="delete-row-btn" onclick="Phases.delGenRow(9,'trim_base_rows',${i},'trim-base-rows',Phases.renderTrimBaseRows)">${Icons.render('trash', 12)}</button></td>
-      </tr>`;
+      <div id="tbrow-${i}" style="background:var(--charcoal-mid);border:1px solid var(--charcoal-border);border-radius:10px;padding:14px;margin-bottom:10px;position:relative">
+        <div class="field-row cols-2" style="margin-bottom:10px">
+          <div>
+            <div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:var(--text-muted);margin-bottom:4px">Profile / Style</div>
+            <input type="text" value="${r.profile||''}" placeholder="5&quot; Colonial" oninput="Phases.updateGenRowData(10,'trim_base_rows',${i},'profile',this.value)" style="${iStyle}">
+          </div>
+          <div>
+            <div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:var(--text-muted);margin-bottom:4px">Height (in)</div>
+            <input type="number" value="${r.height_in||''}" min="0" step="0.25" placeholder="5" oninput="Phases.updateGenRowData(10,'trim_base_rows',${i},'height_in',this.value)" style="${monoStyle}">
+          </div>
+        </div>
+        <div class="field-row cols-3" style="margin-bottom:10px">
+          <div>
+            <div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:var(--text-muted);margin-bottom:4px">Linear Feet</div>
+            <input type="number" value="${r.lf||''}" min="0" step="any" placeholder="0" oninput="Phases.updateGenRowData(10,'trim_base_rows',${i},'lf',this.value);Financial.scheduleUpdate()" style="${monoStyle}">
+          </div>
+          <div>
+            <div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:var(--text-muted);margin-bottom:4px">Price/LF</div>
+            <input type="number" value="${r.price_lf||''}" min="0" step="any" placeholder="0" oninput="Phases.updateGenRowData(10,'trim_base_rows',${i},'price_lf',this.value);Financial.scheduleUpdate()" style="${monoStyle}">
+          </div>
+          <div>
+            <div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:var(--text-muted);margin-bottom:4px">Labor/LF</div>
+            <input type="number" value="${r.labor_lf||''}" min="0" step="any" placeholder="0" oninput="Phases.updateGenRowData(10,'trim_base_rows',${i},'labor_lf',this.value);Financial.scheduleUpdate()" style="${monoStyle}">
+          </div>
+        </div>
+        <div class="field-row cols-2" style="margin-bottom:10px">
+          <div>
+            <div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:var(--text-muted);margin-bottom:4px">Corners (count)</div>
+            <input type="number" value="${r.corners||0}" min="0" oninput="Phases.updateGenRowData(10,'trim_base_rows',${i},'corners',this.value);Financial.scheduleUpdate()" style="${monoStyle}">
+          </div>
+          <div>
+            <div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:var(--text-muted);margin-bottom:4px">Price/Corner</div>
+            <input type="number" value="${r.corner_price||''}" min="0" step="any" placeholder="0" oninput="Phases.updateGenRowData(10,'trim_base_rows',${i},'corner_price',this.value);Financial.scheduleUpdate()" style="${monoStyle}">
+          </div>
+        </div>
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-top:12px;padding-top:12px;border-top:1px solid var(--charcoal-border)">
+          <div>
+            <div style="font-size:10px;color:var(--text-muted);margin-bottom:2px">Line Total</div>
+            <div class="computed" style="font-family:var(--font-mono);font-size:17px;font-weight:700;color:var(--amber)">${F.fmt(total)}</div>
+          </div>
+          <button class="delete-row-btn" onclick="Phases.delGenRow(10,'trim_base_rows',${i},'trim-base-rows',Phases.renderTrimBaseRows)">${Icons.render('trash', 14)}</button>
+        </div>
+      </div>`;
     }).join('');
   }
-  function addTrimBaseRow() { addGenRow(9, 'trim_base_rows', 'trim-base-rows', renderTrimBaseRows); }
+  function addTrimBaseRow() { addGenRow(10, 'trim_base_rows', 'trim-base-rows', renderTrimBaseRows); }
 
   function renderPaintPrepRows() {
     const proj = State.getCurrentProject();
     if (!proj) return '';
-    const ph = proj.phases.find(p => p.id === 9);
+    const ph = proj.phases.find(p => p.id === 10);
     const rows = (ph && ph.data.paint_prep_rows) || [{}];
+    const iStyle = 'background:var(--charcoal);border:1px solid var(--charcoal-border);color:var(--text-primary);padding:8px 10px;border-radius:6px;font-size:13px;width:100%;box-sizing:border-box';
+    const monoStyle = iStyle + ';font-family:var(--font-mono)';
     return rows.map((r, i) => {
-      const total = F.add(
-        F.mul(r.caulk_tubes, 8),  // avg ₹8 per tube (placeholder)
-        F.mul(r.filler_tubs, 25),
-        F.parseNum(r.sandpaper_cost),
-        F.parseNum(r.tape_plastic_cost)
-      );
+      const total = F.add(F.mul(r.caulk_tubes, 8), F.mul(r.filler_tubs, 25), F.parseNum(r.sandpaper_cost), F.parseNum(r.tape_plastic_cost));
       return `
-      <tr id="pprow-${i}">
-        <td class="input-td"><input type="text" value="${r.surface||''}" placeholder="Living Room Walls" oninput="Phases.updateGenRowData(9,'paint_prep_rows',${i},'surface',this.value)" style="width:130px;background:var(--charcoal);border:1px solid var(--charcoal-border);color:var(--text-primary);padding:6px 8px;border-radius:4px;font-size:12px"></td>
-        <td class="input-td"><select onchange="Phases.updateGenRowData(9,'paint_prep_rows',${i},'task',this.value)" style="background:var(--charcoal);border:1px solid var(--charcoal-border);color:var(--text-primary);padding:6px;border-radius:4px;font-size:11px">
-          <option ${r.task==='Caulk Joints'?'selected':''}>Caulk Joints</option>
-          <option ${r.task==='Fill Nail Holes'?'selected':''}>Fill Nail Holes</option>
-          <option ${r.task==='Skim Coat'?'selected':''}>Skim Coat</option>
-          <option ${r.task==='Sand & Smooth'?'selected':''}>Sand & Smooth</option>
-        </select></td>
-        <td class="input-td"><input type="number" value="${r.caulk_tubes||0}" min="0" oninput="Phases.updateGenRowData(9,'paint_prep_rows',${i},'caulk_tubes',this.value);Financial.scheduleUpdate()" style="width:55px;background:var(--charcoal);border:1px solid var(--charcoal-border);color:var(--text-primary);padding:6px;border-radius:4px;font-family:var(--font-mono);font-size:12px"></td>
-        <td class="input-td"><input type="number" value="${r.filler_tubs||0}" min="0" oninput="Phases.updateGenRowData(9,'paint_prep_rows',${i},'filler_tubs',this.value);Financial.scheduleUpdate()" style="width:55px;background:var(--charcoal);border:1px solid var(--charcoal-border);color:var(--text-primary);padding:6px;border-radius:4px;font-family:var(--font-mono);font-size:12px"></td>
-        <td class="input-td"><input type="number" value="${r.sandpaper_cost||''}" min="0" placeholder="0" oninput="Phases.updateGenRowData(9,'paint_prep_rows',${i},'sandpaper_cost',this.value);Financial.scheduleUpdate()" style="width:80px;background:var(--charcoal);border:1px solid var(--charcoal-border);color:var(--text-primary);padding:6px;border-radius:4px;font-family:var(--font-mono);font-size:12px"></td>
-        <td class="input-td"><input type="number" value="${r.tape_plastic_cost||''}" min="0" placeholder="0" oninput="Phases.updateGenRowData(9,'paint_prep_rows',${i},'tape_plastic_cost',this.value);Financial.scheduleUpdate()" style="width:80px;background:var(--charcoal);border:1px solid var(--charcoal-border);color:var(--text-primary);padding:6px;border-radius:4px;font-family:var(--font-mono);font-size:12px"></td>
-        <td class="computed">${F.fmt(total)}</td>
-        <td><button class="delete-row-btn" onclick="Phases.delGenRow(9,'paint_prep_rows',${i},'paint-prep-rows',Phases.renderPaintPrepRows)">${Icons.render('trash', 12)}</button></td>
-      </tr>`;
+      <div id="pprow-${i}" style="background:var(--charcoal-mid);border:1px solid var(--charcoal-border);border-radius:10px;padding:14px;margin-bottom:10px">
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:10px">
+          <div><div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:var(--text-muted);margin-bottom:4px">Surface</div>
+            <input type="text" value="${r.surface||''}" placeholder="Living Room Walls" oninput="Phases.updateGenRowData(10,'paint_prep_rows',${i},'surface',this.value)" style="${iStyle}"></div>
+          <div><div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:var(--text-muted);margin-bottom:4px">Prep Task</div>
+            <select onchange="Phases.updateGenRowData(10,'paint_prep_rows',${i},'task',this.value)" style="${iStyle}">
+              <option ${r.task==='Caulk Joints'?'selected':''}>Caulk Joints</option>
+              <option ${r.task==='Fill Nail Holes'?'selected':''}>Fill Nail Holes</option>
+              <option ${r.task==='Skim Coat'?'selected':''}>Skim Coat</option>
+              <option ${r.task==='Sand & Smooth'?'selected':''}>Sand & Smooth</option>
+            </select></div>
+        </div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:10px">
+          <div><div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:var(--text-muted);margin-bottom:4px">Caulk Tubes</div>
+            <input type="number" value="${r.caulk_tubes||0}" min="0" oninput="Phases.updateGenRowData(10,'paint_prep_rows',${i},'caulk_tubes',this.value);Financial.scheduleUpdate()" style="${monoStyle}"></div>
+          <div><div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:var(--text-muted);margin-bottom:4px">Wood Filler Tubs</div>
+            <input type="number" value="${r.filler_tubs||0}" min="0" oninput="Phases.updateGenRowData(10,'paint_prep_rows',${i},'filler_tubs',this.value);Financial.scheduleUpdate()" style="${monoStyle}"></div>
+        </div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:10px">
+          <div><div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:var(--text-muted);margin-bottom:4px">Sandpaper Cost</div>
+            <input type="number" value="${r.sandpaper_cost||''}" min="0" placeholder="0" oninput="Phases.updateGenRowData(10,'paint_prep_rows',${i},'sandpaper_cost',this.value);Financial.scheduleUpdate()" style="${monoStyle}"></div>
+          <div><div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:var(--text-muted);margin-bottom:4px">Tape & Plastic</div>
+            <input type="number" value="${r.tape_plastic_cost||''}" min="0" placeholder="0" oninput="Phases.updateGenRowData(10,'paint_prep_rows',${i},'tape_plastic_cost',this.value);Financial.scheduleUpdate()" style="${monoStyle}"></div>
+        </div>
+        <div style="display:flex;justify-content:flex-end;align-items:center;gap:14px">
+          <div style="text-align:right">
+            <div style="font-size:10px;color:var(--text-muted);margin-bottom:2px">Line Cost</div>
+            <div class="computed" style="font-family:var(--font-mono);font-size:17px;font-weight:700;color:var(--amber)">${F.fmt(total)}</div>
+          </div>
+          <button class="delete-row-btn" onclick="Phases.delGenRow(10,'paint_prep_rows',${i},'paint-prep-rows',Phases.renderPaintPrepRows)">${Icons.render('trash', 14)}</button>
+        </div>
+      </div>`;
     }).join('');
   }
-  function addPaintPrepRow() { addGenRow(9, 'paint_prep_rows', 'paint-prep-rows', renderPaintPrepRows); }
+  function addPaintPrepRow() { addGenRow(10, 'paint_prep_rows', 'paint-prep-rows', renderPaintPrepRows); }
 
   function renderPaintCoatRows() {
     const proj = State.getCurrentProject();
     if (!proj) return '';
-    const ph = proj.phases.find(p => p.id === 9);
+    const ph = proj.phases.find(p => p.id === 10);
     const rows = (ph && ph.data.paint_coat_rows) || [{}];
+    const iStyle = 'background:var(--charcoal);border:1px solid var(--charcoal-border);color:var(--text-primary);padding:8px 10px;border-radius:6px;font-size:13px;width:100%;box-sizing:border-box';
+    const monoStyle = iStyle + ';font-family:var(--font-mono)';
     return rows.map((r, i) => {
       const sqft = F.parseNum(r.sqft);
       const coats = F.parseNum(r.coats);
       const coverage = F.parseNum(r.coverage);
       const gallons = coverage > 0 ? (sqft * coats) / coverage : 0;
-      const total = F.add(
-        F.mul(gallons, r.price_per_gal),
-        F.mul(sqft, r.labor_sqft)
-      );
+      const total = F.add(F.mul(gallons, r.price_per_gal), F.mul(sqft, r.labor_sqft));
       return `
-      <tr id="pcrow-${i}">
-        <td class="input-td"><input type="text" value="${r.surface||''}" placeholder="Walls / Ceiling / Trim" oninput="Phases.updateGenRowData(9,'paint_coat_rows',${i},'surface',this.value)" style="width:130px;background:var(--charcoal);border:1px solid var(--charcoal-border);color:var(--text-primary);padding:6px 8px;border-radius:4px;font-size:12px"></td>
-        <td class="input-td"><input type="number" value="${r.sqft||''}" min="0" step="any" placeholder="0" oninput="Phases.updateGenRowData(9,'paint_coat_rows',${i},'sqft',this.value);Phases.recomputePrimerGallons();Financial.scheduleUpdate()" style="width:80px;background:var(--charcoal);border:1px solid var(--charcoal-border);color:var(--text-primary);padding:6px;border-radius:4px;font-family:var(--font-mono);font-size:12px"></td>
-        <td class="input-td"><input type="number" value="${r.coats||2}" min="1" max="3" oninput="Phases.updateGenRowData(9,'paint_coat_rows',${i},'coats',this.value);Financial.scheduleUpdate()" style="width:50px;background:var(--charcoal);border:1px solid var(--charcoal-border);color:var(--text-primary);padding:6px;border-radius:4px;font-family:var(--font-mono);font-size:12px"></td>
-        <td class="input-td"><input type="text" value="${r.color_code||''}" placeholder="SW 7015 / Eggshell" oninput="Phases.updateGenRowData(9,'paint_coat_rows',${i},'color_code',this.value)" style="width:120px;background:var(--charcoal);border:1px solid var(--charcoal-border);color:var(--text-primary);padding:6px;border-radius:4px;font-size:11px"></td>
-        <td class="input-td"><input type="number" value="${r.coverage||350}" min="0" oninput="Phases.updateGenRowData(9,'paint_coat_rows',${i},'coverage',this.value);Financial.scheduleUpdate()" style="width:75px;background:var(--charcoal);border:1px solid var(--charcoal-border);color:var(--text-primary);padding:6px;border-radius:4px;font-family:var(--font-mono);font-size:12px"></td>
-        <td class="input-td"><input type="number" value="${r.price_per_gal||''}" min="0" step="any" placeholder="0" oninput="Phases.updateGenRowData(9,'paint_coat_rows',${i},'price_per_gal',this.value);Financial.scheduleUpdate()" style="width:80px;background:var(--charcoal);border:1px solid var(--charcoal-border);color:var(--text-primary);padding:6px;border-radius:4px;font-family:var(--font-mono);font-size:12px"></td>
-        <td class="input-td"><input type="number" value="${r.labor_sqft||''}" min="0" step="any" placeholder="0" oninput="Phases.updateGenRowData(9,'paint_coat_rows',${i},'labor_sqft',this.value);Financial.scheduleUpdate()" style="width:75px;background:var(--charcoal);border:1px solid var(--charcoal-border);color:var(--text-primary);padding:6px;border-radius:4px;font-family:var(--font-mono);font-size:12px"></td>
-        <td class="computed">${F.fmt(total)}</td>
-        <td><button class="delete-row-btn" onclick="Phases.delGenRow(9,'paint_coat_rows',${i},'paint-coat-rows',Phases.renderPaintCoatRows);Phases.recomputePrimerGallons()">${Icons.render('trash', 12)}</button></td>
-      </tr>`;
+      <div id="pcrow-${i}" style="background:var(--charcoal-mid);border:1px solid var(--charcoal-border);border-radius:10px;padding:14px;margin-bottom:10px">
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:10px">
+          <div><div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:var(--text-muted);margin-bottom:4px">Surface Type</div>
+            <input type="text" value="${r.surface||''}" placeholder="Walls / Ceiling / Trim" oninput="Phases.updateGenRowData(10,'paint_coat_rows',${i},'surface',this.value)" style="${iStyle}"></div>
+          <div><div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:var(--text-muted);margin-bottom:4px">Color Code / Sheen</div>
+            <input type="text" value="${r.color_code||''}" placeholder="SW 7015 / Eggshell" oninput="Phases.updateGenRowData(10,'paint_coat_rows',${i},'color_code',this.value)" style="${iStyle}"></div>
+        </div>
+        <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;margin-bottom:10px">
+          <div><div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:var(--text-muted);margin-bottom:4px">Sq Ft</div>
+            <input type="number" value="${r.sqft||''}" min="0" step="any" placeholder="0" oninput="Phases.updateGenRowData(10,'paint_coat_rows',${i},'sqft',this.value);Phases.recomputePrimerGallons();Financial.scheduleUpdate()" style="${monoStyle}"></div>
+          <div><div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:var(--text-muted);margin-bottom:4px">Coats</div>
+            <input type="number" value="${r.coats||2}" min="1" max="3" oninput="Phases.updateGenRowData(10,'paint_coat_rows',${i},'coats',this.value);Financial.scheduleUpdate()" style="${monoStyle}"></div>
+          <div><div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:var(--text-muted);margin-bottom:4px">Coverage sf/gal</div>
+            <input type="number" value="${r.coverage||350}" min="0" oninput="Phases.updateGenRowData(10,'paint_coat_rows',${i},'coverage',this.value);Financial.scheduleUpdate()" style="${monoStyle}"></div>
+        </div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:10px">
+          <div><div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:var(--text-muted);margin-bottom:4px">$/Gallon</div>
+            <input type="number" value="${r.price_per_gal||''}" min="0" step="any" placeholder="0" oninput="Phases.updateGenRowData(10,'paint_coat_rows',${i},'price_per_gal',this.value);Financial.scheduleUpdate()" style="${monoStyle}"></div>
+          <div><div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:var(--text-muted);margin-bottom:4px">Labor/sqft</div>
+            <input type="number" value="${r.labor_sqft||''}" min="0" step="any" placeholder="0" oninput="Phases.updateGenRowData(10,'paint_coat_rows',${i},'labor_sqft',this.value);Financial.scheduleUpdate()" style="${monoStyle}"></div>
+        </div>
+        <div style="display:flex;justify-content:flex-end;align-items:center;gap:14px">
+          <div style="text-align:right">
+            <div style="font-size:10px;color:var(--text-muted);margin-bottom:2px">Total</div>
+            <div class="computed" style="font-family:var(--font-mono);font-size:17px;font-weight:700;color:var(--amber)">${F.fmt(total)}</div>
+          </div>
+          <button class="delete-row-btn" onclick="Phases.delGenRow(10,'paint_coat_rows',${i},'paint-coat-rows',Phases.renderPaintCoatRows);Phases.recomputePrimerGallons()">${Icons.render('trash', 14)}</button>
+        </div>
+      </div>`;
     }).join('');
   }
-  function addPaintCoatRow() { addGenRow(9, 'paint_coat_rows', 'paint-coat-rows', renderPaintCoatRows); }
+  function addPaintCoatRow() { addGenRow(10, 'paint_coat_rows', 'paint-coat-rows', renderPaintCoatRows); }
   function recomputePrimerGallons() {
     setTimeout(() => {
       const proj = State.getCurrentProject();
       if (!proj) return;
-      const ph = proj.phases.find(p => p.id === 9);
+      const ph = proj.phases.find(p => p.id === 10);
       const totalSqft = ((ph && ph.data.paint_coat_rows) || []).reduce((s, r) => s + F.parseNum(r.sqft), 0);
       const coverage = F.parseNum((ph && ph.data.primer_coverage) || 300);
       const gallons = coverage > 0 ? Math.ceil(totalSqft / coverage) : 0;
@@ -2657,73 +2801,107 @@ const Phases = (() => {
   function renderGlassRows() {
     const proj = State.getCurrentProject();
     if (!proj) return '';
-    const ph = proj.phases.find(p => p.id === 9);
+    const ph = proj.phases.find(p => p.id === 10);
     const rows = (ph && ph.data.glass_rows) || [{}];
+    const iStyle = 'background:var(--charcoal);border:1px solid var(--charcoal-border);color:var(--text-primary);padding:8px 10px;border-radius:6px;font-size:13px;width:100%;box-sizing:border-box';
+    const monoStyle = iStyle + ';font-family:var(--font-mono)';
     return rows.map((r, i) => {
       const qty = F.parseNum(r.qty);
-      const total = F.add(
-        F.mul(qty, r.unit_price),
-        F.mul(qty, r.install)
-      );
+      const total = F.add(F.mul(qty, r.unit_price), F.mul(qty, r.install));
       return `
-      <tr id="grow-${i}">
-        <td class="input-td"><input type="text" value="${r.location||''}" placeholder="Master Shower" oninput="Phases.updateGenRowData(9,'glass_rows',${i},'location',this.value)" style="width:120px;background:var(--charcoal);border:1px solid var(--charcoal-border);color:var(--text-primary);padding:6px 8px;border-radius:4px;font-size:12px"></td>
-        <td class="input-td"><select onchange="Phases.updateGenRowData(9,'glass_rows',${i},'type',this.value)" style="background:var(--charcoal);border:1px solid var(--charcoal-border);color:var(--text-primary);padding:6px;border-radius:4px;font-size:11px">
-          <option ${r.type==='Shower Enclosure'?'selected':''}>Shower Enclosure</option>
-          <option ${r.type==='Vanity Mirror'?'selected':''}>Vanity Mirror</option>
-          <option ${r.type==='Wall Mirror'?'selected':''}>Wall Mirror</option>
-          <option ${r.type==='Glass Partition'?'selected':''}>Glass Partition</option>
-          <option ${r.type==='Backsplash Glass'?'selected':''}>Backsplash Glass</option>
-        </select></td>
-        <td class="input-td"><input type="number" value="${r.width||''}" min="0" step="0.25" placeholder="0" oninput="Phases.updateGenRowData(9,'glass_rows',${i},'width',this.value)" style="width:55px;background:var(--charcoal);border:1px solid var(--charcoal-border);color:var(--text-primary);padding:6px;border-radius:4px;font-family:var(--font-mono);font-size:12px"></td>
-        <td class="input-td"><input type="number" value="${r.height||''}" min="0" step="0.25" placeholder="0" oninput="Phases.updateGenRowData(9,'glass_rows',${i},'height',this.value)" style="width:55px;background:var(--charcoal);border:1px solid var(--charcoal-border);color:var(--text-primary);padding:6px;border-radius:4px;font-family:var(--font-mono);font-size:12px"></td>
-        <td class="input-td"><input type="number" value="${r.qty||1}" min="1" oninput="Phases.updateGenRowData(9,'glass_rows',${i},'qty',this.value);Financial.scheduleUpdate()" style="width:50px;background:var(--charcoal);border:1px solid var(--charcoal-border);color:var(--text-primary);padding:6px;border-radius:4px;font-family:var(--font-mono);font-size:12px"></td>
-        <td class="input-td"><select onchange="Phases.updateGenRowData(9,'glass_rows',${i},'glass_type',this.value)" style="background:var(--charcoal);border:1px solid var(--charcoal-border);color:var(--text-primary);padding:6px;border-radius:4px;font-size:11px">
-          <option ${r.glass_type==='Clear Tempered'?'selected':''}>Clear Tempered</option>
-          <option ${r.glass_type==='Frosted'?'selected':''}>Frosted</option>
-          <option ${r.glass_type==='Low-Iron'?'selected':''}>Low-Iron</option>
-          <option ${r.glass_type==='Bronze Tint'?'selected':''}>Bronze Tint</option>
-          <option ${r.glass_type==='Rain'?'selected':''}>Rain</option>
-        </select></td>
-        <td class="input-td"><input type="number" value="${r.unit_price||''}" min="0" step="any" placeholder="0" oninput="Phases.updateGenRowData(9,'glass_rows',${i},'unit_price',this.value);Financial.scheduleUpdate()" style="width:90px;background:var(--charcoal);border:1px solid var(--charcoal-border);color:var(--text-primary);padding:6px;border-radius:4px;font-family:var(--font-mono);font-size:12px"></td>
-        <td class="input-td"><input type="number" value="${r.install||''}" min="0" step="any" placeholder="0" oninput="Phases.updateGenRowData(9,'glass_rows',${i},'install',this.value);Financial.scheduleUpdate()" style="width:80px;background:var(--charcoal);border:1px solid var(--charcoal-border);color:var(--text-primary);padding:6px;border-radius:4px;font-family:var(--font-mono);font-size:12px"></td>
-        <td class="computed">${F.fmt(total)}</td>
-        <td><button class="delete-row-btn" onclick="Phases.delGenRow(9,'glass_rows',${i},'glass-rows',Phases.renderGlassRows)">${Icons.render('trash', 12)}</button></td>
-      </tr>`;
+      <div id="grow-${i}" style="background:var(--charcoal-mid);border:1px solid var(--charcoal-border);border-radius:10px;padding:14px;margin-bottom:10px">
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:10px">
+          <div><div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:var(--text-muted);margin-bottom:4px">Item / Location</div>
+            <input type="text" value="${r.location||''}" placeholder="Master Shower" oninput="Phases.updateGenRowData(10,'glass_rows',${i},'location',this.value)" style="${iStyle}"></div>
+          <div><div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:var(--text-muted);margin-bottom:4px">Type</div>
+            <select onchange="Phases.updateGenRowData(10,'glass_rows',${i},'type',this.value)" style="${iStyle}">
+              <option ${r.type==='Shower Enclosure'?'selected':''}>Shower Enclosure</option>
+              <option ${r.type==='Vanity Mirror'?'selected':''}>Vanity Mirror</option>
+              <option ${r.type==='Wall Mirror'?'selected':''}>Wall Mirror</option>
+              <option ${r.type==='Glass Partition'?'selected':''}>Glass Partition</option>
+              <option ${r.type==='Backsplash Glass'?'selected':''}>Backsplash Glass</option>
+            </select></div>
+        </div>
+        <div style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:10px;margin-bottom:10px">
+          <div><div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:var(--text-muted);margin-bottom:4px">W (in)</div>
+            <input type="number" value="${r.width||''}" min="0" step="0.25" placeholder="0" oninput="Phases.updateGenRowData(10,'glass_rows',${i},'width',this.value)" style="${monoStyle}"></div>
+          <div><div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:var(--text-muted);margin-bottom:4px">H (in)</div>
+            <input type="number" value="${r.height||''}" min="0" step="0.25" placeholder="0" oninput="Phases.updateGenRowData(10,'glass_rows',${i},'height',this.value)" style="${monoStyle}"></div>
+          <div><div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:var(--text-muted);margin-bottom:4px">Qty</div>
+            <input type="number" value="${r.qty||1}" min="1" oninput="Phases.updateGenRowData(10,'glass_rows',${i},'qty',this.value);Financial.scheduleUpdate()" style="${monoStyle}"></div>
+          <div><div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:var(--text-muted);margin-bottom:4px">Glass Type</div>
+            <select onchange="Phases.updateGenRowData(10,'glass_rows',${i},'glass_type',this.value)" style="${iStyle}">
+              <option ${r.glass_type==='Clear Tempered'?'selected':''}>Clear Tempered</option>
+              <option ${r.glass_type==='Frosted'?'selected':''}>Frosted</option>
+              <option ${r.glass_type==='Low-Iron'?'selected':''}>Low-Iron</option>
+              <option ${r.glass_type==='Bronze Tint'?'selected':''}>Bronze Tint</option>
+              <option ${r.glass_type==='Rain'?'selected':''}>Rain</option>
+            </select></div>
+        </div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:10px">
+          <div><div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:var(--text-muted);margin-bottom:4px">Unit Price</div>
+            <input type="number" value="${r.unit_price||''}" min="0" step="any" placeholder="0" oninput="Phases.updateGenRowData(10,'glass_rows',${i},'unit_price',this.value);Financial.scheduleUpdate()" style="${monoStyle}"></div>
+          <div><div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:var(--text-muted);margin-bottom:4px">Install</div>
+            <input type="number" value="${r.install||''}" min="0" step="any" placeholder="0" oninput="Phases.updateGenRowData(10,'glass_rows',${i},'install',this.value);Financial.scheduleUpdate()" style="${monoStyle}"></div>
+        </div>
+        <div style="display:flex;justify-content:flex-end;align-items:center;gap:14px">
+          <div style="text-align:right">
+            <div style="font-size:10px;color:var(--text-muted);margin-bottom:2px">Total</div>
+            <div class="computed" style="font-family:var(--font-mono);font-size:17px;font-weight:700;color:var(--amber)">${F.fmt(total)}</div>
+          </div>
+          <button class="delete-row-btn" onclick="Phases.delGenRow(10,'glass_rows',${i},'glass-rows',Phases.renderGlassRows)">${Icons.render('trash', 14)}</button>
+        </div>
+      </div>`;
     }).join('');
   }
-  function addGlassRow() { addGenRow(9, 'glass_rows', 'glass-rows', renderGlassRows); }
+  function addGlassRow() { addGenRow(10, 'glass_rows', 'glass-rows', renderGlassRows); }
 
   function renderFixtureIntRows() {
     const proj = State.getCurrentProject();
     if (!proj) return '';
-    const ph = proj.phases.find(p => p.id === 9);
+    const ph = proj.phases.find(p => p.id === 10);
     const rows = (ph && ph.data.fixture_int_rows) || [{}];
+    const iStyle = 'background:var(--charcoal);border:1px solid var(--charcoal-border);color:var(--text-primary);padding:8px 10px;border-radius:6px;font-size:13px;width:100%;box-sizing:border-box';
+    const monoStyle = iStyle + ';font-family:var(--font-mono)';
     return rows.map((r, i) => {
       const qty = F.parseNum(r.qty);
-      const total = F.add(
-        F.mul(qty, r.unit_price),
-        F.parseNum(r.labor)
-      );
+      const total = F.add(F.mul(qty, r.unit_price), F.parseNum(r.labor));
       return `
-      <tr id="fixrow-${i}">
-        <td class="input-td"><input type="text" value="${r.item||''}" placeholder="Fireplace Surround" oninput="Phases.updateGenRowData(9,'fixture_int_rows',${i},'item',this.value)" style="width:140px;background:var(--charcoal);border:1px solid var(--charcoal-border);color:var(--text-primary);padding:6px 8px;border-radius:4px;font-size:12px"></td>
-        <td class="input-td"><input type="text" value="${r.vendor||''}" placeholder="Vendor / Source" oninput="Phases.updateGenRowData(9,'fixture_int_rows',${i},'vendor',this.value)" style="width:110px;background:var(--charcoal);border:1px solid var(--charcoal-border);color:var(--text-primary);padding:6px;border-radius:4px;font-size:12px"></td>
-        <td class="input-td"><input type="number" value="${r.qty||1}" min="1" oninput="Phases.updateGenRowData(9,'fixture_int_rows',${i},'qty',this.value);Financial.scheduleUpdate()" style="width:50px;background:var(--charcoal);border:1px solid var(--charcoal-border);color:var(--text-primary);padding:6px;border-radius:4px;font-family:var(--font-mono);font-size:12px"></td>
-        <td class="input-td"><select onchange="Phases.updateGenRowData(9,'fixture_int_rows',${i},'confidence',this.value)" style="background:var(--charcoal);border:1px solid var(--charcoal-border);color:var(--text-primary);padding:6px;border-radius:4px;font-size:11px">
-          <option ${r.confidence==='Estimated'?'selected':''}>Estimated</option>
-          <option ${r.confidence==='Quoted'?'selected':''}>Quoted</option>
-          <option ${r.confidence==='Locked-PO'?'selected':''}>Locked-PO</option>
-          <option ${r.confidence==='Invoiced'?'selected':''}>Invoiced</option>
-        </select></td>
-        <td class="input-td"><input type="number" value="${r.unit_price||''}" min="0" step="any" placeholder="0" oninput="Phases.updateGenRowData(9,'fixture_int_rows',${i},'unit_price',this.value);Financial.scheduleUpdate()" style="width:90px;background:var(--charcoal);border:1px solid var(--charcoal-border);color:var(--text-primary);padding:6px;border-radius:4px;font-family:var(--font-mono);font-size:12px"></td>
-        <td class="input-td"><input type="number" value="${r.labor||''}" min="0" step="any" placeholder="0" oninput="Phases.updateGenRowData(9,'fixture_int_rows',${i},'labor',this.value);Financial.scheduleUpdate()" style="width:80px;background:var(--charcoal);border:1px solid var(--charcoal-border);color:var(--text-primary);padding:6px;border-radius:4px;font-family:var(--font-mono);font-size:12px"></td>
-        <td class="computed">${F.fmt(total)}</td>
-        <td><button class="delete-row-btn" onclick="Phases.delGenRow(9,'fixture_int_rows',${i},'fixture-rows',Phases.renderFixtureIntRows)">${Icons.render('trash', 12)}</button></td>
-      </tr>`;
+      <div id="fixrow-${i}" style="background:var(--charcoal-mid);border:1px solid var(--charcoal-border);border-radius:10px;padding:14px;margin-bottom:10px">
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:10px">
+          <div><div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:var(--text-muted);margin-bottom:4px">Item / Description</div>
+            <input type="text" value="${r.item||''}" placeholder="Fireplace Surround" oninput="Phases.updateGenRowData(10,'fixture_int_rows',${i},'item',this.value)" style="${iStyle}"></div>
+          <div><div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:var(--text-muted);margin-bottom:4px">Vendor / Source</div>
+            <input type="text" value="${r.vendor||''}" placeholder="Vendor / Source" oninput="Phases.updateGenRowData(10,'fixture_int_rows',${i},'vendor',this.value)" style="${iStyle}"></div>
+        </div>
+        <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;margin-bottom:10px">
+          <div><div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:var(--text-muted);margin-bottom:4px">Qty</div>
+            <input type="number" value="${r.qty||1}" min="1" oninput="Phases.updateGenRowData(10,'fixture_int_rows',${i},'qty',this.value);Financial.scheduleUpdate()" style="${monoStyle}"></div>
+          <div><div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:var(--text-muted);margin-bottom:4px">Unit Price</div>
+            <input type="number" value="${r.unit_price||''}" min="0" step="any" placeholder="0" oninput="Phases.updateGenRowData(10,'fixture_int_rows',${i},'unit_price',this.value);Financial.scheduleUpdate()" style="${monoStyle}"></div>
+          <div><div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:var(--text-muted);margin-bottom:4px">Labor</div>
+            <input type="number" value="${r.labor||''}" min="0" step="any" placeholder="0" oninput="Phases.updateGenRowData(10,'fixture_int_rows',${i},'labor',this.value);Financial.scheduleUpdate()" style="${monoStyle}"></div>
+        </div>
+        <div style="display:grid;grid-template-columns:1fr;gap:10px;margin-bottom:10px">
+          <div><div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:var(--text-muted);margin-bottom:4px">Cost Confidence</div>
+            <select onchange="Phases.updateGenRowData(10,'fixture_int_rows',${i},'confidence',this.value)" style="${iStyle}">
+              <option ${r.confidence==='Estimated'?'selected':''}>Estimated</option>
+              <option ${r.confidence==='Quoted'?'selected':''}>Quoted</option>
+              <option ${r.confidence==='Locked-PO'?'selected':''}>Locked-PO</option>
+              <option ${r.confidence==='Invoiced'?'selected':''}>Invoiced</option>
+            </select></div>
+        </div>
+        <div style="display:flex;justify-content:flex-end;align-items:center;gap:14px">
+          <div style="text-align:right">
+            <div style="font-size:10px;color:var(--text-muted);margin-bottom:2px">Total</div>
+            <div class="computed" style="font-family:var(--font-mono);font-size:17px;font-weight:700;color:var(--amber)">${F.fmt(total)}</div>
+          </div>
+          <button class="delete-row-btn" onclick="Phases.delGenRow(10,'fixture_int_rows',${i},'fixture-rows',Phases.renderFixtureIntRows)">${Icons.render('trash', 14)}</button>
+        </div>
+      </div>`;
     }).join('');
   }
-  function addFixtureIntRow() { addGenRow(9, 'fixture_int_rows', 'fixture-rows', renderFixtureIntRows); }
+  function addFixtureIntRow() { addGenRow(10, 'fixture_int_rows', 'fixture-rows', renderFixtureIntRows); }
 
   return {
     toggleSection, setCompletion, phaseHeader, iconFor,

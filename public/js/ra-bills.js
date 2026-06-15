@@ -21,8 +21,10 @@ const RaBills = (() => {
     let html = `
       <div class="hub-header">
         <div class="hub-header-left">
-          <h2 class="hub-title">RA Bills (Running Account)</h2>
-          <p class="hub-subtitle">Generate progress-based invoices for your client.</p>
+          <div>
+            <h2 class="hub-title">RA Bills (Running Account)</h2>
+            <p class="hub-subtitle">Generate progress-based invoices for your client.</p>
+          </div>
         </div>
         <div class="hub-header-right">
           <div class="phase-chip" style="margin-right: 12px">
@@ -40,7 +42,7 @@ const RaBills = (() => {
     if (bills.length === 0) {
       html += `
         <div style="padding:60px 32px; text-align:center; border:1px dashed var(--charcoal-border); border-radius:12px; background:var(--charcoal-mid); margin-top:8px">
-          <div style="font-size:40px; margin-bottom:12px">🧾</div>
+          <div style="font-size:40px; margin-bottom:12px; color:var(--text-muted)">${Icons.render('fileText', 40)}</div>
           <h3 style="color:var(--text-secondary); font-size:16px; font-weight:700; margin-bottom:8px">No RA Bills Yet</h3>
           <p style="color:var(--text-muted); font-size:13px; margin-bottom:20px">Create your first Running Account Bill to invoice the client for work completed so far.</p>
           <button class="btn btn-primary" onclick="RaBills.showNewRaBillModal()">+ Create First RA Bill</button>
@@ -52,21 +54,20 @@ const RaBills = (() => {
         const color = statusColor[b.status] || '#7B96A3';
         const label = statusLabel[b.status] || b.status;
         html += `
-          <div style="background:var(--charcoal-mid); border:1px solid var(--charcoal-border); border-radius:12px; padding:20px 24px; display:flex; align-items:center; gap:24px; cursor:pointer; transition:background 0.15s, transform 0.15s" onclick="RaBills.showRaBillDetail('${b.id}')" onmouseover="this.style.background='var(--charcoal-surface)';this.style.transform='translateX(4px)'" onmouseout="this.style.background='var(--charcoal-mid)';this.style.transform=''">
+          <div style="background:var(--charcoal-mid); border:1px solid var(--charcoal-border); border-radius:12px; padding:20px 24px; display:flex; align-items:center; gap:24px; cursor:pointer; transition:background 0.15s, transform 0.15s" onclick="RaBills.showRaBillDetail('${escapeAttr(b.id)}')" onmouseover="this.style.background='var(--charcoal-surface)';this.style.transform='translateX(4px)'" onmouseout="this.style.background='var(--charcoal-mid)';this.style.transform=''">
             <div style="flex-shrink:0; text-align:center; min-width:72px">
-              <div style="font-family:var(--font-mono); font-size:11px; color:var(--text-muted); text-transform:uppercase; letter-spacing:0.06em">${b.billNumber}</div>
+              <div style="font-family:var(--font-mono); font-size:11px; color:var(--text-muted); text-transform:uppercase; letter-spacing:0.06em">${escapeHtml(b.billNumber)}</div>
               <div style="font-size:10px; color:var(--text-muted); margin-top:2px">${b.issueDate ? new Date(b.issueDate).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' }) : '—'}</div>
             </div>
             <div style="flex:1; min-width:0">
-              <div style="font-weight:700; font-size:14px; color:var(--text-primary); white-space:nowrap; overflow:hidden; text-overflow:ellipsis">${b.workDescription || 'RA Bill'}</div>
+              <div style="font-weight:700; font-size:14px; color:var(--text-primary); white-space:nowrap; overflow:hidden; text-overflow:ellipsis">${escapeHtml(b.workDescription || 'RA Bill')}</div>
               <div style="font-size:12px; color:var(--text-muted); margin-top:3px">${b.percentageComplete}% complete · ${b.dueDate ? 'Due ' + new Date(b.dueDate).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' }) : 'No due date'}</div>
             </div>
             <div style="text-align:right; flex-shrink:0">
               <div style="font-family:var(--font-mono); font-size:18px; font-weight:800; color:var(--steel-light)">${Financial.fmt(b.amountDue)}</div>
               <div style="display:inline-block; margin-top:4px; padding:2px 10px; border-radius:10px; font-size:10px; font-weight:700; background:${color}20; color:${color}">${label}</div>
             </div>
-            <div style="flex-shrink:0">
-              <button onclick="event.stopPropagation(); RaBills.generateRaBillPDF('${b.id}')" style="padding:8px 14px; border:1px solid var(--charcoal-border); background:none; border-radius:8px; cursor:pointer; font-size:11px; font-weight:700; color:var(--text-secondary); font-family:inherit; transition:all 0.15s" onmouseover="this.style.background='var(--charcoal-hover)';this.style.color='var(--text-primary)'" onmouseout="this.style.background='none';this.style.color='var(--text-secondary)'">📄 PDF</button>
+            <div style="flex-shrink:0">               <button onclick="event.stopPropagation(); RaBills.generateRaBillPDF('${escapeAttr(b.id)}')" style="padding:8px 14px; border:1px solid var(--charcoal-border); background:none; border-radius:8px; cursor:pointer; font-size:11px; font-weight:700; color:var(--text-secondary); font-family:inherit; transition:all 0.15s" onmouseover="this.style.background='var(--charcoal-hover)';this.style.color='var(--text-primary)'" onmouseout="this.style.background='none';this.style.color='var(--text-secondary)'">${Icons.render('file', 11)} PDF</button>
             </div>
           </div>
         `;
@@ -91,64 +92,65 @@ const RaBills = (() => {
     const edit = editId ? existingBills.find(b => b.id === editId) : null;
 
     App.showModal(`
-      <h3 style="font-size:17px; font-weight:800; color:#1A1A2E; margin-bottom:20px">🧾 ${edit ? 'Edit' : 'New'} Running Account Bill</h3>
-      ${edit ? `<input type="hidden" id="ra-edit-id" value="${edit.id}">` : ''}
+      <h3 class="modal-title">${Icons.render('fileText', 18)} ${edit ? 'Edit' : 'New'} Running Account Bill</h3>
+      ${edit ? `<input type="hidden" id="ra-edit-id" value="${escapeAttr(edit.id)}">` : ''}
       <div style="display:grid; grid-template-columns:1fr 1fr; gap:12px; margin-bottom:14px">
         <div>
-          <label style="display:block; color:#6B7280; font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:0.06em; margin-bottom:6px">Bill Number</label>
-          <input type="text" id="ra-billnum" value="${edit ? edit.billNumber : nextNum}" style="width:100%; padding:10px 12px; border:1.5px solid #E5E7EB; border-radius:8px; font-size:13px; background:#F9FAFB; color:#1A1A2E; outline:none; font-family:monospace">
+          <label class="modal-label">Bill Number</label>
+          <input class="modal-input" type="text" id="ra-billnum" value="${escapeAttr(edit ? edit.billNumber : nextNum)}" style="font-family:var(--font-mono)">
         </div>
         <div>
-          <label style="display:block; color:#6B7280; font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:0.06em; margin-bottom:6px">Issue Date</label>
-          <input type="date" id="ra-issue-date" value="${edit ? edit.issueDate : today}" style="width:100%; padding:10px 12px; border:1.5px solid #E5E7EB; border-radius:8px; font-size:13px; background:#F9FAFB; color:#1A1A2E; outline:none; font-family:monospace">
+          <label class="modal-label">Issue Date</label>
+          <input class="modal-input" type="date" id="ra-issue-date" value="${escapeAttr(edit ? edit.issueDate : today)}" style="font-family:var(--font-mono)">
         </div>
       </div>
       <div style="margin-bottom:14px">
-        <label style="display:block; color:#6B7280; font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:0.06em; margin-bottom:6px">Work Description *</label>
-        <input type="text" id="ra-work-desc" value="${edit ? edit.workDescription : ''}" placeholder="e.g. 2nd Floor Slab Casting Complete — Column & Beam Work" style="width:100%; padding:10px 12px; border:1.5px solid #E5E7EB; border-radius:8px; font-size:13px; background:#F9FAFB; color:#1A1A2E; outline:none">
+        <label class="modal-label">Work Description *</label>
+        <input class="modal-input" type="text" id="ra-work-desc" value="${escapeAttr(edit ? edit.workDescription : '')}"
+          placeholder="e.g. 2nd Floor Slab Casting Complete — Column & Beam Work">
       </div>
       <div style="display:grid; grid-template-columns:1fr 1fr 1fr; gap:12px; margin-bottom:14px">
         <div>
-          <label style="display:block; color:#6B7280; font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:0.06em; margin-bottom:6px">Contract Value (₹)</label>
-          <input type="number" id="ra-contract-val" value="${edit ? edit.contractValue : contractValue}" oninput="RaBills.calcRaAmount()" style="width:100%; padding:10px 12px; border:1.5px solid #E5E7EB; border-radius:8px; font-size:13px; background:#F9FAFB; color:#1A1A2E; outline:none; font-family:monospace">
+          <label class="modal-label">Contract Value (₹)</label>
+          <input class="modal-input" type="number" id="ra-contract-val" value="${escapeAttr(edit ? edit.contractValue : contractValue)}" oninput="RaBills.calcRaAmount()" style="font-family:var(--font-mono)">
         </div>
         <div>
-          <label style="display:block; color:#6B7280; font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:0.06em; margin-bottom:6px">% Complete *</label>
-          <input type="number" id="ra-pct" value="${edit ? edit.percentageComplete : ''}" placeholder="0-100" min="0" max="100" oninput="RaBills.calcRaAmount()" style="width:100%; padding:10px 12px; border:1.5px solid #E5E7EB; border-radius:8px; font-size:13px; background:#F9FAFB; color:#1A1A2E; outline:none; font-family:monospace">
+          <label class="modal-label">% Complete *</label>
+          <input class="modal-input" type="number" id="ra-pct" value="${escapeAttr(edit ? edit.percentageComplete : '')}" placeholder="0-100" min="0" max="100" oninput="RaBills.calcRaAmount()" style="font-family:var(--font-mono)">
         </div>
         <div>
-          <label style="display:block; color:#6B7280; font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:0.06em; margin-bottom:6px">Deductions (₹)</label>
-          <input type="number" id="ra-deductions" value="${edit ? edit.deductions : 0}" placeholder="0" oninput="RaBills.calcRaAmount()" style="width:100%; padding:10px 12px; border:1.5px solid #E5E7EB; border-radius:8px; font-size:13px; background:#F9FAFB; color:#1A1A2E; outline:none; font-family:monospace">
+          <label class="modal-label">Deductions (₹)</label>
+          <input class="modal-input" type="number" id="ra-deductions" value="${escapeAttr(edit ? edit.deductions : 0)}" placeholder="0" oninput="RaBills.calcRaAmount()" style="font-family:var(--font-mono)">
         </div>
       </div>
       <div style="margin-bottom:14px">
-        <label style="display:block; color:#6B7280; font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:0.06em; margin-bottom:6px">Previous Amount Paid (₹)</label>
-        <input type="number" id="ra-prev-paid" value="${edit ? edit.previousPaid : prevPaid}" oninput="RaBills.calcRaAmount()" style="width:100%; padding:10px 12px; border:1.5px solid #E5E7EB; border-radius:8px; font-size:13px; background:#F9FAFB; color:#1A1A2E; outline:none; font-family:monospace">
+        <label class="modal-label">Previous Amount Paid (₹) <span style="font-size:10px;color:var(--text-muted);font-weight:400">— auto-calculated from paid bills</span></label>
+        <input class="modal-input" type="number" id="ra-prev-paid" value="${escapeAttr(edit ? edit.previousPaid : prevPaid)}" readonly style="font-family:var(--font-mono);opacity:0.7;cursor:not-allowed;background:var(--charcoal-mid)" title="Automatically calculated from all bills marked as Paid">
       </div>
 
-      <div id="ra-calc-preview" style="background:#F5EBDD; border:1.5px solid #9E775830; border-radius:10px; padding:16px; margin-bottom:20px">
-        <div style="font-size:10px; color:#9E7758; text-transform:uppercase; letter-spacing:0.1em; font-weight:700; margin-bottom:8px">Calculated Amount Due</div>
-        <div id="ra-amount-display" style="font-family:'JetBrains Mono',monospace; font-size:28px; font-weight:800; color:#705748">₹0</div>
-        <div id="ra-calc-breakdown" style="font-size:11px; color:#9E7758; margin-top:4px"></div>
+      <div id="ra-calc-preview" style="background:rgba(76,156,184,0.06); border:1.5px solid var(--amber-glow); border-radius:10px; padding:16px; margin-bottom:20px">
+        <div style="font-size:10px; color:var(--amber); text-transform:uppercase; letter-spacing:0.1em; font-weight:700; margin-bottom:8px">Calculated Amount Due</div>
+        <div id="ra-amount-display" style="font-family:var(--font-mono); font-size:28px; font-weight:800; color:var(--amber)">₹0</div>
+        <div id="ra-calc-breakdown" style="font-size:11px; color:var(--text-muted); margin-top:4px"></div>
       </div>
 
       <div style="display:grid; grid-template-columns:1fr 1fr; gap:12px; margin-bottom:20px">
         <div>
-          <label style="display:block; color:#6B7280; font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:0.06em; margin-bottom:6px">Due Date</label>
-          <input type="date" id="ra-due-date" value="${edit ? edit.dueDate : ''}" style="width:100%; padding:10px 12px; border:1.5px solid #E5E7EB; border-radius:8px; font-size:13px; background:#F9FAFB; color:#1A1A2E; outline:none; font-family:monospace">
+          <label class="modal-label">Due Date</label>
+          <input class="modal-input" type="date" id="ra-due-date" value="${escapeAttr(edit ? edit.dueDate : '')}" style="font-family:var(--font-mono)">
         </div>
         <div>
-          <label style="display:block; color:#6B7280; font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:0.06em; margin-bottom:6px">Status</label>
-          <select id="ra-status" style="width:100%; padding:10px 12px; border:1.5px solid #E5E7EB; border-radius:8px; font-size:13px; background:#F9FAFB; color:#1A1A2E; outline:none; appearance:none; cursor:pointer">
-            <option value="draft" ${edit && edit.status === 'draft' ? 'selected' : ''}>📝 Draft</option>
-            <option value="sent" ${edit && edit.status === 'sent' ? 'selected' : ''}>📤 Sent to Client</option>
-            <option value="paid" ${edit && edit.status === 'paid' ? 'selected' : ''}>✓ Paid</option>
+          <label class="modal-label">Status</label>
+          <select class="modal-input" id="ra-status" style="appearance:none;cursor:pointer">
+            <option value="draft" ${edit && edit.status === 'draft' ? 'selected' : ''}>Draft</option>
+            <option value="sent" ${edit && edit.status === 'sent' ? 'selected' : ''}>Sent to Client</option>
+            <option value="paid" ${edit && edit.status === 'paid' ? 'selected' : ''}>Paid</option>
           </select>
         </div>
       </div>
       <div style="display:flex; gap:12px">
-        <button onclick="App.closeModal()" style="flex:1; padding:11px; border:1.5px solid #E5E7EB; background:none; border-radius:10px; cursor:pointer; font-size:13px; font-weight:700; color:#6B7280; font-family:inherit">Cancel</button>
-        <button onclick="RaBills.saveRaBill()" style="flex:1; padding:11px; border:none; background:linear-gradient(135deg,#705748,#9E7758); color:#F5E4CC; border-radius:10px; cursor:pointer; font-size:13px; font-weight:700; font-family:inherit">${edit ? 'Update Bill' : 'Create RA Bill'}</button>
+        <button onclick="App.closeModal()" class="modal-btn-cancel" style="flex:1; padding:11px; border-radius:10px; cursor:pointer; font-size:13px; font-weight:700; font-family:inherit">Cancel</button>
+        <button onclick="RaBills.saveRaBill()" class="modal-btn-primary" style="flex:1; padding:11px; border-radius:10px; cursor:pointer; font-size:13px; font-weight:700; font-family:inherit">${edit ? 'Update Bill' : 'Create RA Bill'}</button>
       </div>
     `);
 
@@ -213,16 +215,16 @@ const RaBills = (() => {
         <div class="hub-header-left">
           <button onclick="App.showRaBillsHub()" style="padding:6px 12px; margin-right:12px; border:1px solid var(--charcoal-border); background:var(--charcoal-mid); color:var(--text-secondary); border-radius:8px; cursor:pointer; font-size:12px; font-weight:600">← Back</button>
           <div>
-            <h2 class="hub-title">${b.billNumber}</h2>
-            <p class="hub-subtitle">${b.workDescription}</p>
+            <h2 class="hub-title">${escapeHtml(b.billNumber)}</h2>
+            <p class="hub-subtitle">${escapeHtml(b.workDescription)}</p>
           </div>
         </div>
         <div class="hub-header-right">
           <div class="phase-chip" style="background:${color}18; color:${color}; margin-right:12px">
             <span class="phase-pct">${statusLabel[b.status] || b.status}</span>
           </div>
-          <button class="btn btn-secondary" onclick="RaBills.showNewRaBillModal('${b.id}')" style="margin-right:8px">✏ Edit</button>
-          <button class="btn btn-primary" onclick="RaBills.generateRaBillPDF('${b.id}')">📄 Download PDF</button>
+          <button class="btn btn-secondary" onclick="RaBills.showNewRaBillModal('${escapeAttr(b.id)}')" style="margin-right:8px">${Icons.render('pencil', 12)} Edit</button>
+          <button class="btn btn-primary" onclick="RaBills.generateRaBillPDF('${escapeAttr(b.id)}')">${Icons.render('file', 12)} Download PDF</button>
         </div>
       </div>
 
@@ -263,10 +265,10 @@ const RaBills = (() => {
       </div>
 
       <div style="display:flex; gap:12px; margin-top:24px">
-        ${b.status !== 'paid' ? `<button onclick="RaBills.updateBillStatus('${b.id}','paid')" style="padding:10px 18px; border:none; background:#A8B89C; color:#fff; border-radius:8px; cursor:pointer; font-size:13px; font-weight:700; font-family:inherit">✓ Mark as Paid</button>` : ''}
-        ${b.status === 'draft' ? `<button onclick="RaBills.updateBillStatus('${b.id}','sent')" style="padding:10px 18px; border:none; background:#9E7758; color:#fff; border-radius:8px; cursor:pointer; font-size:13px; font-weight:700; font-family:inherit">📤 Mark as Sent</button>` : ''}
+        ${b.status !== 'paid' ? `<button onclick="RaBills.updateBillStatus('${escapeAttr(b.id)}','paid')" style="padding:10px 18px; border:none; background:var(--success); color:#fff; border-radius:8px; cursor:pointer; font-size:13px; font-weight:700; font-family:inherit">${Icons.render('check', 12)} Mark as Paid</button>` : ''}
+        ${b.status === 'draft' ? `<button onclick="RaBills.updateBillStatus('${escapeAttr(b.id)}','sent')" style="padding:10px 18px; border:none; background:var(--amber); color:#fff; border-radius:8px; cursor:pointer; font-size:13px; font-weight:700; font-family:inherit">${Icons.render('send', 12)} Mark as Sent</button>` : ''}
         <div style="flex:1"></div>
-        <button onclick="RaBills.deleteRaBill('${b.id}')" style="padding:10px 18px; border:1.5px solid #DC262620; background:none; border-radius:8px; cursor:pointer; font-size:12px; font-weight:700; color:#DC2626; font-family:inherit">🗑 Delete Bill</button>
+        <button onclick="RaBills.deleteRaBill('${escapeAttr(b.id)}')" style="padding:10px 18px; border:1.5px solid #DC262620; background:none; border-radius:8px; cursor:pointer; font-size:12px; font-weight:700; color:#DC2626; font-family:inherit">${Icons.render('trash', 12)} Delete Bill</button>
       </div>
     `;
 
@@ -326,20 +328,20 @@ const RaBills = (() => {
             <p>Running Account (RA) Bill — Construction Invoice</p>
           </div>
           <div class="bill-info">
-            <div class="bill-num">${b.billNumber}</div>
-            <div class="bill-date">Issue Date: ${b.issueDate ? new Date(b.issueDate).toLocaleDateString('en-IN', { day: 'numeric', month: 'long', year: 'numeric' }) : '—'}</div>
-            ${b.dueDate ? `<div class="bill-date">Due: ${new Date(b.dueDate).toLocaleDateString('en-IN', { day: 'numeric', month: 'long', year: 'numeric' })}</div>` : ''}
+            <div class="bill-num">${escapeHtml(b.billNumber)}</div>
+            <div class="bill-date">Issue Date: ${b.issueDate ? escapeHtml(new Date(b.issueDate).toLocaleDateString('en-IN', { day: 'numeric', month: 'long', year: 'numeric' })) : '—'}</div>
+            ${b.dueDate ? `<div class="bill-date">Due: ${escapeHtml(new Date(b.dueDate).toLocaleDateString('en-IN', { day: 'numeric', month: 'long', year: 'numeric' }))}</div>` : ''}
           </div>
         </div>
 
         <div class="project-info">
-          <h2>${proj.name}</h2>
-          <p>${proj.address || ''} ${proj.client ? '· Client: ' + proj.client : ''} ${proj.contractor ? '· Contractor: ' + proj.contractor : ''}</p>
+          <h2>${escapeHtml(proj.name)}</h2>
+          <p>${escapeHtml(proj.address || '')} ${proj.client ? '· Client: ' + escapeHtml(proj.client) : ''} ${proj.contractor ? '· Contractor: ' + escapeHtml(proj.contractor) : ''}</p>
         </div>
 
         <div class="amount-box">
           <div>
-            <div class="label">Net Amount Due (RA Bill ${b.billNumber})</div>
+            <div class="label">Net Amount Due (RA Bill ${escapeHtml(b.billNumber)})</div>
             <div class="value">${Financial.fmtFull(b.amountDue)}</div>
           </div>
           <div style="text-align:right">
@@ -350,7 +352,7 @@ const RaBills = (() => {
         <div class="details-grid">
           <div class="detail-section">
             <h3>Work Details</h3>
-            <div class="detail-row"><span class="key">Work Description</span><span class="val" style="max-width:200px; text-align:right">${b.workDescription}</span></div>
+            <div class="detail-row"><span class="key">Work Description</span><span class="val" style="max-width:200px; text-align:right">${escapeHtml(b.workDescription)}</span></div>
             <div class="detail-row"><span class="key">% Complete (Cumulative)</span><span class="val">${b.percentageComplete}%</span></div>
           </div>
           <div class="detail-section">
@@ -387,7 +389,7 @@ const RaBills = (() => {
 
         <div class="footer">
           <div>Generated by RECON — Construction Ledger · ${new Date().toLocaleDateString('en-IN', { day: 'numeric', month: 'long', year: 'numeric' })}</div>
-          <div>${proj.contractor || ''} · ${proj.name}</div>
+          <div>${escapeHtml(proj.contractor || '')} · ${escapeHtml(proj.name)}</div>
         </div>
       </div>
     `;
@@ -417,7 +419,7 @@ const RaBills = (() => {
 
   async function deleteRaBill(id) {
     App.showConfirmModal({
-      icon: '🧾',
+      icon: Icons.render('fileText', 24),
       title: 'Delete RA Bill?',
       body: 'This will permanently delete this bill. This cannot be undone.',
       confirmLabel: 'Delete Bill',

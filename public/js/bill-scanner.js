@@ -108,33 +108,99 @@ Schema:
   function renderBillsHub(phaseId) {
     const proj = State.getCurrentProject();
     if (!proj) return '';
-    const phase = proj.phases.find(p => p.id === phaseId);
-    if (!phase) return '';
 
-    // Gather scanned bills for this phase
-    const bills = State.getBills(phaseId);
-    // Also gather entries with bill photos from ALL phases
+    const isConstruction = (phaseId === 'construction');
+    if (!isConstruction) phaseId = Number(phaseId);
+    let phaseName = '';
+    let phaseIcon = '';
+    let bills = [];
+
+    if (isConstruction) {
+      phaseName = "Construction Trades";
+      phaseIcon = "blocks";
+      for (let pid = 1; pid <= 9; pid++) {
+        const pBills = State.getBills(pid) || [];
+        pBills.forEach(b => {
+          b._sourcePhase = pid;
+        });
+        bills = bills.concat(pBills);
+      }
+    } else {
+      const phase = proj.phases.find(p => Number(p.id) === Number(phaseId));
+      if (!phase) return '';
+      phaseName = phase.name;
+      phaseIcon = phase.icon;
+      bills = State.getBills(phaseId) || [];
+    }
+
+    // Gather entries with bill photos from the relevant phases
     const entryBills = [];
     (proj.phases || []).forEach(ph => {
+      if (isConstruction) {
+        if (ph.id < 1 || ph.id > 9) return;
+      } else if (phaseId === 10) {
+        if (ph.id !== 10) return;
+      } else {
+        if (ph.id !== phaseId) return;
+      }
+
       if (!ph.data || !ph.data.entries) return;
-      Object.values(ph.data.entries).forEach(arr => {
+      Object.entries(ph.data.entries).forEach(([cId, arr]) => {
         if (!Array.isArray(arr)) return;
+
+        let card = { name: 'Entry' };
+        if (typeof Phases !== 'undefined' && typeof Phases.getAllCardsForPhase === 'function') {
+          const allCards = Phases.getAllCardsForPhase(ph.id) || [];
+          const found = allCards.find(c => c.id === cId);
+          if (found) card = found;
+        }
+
         arr.forEach(entry => {
-          if (entry.billPhotoUrl && entry.total > 0) {
+          if (entry.total > 0) {
+            const fields = entry.fields || {};
+            // Resolve vendor/payee/contractor/worker
+            const vendorName = fields.vendor || fields.payee || fields.supplier || fields.dealer || fields.contractor || fields.worker || card.name;
+            
+            // Build items list from the entry fields
+            const items = [];
+            Object.entries(fields).forEach(([k, v]) => {
+              if (v && k !== 'notes' && !k.endsWith('_unit') && k !== 'vendor' && k !== 'payee' && k !== 'supplier' && k !== 'dealer' && k !== 'contractor' && k !== 'worker') {
+                const unitVal = fields[k + '_unit'] || '';
+                items.push({
+                  desc: k.replace(/_/g, ' '),
+                  qty: '',
+                  rate: '',
+                  amount: `${v}${unitVal ? ' ' + unitVal : ''}`
+                });
+              }
+            });
+
+            // Fallback item if no fields are present
+            if (items.length === 0) {
+              items.push({
+                desc: 'Type',
+                qty: '',
+                rate: '',
+                amount: card.name
+              });
+            }
+
             entryBills.push({
               id: entry.id,
-              vendor: (entry.fields && (entry.fields.vendor || entry.fields.payee)) || 'Entry Bill',
+              vendor: vendorName || 'Entry Bill',
               date: entry.date || '',
               totalAmount: entry.total || 0,
-              items: [],
+              items: items,
               _fromEntry: true,
               _sourcePhase: ph.id,
               _entryData: entry.fields,
+              _billPhotoUrl: entry.billPhotoUrl || '',
             });
           }
         });
       });
     });
+
     // Merge: scanned bills + entry bills (deduplicate by id)
     const allBills = [...bills];
     entryBills.forEach(eb => {
@@ -146,29 +212,35 @@ Schema:
     if (allBills.length === 0) {
       billsHtml = `
         <div style="padding:40px 20px;text-align:center;color:var(--text-muted);background:var(--charcoal-mid);border-radius:12px;border:1px dashed var(--charcoal-border)">
-          <div style="font-size:32px;margin-bottom:12px;opacity:0.6">📸</div>
+          <div style="margin-bottom:12px;color:var(--text-muted);opacity:0.6">${Icons.render('camera', 32)}</div>
           <h3 style="font-size:15px;color:var(--text-secondary);margin-bottom:6px">No Bills Yet</h3>
           <p style="font-size:12px;line-height:1.5;max-width:300px;margin:0 auto">Scan a receipt or add a bill photo when logging a material/labor entry. All bills and entry photos will appear here.</p>
         </div>`;
     } else {
       billsHtml = allBills.map(b => {
-        const itemHtml = (b.items || []).map(i => `
-          <div style="display:flex;justify-content:space-between;font-size:11px;color:var(--text-secondary);margin-top:4px">
-            <span>${i.qty}x ${i.desc}</span>
-            <span class="mono">${Financial.fmt(i.amount)}</span>
-          </div>
-        `).join('');
+        const itemHtml = (b.items || []).map(i => {
+          const isNum = !isNaN(parseFloat(i.amount)) && isFinite(i.amount);
+          const amtStr = isNum ? Financial.fmt(parseFloat(i.amount)) : i.amount;
+          return `
+            <div style="display:flex;justify-content:space-between;font-size:11px;color:var(--text-secondary);margin-top:4px">
+              <span>${i.qty ? i.qty + 'x ' : ''}${escapeHtml(i.desc)}</span>
+              <span class="mono">${escapeHtml(amtStr)}</span>
+            </div>
+          `;
+        }).join('');
+
+        const sourcePhaseName = proj.phases.find(p => Number(p.id) === Number(b._sourcePhase))?.name || `Phase ${b._sourcePhase}`;
 
         return `
         <div class="card" style="margin-bottom:12px">
           <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:12px;border-bottom:1px solid var(--charcoal-border);padding-bottom:12px">
             <div>
-              <div style="font-weight:700;font-size:14px;color:var(--text-primary)">${b.vendor || 'Unknown Shop'}${b._fromEntry ? ' <span style="font-size:10px;color:var(--amber);background:rgba(232,124,42,0.15);padding:2px 6px;border-radius:4px;margin-left:6px">from Entry</span>' : ''}</div>
-              <div style="font-size:11px;color:var(--text-muted);margin-top:4px">${b.date || 'No Date'}${b._sourcePhase ? ' · Phase ' + b._sourcePhase : ''}</div>
+              <div style="font-weight:700;font-size:14px;color:var(--text-primary)">${escapeHtml(b.vendor || 'Unknown Shop')}${b._fromEntry ? ' <span style="font-size:10px;color:var(--amber);background:rgba(232,124,42,0.15);padding:2px 6px;border-radius:4px;margin-left:6px">from Entry</span>' : ''}</div>
+              <div style="font-size:11px;color:var(--text-muted);margin-top:4px">${escapeHtml(b.date || 'No Date')}${b._sourcePhase ? ' · ' + escapeHtml(sourcePhaseName) : ''}</div>
             </div>
             <div style="text-align:right">
               <div class="mono" style="font-size:16px;font-weight:700;color:var(--text-primary)">${Financial.fmtFull(b.totalAmount)}</div>
-              ${b._fromEntry ? '' : `<button class="btn-ghost-sm" style="color:var(--red-light);margin-top:6px;padding:4px 8px;font-size:10px" onclick="BillScanner.deleteBillUI(${phaseId}, '${b.id}')">Delete</button>`}
+              ${b._fromEntry ? '' : `<button class="btn-ghost-sm" style="color:var(--red-light);margin-top:6px;padding:4px 8px;font-size:10px" onclick="BillScanner.deleteBillUI('${escapeAttr(b._sourcePhase || phaseId)}', '${escapeAttr(b.id)}', '${escapeAttr(phaseId)}')">Delete</button>`}
             </div>
           </div>
           <div style="background:var(--charcoal-dark);border-radius:6px;padding:8px">
@@ -179,24 +251,30 @@ Schema:
       }).join('');
     }
 
-    const html = `
+    const breadcrumbHtml = `
       <div class="breadcrumb">
         <a onclick="App.showOverview()">Overview</a>
         <span class="breadcrumb-sep">›</span>
-        <a onclick="${phaseId === 10 ? 'App.showInteriorHub()' : `App.showPhaseHub(${phaseId})`}">${Phases.iconFor(phase.icon, 11)} <span style="margin-left:6px">${phase.name}</span></a>
+        ${isConstruction 
+          ? `<a onclick="App.showHub('construction')">Construction</a>`
+          : `<a onclick="${phaseId === 10 ? 'App.showInteriorHub()' : `App.showPhaseHub(${escapeAttr(phaseId)})`}">${Phases.iconFor(phaseIcon, 11)} <span style="margin-left:6px">${escapeHtml(phaseName)}</span></a>`
+        }
         <span class="breadcrumb-sep">›</span>
-        <span class="breadcrumb-current">📸 Bills & Receipts</span>
-      </div>
+        <span class="breadcrumb-current">${Icons.render('fileText', 14)} Bills & Receipts</span>
+      </div>`;
+
+    const html = `
+      ${breadcrumbHtml}
 
       <div class="category-hub-header" style="flex-wrap:wrap;gap:16px">
         <div>
-          <div class="category-hub-title">📸 <span style="margin-left:10px">Bills & Receipts</span></div>
-          <div class="category-hub-subtitle">AI Scanner Ledger for ${phase.name}</div>
+          <div class="category-hub-title">${Icons.render('fileText', 20)} <span style="margin-left:10px">Bills & Receipts</span></div>
+          <div class="category-hub-subtitle">AI Scanner Ledger for ${escapeHtml(phaseName)}</div>
         </div>
         <div class="category-hub-stats">
           <div class="category-hub-stat">
             <span class="category-hub-stat-label">Total Bills</span>
-            <span class="category-hub-stat-value">${bills.length}</span>
+            <span class="category-hub-stat-value">${allBills.length}</span>
           </div>
           <div class="category-hub-stat">
             <span class="category-hub-stat-label">Total Amount</span>
@@ -205,11 +283,22 @@ Schema:
         </div>
       </div>
 
-      <div style="display:flex;gap:12px;margin-bottom:24px">
-        <label class="btn-primary" style="cursor:pointer;flex:1;text-align:center;justify-content:center">
-          <span style="margin-right:8px">📸</span> Scan New Bill
-          <input type="file" accept="image/*" capture="environment" style="display:none" onchange="BillScanner.handleUpload(event, ${phaseId})">
-        </label>
+      <div style="display:flex;gap:12px;margin-bottom:24px;flex-wrap:wrap">
+        ${/Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent) ? `
+          <label class="btn-primary" style="cursor:pointer;flex:1;text-align:center;justify-content:center">
+            ${Icons.render('camera', 14)} <span style="margin-left:6px">Camera Scan</span>
+            <input type="file" accept="image/*" capture="environment" style="display:none" onchange="BillScanner.handleUpload(event, '${escapeAttr(phaseId)}')">
+          </label>
+          <label class="btn-primary" style="cursor:pointer;flex:1;text-align:center;justify-content:center">
+            ${Icons.render('plus', 14)} <span style="margin-left:6px">Upload Gallery</span>
+            <input type="file" accept="image/*" style="display:none" onchange="BillScanner.handleUpload(event, '${escapeAttr(phaseId)}')">
+          </label>
+        ` : `
+          <label class="btn-primary" style="cursor:pointer;flex:1;text-align:center;justify-content:center">
+            ${Icons.render('camera', 14)} <span style="margin-left:6px">Scan New Bill</span>
+            <input type="file" accept="image/*" style="display:none" onchange="BillScanner.handleUpload(event, '${escapeAttr(phaseId)}')">
+          </label>
+        `}
       </div>
 
       <div id="scanner-status" style="display:none;background:var(--amber-light-bg);border:1px solid var(--amber-border);color:var(--amber);padding:12px;border-radius:8px;font-size:12px;margin-bottom:24px;font-weight:600">
@@ -260,6 +349,8 @@ Schema:
     const reviewEl = document.getElementById('review-container');
     if (!reviewEl) return;
 
+    const proj = State.getCurrentProject();
+
     // If AI failed to extract total but got items, auto-sum it initially
     let initialTotal = Number(aiResult.totalAmount) || 0;
     if (initialTotal === 0 && aiResult.items && aiResult.items.length > 0) {
@@ -269,12 +360,26 @@ Schema:
     // Build items HTML for review
     const itemsHtml = (aiResult.items || []).map((item, idx) => `
       <div class="field-row cols-4" style="margin-bottom:8px">
-        <div class="field-group" style="flex:2"><input class="field-input item-desc" data-idx="${idx}" value="${item.desc || ''}" placeholder="Item"></div>
-        <div class="field-group"><input class="field-input mono item-qty" type="number" data-idx="${idx}" value="${item.qty || 0}" placeholder="Qty" oninput="BillScanner.recalcRow(${idx})"></div>
-        <div class="field-group"><input class="field-input mono item-rate" type="number" data-idx="${idx}" value="${item.rate || 0}" placeholder="Rate" oninput="BillScanner.recalcRow(${idx})"></div>
-        <div class="field-group"><input class="field-input mono item-amt" type="number" data-idx="${idx}" value="${item.amount || 0}" placeholder="Amt" oninput="BillScanner.recalcTotal()"></div>
+        <div class="field-group" style="flex:2"><input class="field-input item-desc" data-idx="${idx}" value="${escapeAttr(item.desc || '')}" placeholder="Item"></div>
+        <div class="field-group"><input class="field-input mono item-qty" type="number" data-idx="${idx}" value="${escapeAttr(item.qty || 0)}" placeholder="Qty" oninput="BillScanner.recalcRow(${idx})"></div>
+        <div class="field-group"><input class="field-input mono item-rate" type="number" data-idx="${idx}" value="${escapeAttr(item.rate || 0)}" placeholder="Rate" oninput="BillScanner.recalcRow(${idx})"></div>
+        <div class="field-group"><input class="field-input mono item-amt" type="number" data-idx="${idx}" value="${escapeAttr(item.amount || 0)}" placeholder="Amt" oninput="BillScanner.recalcTotal()"></div>
       </div>
     `).join('');
+
+    const isConstruction = (phaseId === 'construction');
+    const phaseSelectHtml = isConstruction ? `
+      <div class="field-group" style="margin-top:12px">
+        <label class="field-label" style="font-weight:700">Assign to Trade Phase *</label>
+        <select id="review-phase-id" class="field-input" style="background:var(--charcoal);border:1px solid var(--charcoal-border);color:var(--text-primary);padding:8px 10px;border-radius:6px;width:100%;box-sizing:border-box">
+          ${(proj?.phases || []).filter(p => p.id >= 1 && p.id <= 9).map(p => `
+            <option value="${escapeAttr(p.id)}">${escapeHtml(p.name)}</option>
+          `).join('')}
+        </select>
+      </div>
+    ` : `
+      <input type="hidden" id="review-phase-id" value="${escapeAttr(phaseId)}">
+    `;
 
     reviewEl.innerHTML = `
       <div class="card" style="border:1px solid var(--amber-border);box-shadow:0 4px 12px rgba(0,0,0,0.2)">
@@ -285,26 +390,27 @@ Schema:
         
         <div style="display:flex;gap:16px;margin-bottom:16px">
           <div style="flex:1">
-            <img src="${base64Image}" style="width:100%;max-height:200px;object-fit:cover;border-radius:8px;border:1px solid var(--charcoal-border)">
+            <img src="${escapeAttr(base64Image)}" style="width:100%;max-height:200px;object-fit:cover;border-radius:8px;border:1px solid var(--charcoal-border)">
           </div>
           <div style="flex:2">
             <div class="field-group">
               <label class="field-label">Vendor / Shop Name</label>
-              <input class="field-input" id="review-vendor" value="${aiResult.vendor || ''}">
+              <input class="field-input" id="review-vendor" value="${escapeAttr(aiResult.vendor || '')}">
             </div>
             <div class="field-row cols-2">
               <div class="field-group">
                 <label class="field-label">Date</label>
-                <input class="field-input" id="review-date" value="${aiResult.date || ''}" placeholder="YYYY-MM-DD">
+                <input class="field-input" id="review-date" value="${escapeAttr(aiResult.date || '')}" placeholder="YYYY-MM-DD">
               </div>
               <div class="field-group">
                 <label class="field-label">Total Amount</label>
                 <div class="currency-input-wrap">
                   <span class="currency-symbol">₹</span>
-                  <input class="field-input mono" type="number" id="review-total" value="${initialTotal}">
+                  <input class="field-input mono" type="number" id="review-total" value="${escapeAttr(initialTotal)}">
                 </div>
               </div>
             </div>
+            ${phaseSelectHtml}
           </div>
         </div>
 
@@ -313,7 +419,7 @@ Schema:
           ${itemsHtml || '<div style="font-size:12px;color:var(--text-muted)">No items extracted.</div>'}
         </div>
 
-        <button id="save-bill-btn" class="btn-primary" style="width:100%" onclick="BillScanner.saveReviewedBill(${phaseId})">Save Bill to Ledger</button>
+        <button id="save-bill-btn" class="btn-primary" style="width:100%" onclick="BillScanner.saveReviewedBill('${escapeAttr(phaseId)}')">Save Bill to Ledger</button>
       </div>
     `;
     reviewEl.style.display = 'block';
@@ -346,22 +452,38 @@ Schema:
       });
     });
 
+    const targetPhaseId = parseInt(document.getElementById('review-phase-id').value) || parseInt(phaseId);
     const billObj = { vendor, date, totalAmount, items };
-    await State.addBill(phaseId, billObj);
+    await State.addBill(targetPhaseId, billObj);
     
     App.toast('Bill saved successfully!', 'success');
     
     // Re-render the view
-    App.showPhaseBills(phaseId);
+    if (phaseId === 'construction') {
+      App.showConstructionBills();
+    } else {
+      App.showPhaseBills(phaseId);
+    }
   }
 
   // Delete a bill
-  async function deleteBillUI(phaseId, billId) {
-    if (confirm('Are you sure you want to delete this scanned bill?')) {
-      await State.deleteBill(phaseId, billId);
-      App.toast('Bill deleted');
-      App.showPhaseBills(phaseId);
-    }
+  async function deleteBillUI(phaseId, billId, viewPhaseId) {
+    App.showConfirmModal({
+      icon: Icons.render('fileText', 24),
+      title: 'Delete Scanned Bill?',
+      body: 'This will permanently remove this scanned bill and its extracted items.',
+      confirmLabel: 'Delete Bill',
+      onConfirm: async () => {
+        const parsedPhaseId = parseInt(phaseId);
+        await State.deleteBill(parsedPhaseId, billId);
+        App.toast('Bill deleted', 'info');
+        if (viewPhaseId === 'construction') {
+          App.showConstructionBills();
+        } else {
+          App.showPhaseBills(viewPhaseId);
+        }
+      }
+    });
   }
 
   // Recalculate a single row's amount (Qty * Rate)

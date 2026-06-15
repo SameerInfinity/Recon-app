@@ -18,19 +18,26 @@ const SupabaseClient = (() => {
         const res = await fetch('/api/config');
         if (res.ok) {
           config = await res.json();
-          // Cache for offline PWA support
-          localStorage.setItem('recon_supabase_config', JSON.stringify(config));
+          // Cache for offline PWA support (sessionStorage — cleared on tab close)
+          sessionStorage.setItem('recon_supabase_config', JSON.stringify(config));
         } else {
           throw new Error('API config route returned ' + res.status);
         }
       } catch (fetchErr) {
-        // Network offline or API unreachable, fallback to cached config
-        console.warn('[Supabase] Config fetch failed, attempting to use cached config for offline mode');
-        const cached = localStorage.getItem('recon_supabase_config');
-        if (cached) config = JSON.parse(cached);
+        // Network offline or API unreachable, fallback to cached config, then hardcoded credentials for standalone builds
+        console.warn('[Supabase] Config fetch failed, attempting to use cached config / hardcoded credentials');
+        const cached = sessionStorage.getItem('recon_supabase_config');
+        if (cached) {
+          config = JSON.parse(cached);
+        } else {
+          config = {
+            supabaseUrl: "https://vmkdfhghyirbgdnmrfmu.supabase.co",
+            supabaseAnonKey: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InZta2RmaGdoeWlyYmdkbm1yZm11Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODA3NjcxNTksImV4cCI6MjA5NjM0MzE1OX0.ddmof_p2ZkOcrNAzgSIB3hzv6Mu2ZwhX-LCznciPTRw"
+          };
+        }
       }
 
-      if (!config.supabaseUrl || !config.supabaseAnonKey) {
+      if (!config || !config.supabaseUrl || !config.supabaseAnonKey) {
         console.warn('[Supabase] No credentials configured — running in offline mode');
         _ready = true;
         _readyCallbacks.forEach(cb => cb(null));
@@ -68,19 +75,22 @@ const SupabaseClient = (() => {
       _user = session?.user || null;
 
       // Global fetch interceptor to catch 401/403 auth expiry
-      // ONLY intercepts same-origin requests — not CDN/Supabase external calls
+      // Intercepts same-origin AND direct Supabase external calls
       const originalFetch = window.fetch;
       window.fetch = async function(...args) {
         const response = await originalFetch.apply(this, args);
         const reqUrl = typeof args[0] === 'string' ? args[0] : args[0]?.url || '';
         const isSameOrigin = reqUrl.startsWith('/') || reqUrl.startsWith(window.location.origin);
+        const isSupabase = reqUrl.includes('supabase.co') || isSameOrigin;
         if (
-          isSameOrigin &&
+          isSupabase &&
           (response.status === 401 || response.status === 403) &&
           !window.location.pathname.includes('auth.html')
         ) {
           console.warn('[Auth] Token expired or invalid, redirecting to login...');
-          if (_supabase) await _supabase.auth.signOut();
+          if (_supabase) {
+            try { await _supabase.auth.signOut(); } catch(e){}
+          }
           window.location.href = '/auth.html?expired=1';
         }
         return response;

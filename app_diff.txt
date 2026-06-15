@@ -1,0 +1,2854 @@
+﻿diff --git a/public/js/app.js b/public/js/app.js
+index f997938..613ee7c 100644
+--- a/public/js/app.js
++++ b/public/js/app.js
+@@ -1,92 +1,275 @@
+-/* ΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉ
+-   APP.JS ΓÇö Main Application Controller v2
+-   Routing, Wizard, Phase Navigation, Dashboard
+-   ΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉ */
++/* ΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉ
++   RECON ┬╖ APP.JS  (mobile-first, bottom-nav controller)
++   - Top app bar + AI right drawer
++   - 4 hubs: Dashboard, Phases, Ledgers (Labour/Vendor/Inventory), More
++   - Reuses every existing module (Dashboard, Phases, LabourVendors,
++     VendorKhata, SiteInventory, RaBills, FlatSales, AI, Export, State)
++   ΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉΓòÉ */
++
++// ΓöÇΓöÇ Global Dropdown Interceptor: Dynamic "Other" option ΓöÇΓöÇ
++(function() {
++  const originalValueDesc = Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, 'value');
++  const originalSelectedIndexDesc = Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, 'selectedIndex');
++
++  function ensureSelectEnhanced(selectEl) {
++    if (!selectEl || selectEl.dataset.enhanced) return;
++    if (!selectEl.parentNode) return;
++    
++    // Ignore currency selects and phase select picker
++    if (selectEl.id === 'ep-currency' || selectEl.id === 'w-currency' || selectEl.id === 'sm-phase') return;
++
++    selectEl.dataset.enhanced = "true";
++
++    // 1. Add "Other" option if not present
++    let hasOther = false;
++    for (let i = 0; i < selectEl.options.length; i++) {
++      if (selectEl.options[i].value === '__other__' || selectEl.options[i].text.toLowerCase() === 'other') {
++        hasOther = true;
++        selectEl.options[i].value = '__other__';
++        break;
++      }
++    }
++    if (!hasOther) {
++      const opt = document.createElement('option');
++      opt.value = '__other__';
++      opt.text = 'Other (Type custom)...';
++      selectEl.add(opt);
++    }
++
++    // 2. Create the custom input element
++    const input = document.createElement('input');
++    input.type = 'text';
++    input.placeholder = 'Type custom optionΓÇª';
++    input.className = 'custom-select-input';
++    
++    // Premium styling matching the theme
++    const rawVal = originalValueDesc.get.call(selectEl);
++    input.style.display = rawVal === '__other__' ? 'block' : 'none';
++    input.style.marginTop = '6px';
++    input.style.width = '100%';
++    input.style.boxSizing = 'border-box';
++    input.style.padding = '10px 14px';
++    input.style.minHeight = '44px';
++    input.style.borderRadius = 'var(--r-md, 16px)';
++    input.style.border = '1.5px dashed var(--amber, #B47A3C)';
++    input.style.background = 'var(--bg-elev, #FFFFFF)';
++    input.style.color = 'var(--text, #2E2820)';
++    input.style.fontSize = '14px';
++    input.style.fontFamily = 'inherit';
++    input.style.outline = 'none';
++
++    // Insert input after select
++    selectEl.parentNode.insertBefore(input, selectEl.nextSibling);
++    selectEl._customInput = input;
++
++    // Handle change event
++    selectEl.addEventListener('change', () => {
++      const currentRawVal = originalValueDesc.get.call(selectEl);
++      if (currentRawVal === '__other__') {
++        input.style.display = 'block';
++        input.focus();
++      } else {
++        input.style.display = 'none';
++        input.value = '';
++      }
++    });
++
++    // Handle input event from custom field
++    input.addEventListener('input', () => {
++      selectEl.dispatchEvent(new Event('input', { bubbles: true }));
++      selectEl.dispatchEvent(new Event('change', { bubbles: true }));
++    });
++  }
++
++  // Define value property override
++  Object.defineProperty(HTMLSelectElement.prototype, 'value', {
++    get() {
++      const val = originalValueDesc.get.call(this);
++      if (val === '__other__' && this._customInput) {
++        return this._customInput.value;
++      }
++      return val;
++    },
++    set(newVal) {
++      ensureSelectEnhanced(this);
++      if (this.dataset.enhanced) {
++        let found = false;
++        for (let i = 0; i < this.options.length; i++) {
++          if (this.options[i].value === newVal && newVal !== '__other__') {
++            originalValueDesc.set.call(this, newVal);
++            found = true;
++            break;
++          }
++        }
++        if (!found && newVal) {
++          originalValueDesc.set.call(this, '__other__');
++          if (this._customInput) {
++            this._customInput.value = newVal;
++            this._customInput.style.display = 'block';
++          }
++        } else {
++          originalValueDesc.set.call(this, newVal);
++          if (this._customInput) {
++            this._customInput.value = '';
++            this._customInput.style.display = 'none';
++          }
++        }
++      } else {
++        originalValueDesc.set.call(this, newVal);
++      }
++    },
++    configurable: true,
++    enumerable: true
++  });
++
++  // Define selectedIndex property override
++  Object.defineProperty(HTMLSelectElement.prototype, 'selectedIndex', {
++    get() {
++      return originalSelectedIndexDesc.get.call(this);
++    },
++    set(newIdx) {
++      ensureSelectEnhanced(this);
++      originalSelectedIndexDesc.set.call(this, newIdx);
++      if (this.dataset.enhanced && this._customInput) {
++        const val = originalValueDesc.get.call(this);
++        if (val === '__other__') {
++          this._customInput.style.display = 'block';
++        } else {
++          this._customInput.value = '';
++          this._customInput.style.display = 'none';
++        }
++      }
++    },
++    configurable: true,
++    enumerable: true
++  });
++
++  // Observe DOM changes to automatically enhance newly added selects
++  const observer = new MutationObserver((mutations) => {
++    for (const mutation of mutations) {
++      if (mutation.addedNodes.length) {
++        mutation.addedNodes.forEach((node) => {
++          if (node.nodeType === Node.ELEMENT_NODE) {
++            if (node.tagName === 'SELECT') {
++              ensureSelectEnhanced(node);
++            } else {
++              node.querySelectorAll('select').forEach(ensureSelectEnhanced);
++            }
++          }
++        });
++      }
++    }
++  });
++
++  // Start observing on DOMContentLoaded
++  document.addEventListener('DOMContentLoaded', () => {
++    observer.observe(document.body, { childList: true, subtree: true });
++    document.querySelectorAll('select').forEach(ensureSelectEnhanced);
++  });
++})();
+ 
+ const App = (() => {
+-  // currentView: 'overview' | 'phase-hub' | 'phase-category' | 'interior-hub' | 'interior-category' | 'subcontractors' | 'tools'
+-  let currentView = 'overview';
+-  let currentPhase = 0; // 0 = dashboard, 1-9 = phase number
+-  let currentCategory = null; // category id when in 'phase-category' or 'interior-category'
+-  let sidebarOpen = true;
+-  let aiOpen = true;
++  let currentHub = 'dashboard';
++  let currentLedgerTab = 'labour';  // labour | vendor | inventory
++  let currentPhase = 0;
++  let currentCategory = null;
++  let currentView = 'overview';     // legacy alias used by other modules
++  let aiOpen = false;
+   let wizardStep = 1;
+   const wizardData = {};
+-  // Sidebar group collapse state (persisted per session)
+-  const collapsedGroups = new Set(); // 'construction' | 'interior' | 'tools'
++  let _navStack = [];
++  let _backSetup = false;
++  let _isNavigatingBack = false;
++
++  // ΓöÇΓöÇ Aura view-transition helpers (presentation only) ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
++  const PREFERS_REDUCED = typeof window !== 'undefined'
++    && window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
++
++  function runWithTransition(container, renderFn) {
++    if (!container || PREFERS_REDUCED) { renderFn(); return; }
++    container.classList.remove('view-fade-enter');
++    container.classList.add('view-fade-exit');
++    let done = false;
++    const finish = () => {
++      if (done) return; done = true;
++      container.removeEventListener('animationend', finish);
++      renderFn();
++      container.classList.remove('view-fade-exit');
++      void container.offsetWidth;
++      container.classList.add('view-fade-enter');
++      const clear = () => {
++        container.classList.remove('view-fade-enter');
++        container.removeEventListener('animationend', clear);
++      };
++      container.addEventListener('animationend', clear);
++    };
++    container.addEventListener('animationend', finish, { once: true });
++    setTimeout(finish, 260);
++  }
+ 
+-  // ΓöÇΓöÇ Boot ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
++  // ΓöÇΓöÇ Boot ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
+   function init() {
+     try {
+       const projects = State.getProjects();
+-      const currentProj = State.getCurrentProject();
+-
+-      if (currentProj) {
+-        showMainApp(currentProj);
+-      } else if (projects.length > 0) {
+-        showWelcomeWithProjects(projects);
+-      } else {
+-        showWelcome();
+-      }
++      const proj = State.getCurrentProject();
++      if (proj) showMainApp(proj);
++      else if (projects.length) showWelcomeWithProjects(projects);
++      else showWelcome();
+     } catch (err) {
+       console.error('[App] init failed:', err);
+-      // Fallback: show welcome screen so the user is never stuck
+-      try { showWelcome(); } catch (e2) { /* swallow */ }
++      try { showWelcome(); } catch {}
+     }
+-
+-    // Keyboard shortcuts
+-    document.addEventListener('keydown', (e) => {
+-      if (e.ctrlKey && e.key >= '1' && e.key <= '9') {
+-        e.preventDefault();
+-        const phase = parseInt(e.key);
+-        if (State.getCurrentProject()) showPhase(phase);
+-      }
+-      if (e.ctrlKey && e.key === 's') {
+-        e.preventDefault();
+-        toast(`Auto-saved ${Icons.render('check', 11)}`, 'success');
+-      }
+-    });
+   }
+ 
+   function showWelcome() {
+-    document.getElementById('welcome-screen').classList.remove('hidden');
+-    document.getElementById('main-app').classList.add('hidden');
+-    document.getElementById('project-wizard').classList.add('hidden');
++    document.getElementById('welcome-screen')?.classList.remove('hidden');
++    document.getElementById('main-app')?.classList.add('hidden');
++    document.getElementById('project-wizard')?.classList.add('hidden');
++    const list = document.getElementById('existing-projects-list');
++    if (list) list.innerHTML = '';
++
++    const signinArea = document.getElementById('signin-area');
++    if (signinArea) {
++      if (typeof SupabaseClient !== 'undefined' && SupabaseClient.isAuthenticated()) {
++        const email = SupabaseClient.getUser()?.email || '';
++        signinArea.innerHTML = `<span style="color:var(--text-muted)">Signed in as <strong style="color:var(--text)">${escapeHtml(email)}</strong></span>`;
++      } else {
++        signinArea.innerHTML = `<a href="/auth.html">Sign in to sync across devices ΓåÆ</a>`;
++      }
++    }
+   }
+ 
+   function showWelcomeWithProjects(projects) {
+     showWelcome();
+-    const listEl = document.getElementById('existing-projects-list');
+-    if (!listEl) return;
+-
+-    // Render safely ΓÇö wrap each project's stats in try/catch so a
+-    // single broken project doesn't blank the whole welcome page
++    const list = document.getElementById('existing-projects-list');
++    if (!list) return;
+     const rows = projects.map(p => {
+       try {
+         const total = Financial.computeProjectTotal(p) || 0;
+         const pct = p.totalBudget > 0 ? Math.round((total / p.totalBudget) * 100) : 0;
+-        const safeName = p.name.replace(/'/g, "\\'").replace(/"/g, '&quot;');
++        const escName = escapeHtml(p.name || '');
++        const escAddress = escapeHtml(p.address || 'No address');
++        const escClient = p.client ? ' ┬╖ ' + escapeHtml(p.client) : '';
++        const attrName = escapeAttr(p.name || '');
++        const isLocal = !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(p.id);
++        const syncBtnHtml = isLocal ? `<button class="existing-project-sync-btn" title="Sync to Cloud" onclick="App.syncProjectToCloud('${p.id}', event)">${Icons.render('cloudUpload', 14)}</button>` : '';
+         return `<div class="existing-project-row">
+           <button class="existing-project-btn" onclick="App.openProject('${p.id}')">
+-            <div style="min-width:0">
+-              <div style="font-weight:700;font-size:14px">${p.name}</div>
+-              <div style="font-size:11px;color:var(--text-muted);margin-top:2px">${p.address || 'No address'} ${p.client ? '┬╖ ' + p.client : ''}</div>
++            <div style="min-width:0;flex:1">
++              <div style="font-weight:700;font-size:15px;color:var(--text)">${escName}</div>
++              <div style="font-size:12px;color:var(--text-muted);margin-top:3px">${escAddress}${escClient}</div>
+             </div>
+             <div style="text-align:right;flex-shrink:0">
+-              <div style="font-family:var(--font-mono);color:var(--steel-light);font-weight:600">${Financial.fmtFull(total)}</div>
+-              ${p.totalBudget > 0 ? `<div style="font-size:10px;color:var(--text-muted);margin-top:2px">${pct}% of budget</div>` : ''}
++              <div style="font-family:var(--font-mono);color:var(--amber);font-weight:700;font-size:14px">${Financial.fmtFull(total)}</div>
++              ${p.totalBudget > 0 ? `<div style="font-size:11px;color:var(--text-muted);margin-top:2px">${pct}% of budget</div>` : ''}
+             </div>
+           </button>
+-          <button class="existing-project-delete-btn" title="Delete project" onclick="App.confirmDeleteProjectById('${p.id}', '${safeName}', event)">
+-            ≡ƒùæ
+-          </button>
++          ${syncBtnHtml}
++          <button class="existing-project-delete-btn" title="Delete" onclick="App.confirmDeleteProjectById('${p.id}', '${attrName}', event)">${Icons.render('trash', 14)}</button>
+         </div>`;
+-      } catch (e) {
+-        console.warn('[App] Skipping project in welcome list (render error):', e);
+-        return '';
+-      }
++      } catch { return ''; }
+     }).filter(Boolean).join('');
+-    listEl.innerHTML = `<div class="existing-projects-divider">or open existing project</div>${rows}`;
++    list.innerHTML = `<div class="existing-projects-divider">or open existing project</div>${rows}`;
+   }
+ 
+   function openProject(id) {
+@@ -95,40 +278,45 @@ const App = (() => {
+     if (proj) showMainApp(proj);
+   }
+ 
+-  // ΓöÇΓöÇ Project Wizard ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
++  function showProjectPicker() {
++    State.setCurrentProject(null);
++    const projects = State.getProjects();
++    document.getElementById('main-app')?.classList.add('hidden');
++    if (projects.length) showWelcomeWithProjects(projects);
++    else showWelcome();
++  }
++
++  // ΓöÇΓöÇ Wizard ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
+   function startNewProject() {
+     wizardStep = 1;
+-    document.getElementById('welcome-screen').classList.add('hidden');
+-    document.getElementById('project-wizard').classList.remove('hidden');
++    document.getElementById('welcome-screen')?.classList.add('hidden');
++    document.getElementById('project-wizard')?.classList.remove('hidden');
+     renderWizardStep();
+   }
+ 
+   function renderWizardStep() {
+     const body = document.getElementById('wizard-body');
+-    const backBtn = document.getElementById('wizard-back');
+-    const nextBtn = document.getElementById('wizard-next');
+-    const steps = document.querySelectorAll('.wizard-step');
+-
+-    steps.forEach((s, i) => s.classList.toggle('active', i + 1 === wizardStep));
+-    backBtn.style.display = wizardStep > 1 ? 'block' : 'none';
+-    nextBtn.textContent = wizardStep === 3 ? 'Create Project ΓåÆ' : 'Next ΓåÆ';
++    const back = document.getElementById('wizard-back');
++    const next = document.getElementById('wizard-next');
++    document.querySelectorAll('.m-wizard-stepdots .dot').forEach((d,i) => d.classList.toggle('active', i + 1 <= wizardStep));
++    if (back) back.style.display = wizardStep > 1 ? 'inline-flex' : 'none';
++    const skip = document.getElementById('wizard-skip');
++    if (skip) skip.style.display = wizardStep === 1 ? 'none' : 'inline-flex';
++    if (next) next.textContent = wizardStep === 3 ? 'Create  Γ£ô' : 'Next  ΓåÆ';
+ 
+     if (wizardStep === 1) {
+-      body.innerHTML = `
+-        <h3 style="font-size:15px;font-weight:700;margin-bottom:20px;color:var(--text-secondary)">Project Information</h3>
++      body.innerHTML = `<div class="wizard-card">
+         <div class="field-group">
+           <label class="field-label">Project Name *</label>
+-          <input class="field-input" id="w-name" placeholder="e.g. Sharma Residence ΓÇö Ground Floor" value="${wizardData.name||''}">
++          <input class="field-input" id="w-name" placeholder="e.g. Sharma Residence" value="${escapeAttr(wizardData.name||'')}">
+         </div>
+-        <div class="field-row cols-2">
+-          <div class="field-group">
+-            <label class="field-label">Client Name</label>
+-            <input class="field-input" id="w-client" placeholder="Mr. Sharma" value="${wizardData.client||''}">
+-          </div>
+-          <div class="field-group">
+-            <label class="field-label">Project Address</label>
+-            <input class="field-input" id="w-address" placeholder="Plot 14, Baner, Pune" value="${wizardData.address||''}">
+-          </div>
++        <div class="field-group">
++          <label class="field-label">Client Name</label>
++          <input class="field-input" id="w-client" placeholder="Mr. Sharma" value="${escapeAttr(wizardData.client||'')}">
++        </div>
++        <div class="field-group">
++          <label class="field-label">Project Address</label>
++          <input class="field-input" id="w-address" placeholder="Plot 14, Baner, Pune" value="${escapeAttr(wizardData.address||'')}">
+         </div>
+         <div class="field-group">
+           <label class="field-label">Project Type</label>
+@@ -138,66 +326,68 @@ const App = (() => {
+             <option value="renovation" ${wizardData.type==='renovation'?'selected':''}>Renovation / Remodel</option>
+             <option value="addition" ${wizardData.type==='addition'?'selected':''}>Addition</option>
+           </select>
+-        </div>`;
++        </div>
++      </div>`;
+     } else if (wizardStep === 2) {
+-      body.innerHTML = `
+-        <h3 style="font-size:15px;font-weight:700;margin-bottom:20px;color:var(--text-secondary)">Budget Setup</h3>
++      body.innerHTML = `<div class="wizard-card">
+         <div class="field-group">
+           <label class="field-label">Total Project Budget</label>
+           <div class="currency-input-wrap">
+             <span class="currency-symbol">Γé╣</span>
+-            <input class="field-input mono" type="number" id="w-budget" placeholder="0" value="${wizardData.totalBudget||''}" min="0">
++            <input class="field-input mono" type="number" id="w-budget" placeholder="0" value="${escapeAttr(wizardData.totalBudget||'')}" min="0" inputmode="numeric">
+           </div>
+-          <div style="font-size:10px;color:var(--text-muted);margin-top:6px">Used for budget health tracking. You can update it later.</div>
+         </div>
+         <div class="field-row cols-2">
+           <div class="field-group">
+             <label class="field-label">Currency</label>
+             <select class="field-select" id="w-currency">
+-              <option value="INR" ${wizardData.currency==='INR'?'selected':''}>Γé╣ Indian Rupee (INR)</option>
+-              <option value="USD" ${wizardData.currency==='USD'?'selected':''}>$ US Dollar (USD)</option>
++              <option value="INR" ${wizardData.currency==='INR'?'selected':''}>Γé╣ INR</option>
++              <option value="USD" ${wizardData.currency==='USD'?'selected':''}>$ USD</option>
+             </select>
+           </div>
+           <div class="field-group">
+             <label class="field-label">Contingency %</label>
+-            <input class="field-input mono" type="number" id="w-contingency" placeholder="10" value="${wizardData.contingency||10}" min="0" max="30">
++            <input class="field-input mono" type="number" id="w-contingency" placeholder="10" value="${escapeAttr(wizardData.contingency||10)}" min="0" max="30" inputmode="numeric">
+           </div>
+         </div>
+         <div class="field-group">
+-          <label class="field-label">Primary Contractor / Builder</label>
+-          <input class="field-input" id="w-contractor" placeholder="Your company name" value="${wizardData.contractor||''}">
+-        </div>`;
+-    } else if (wizardStep === 3) {
+-      body.innerHTML = `
+-        <h3 style="font-size:15px;font-weight:700;margin-bottom:20px;color:var(--text-secondary)">Timeline & Notes</h3>
++          <label class="field-label">Primary Contractor</label>
++          <input class="field-input" id="w-contractor" placeholder="Your company" value="${escapeAttr(wizardData.contractor||'')}">
++        </div>
++      </div>`;
++    } else {
++      body.innerHTML = `<div class="wizard-card">
+         <div class="field-row cols-2">
+           <div class="field-group">
+-            <label class="field-label">Project Start Date</label>
+-            <input class="field-input" type="date" id="w-start" value="${wizardData.startDate||''}">
++            <label class="field-label">Start Date</label>
++            <input class="field-input" type="date" id="w-start" value="${escapeAttr(wizardData.startDate||'')}">
+           </div>
+           <div class="field-group">
+             <label class="field-label">Target Completion</label>
+-            <input class="field-input" type="date" id="w-end" value="${wizardData.endDate||''}">
++            <input class="field-input" type="date" id="w-end" value="${escapeAttr(wizardData.endDate||'')}">
+           </div>
+         </div>
+         <div class="field-group">
+-          <label class="field-label">Project Notes / Scope Summary</label>
+-          <textarea class="field-textarea" id="w-notes" rows="3" placeholder="Brief description of scopeΓÇª" style="resize:vertical">${wizardData.notes||''}</textarea>
++          <label class="field-label">Scope Summary</label>
++          <textarea class="field-textarea" id="w-notes" rows="3" placeholder="Brief description of scopeΓÇª">${escapeHtml(wizardData.notes||'')}</textarea>
+         </div>
+-        <div style="background:var(--charcoal-mid);border:1px solid var(--charcoal-border);border-radius:var(--radius-lg);padding:16px;margin-top:12px">
+-          <div style="font-size:9px;color:var(--text-muted);text-transform:uppercase;letter-spacing:.1em;margin-bottom:8px;font-weight:700">Project Summary</div>
+-          <div style="font-weight:700;font-size:15px">${wizardData.name || 'ΓÇö'}</div>
+-          <div style="color:var(--text-secondary);font-size:12px;margin-top:4px">${wizardData.address || ''} ${wizardData.client ? '┬╖ ' + wizardData.client : ''}</div>
+-          <div style="font-family:var(--font-mono);color:var(--steel-light);font-size:18px;margin-top:10px;font-weight:700">Budget: ${Financial.fmtFull(wizardData.totalBudget || 0)}</div>
+-        </div>`;
++      </div>
++      <div class="wizard-summary">
++        <div class="m-hero-card">
++          <div class="m-hero-eyebrow">Summary</div>
++          <div style="font-weight:700;font-size:17px;margin-top:6px">${escapeHtml(wizardData.name || 'ΓÇö')}</div>
++          <div style="color:var(--text-muted);font-size:13px;margin-top:4px">${escapeHtml(wizardData.address || '')}${wizardData.client ? ' ┬╖ ' + escapeHtml(wizardData.client) : ''}</div>
++          <div class="m-hero-amount" style="font-size:24px;margin-top:14px">${Financial.fmtFull(wizardData.totalBudget || 0)}</div>
++          <div class="m-hero-sub">Total Budget</div>
++        </div>
++      </div>`;
+     }
+   }
+ 
+-  let _wizardCreating = false; // guard against double-tap
+-  async function wizardNext() {
++  function saveWizardStepData() {
+     if (wizardStep === 1) {
+       const name = document.getElementById('w-name')?.value?.trim();
+-      if (!name) { toast('Please enter a project name', 'warning'); return; }
++      if (!name) return false;
+       wizardData.name = name;
+       wizardData.client = document.getElementById('w-client')?.value;
+       wizardData.address = document.getElementById('w-address')?.value;
+@@ -211,878 +401,717 @@ const App = (() => {
+       wizardData.startDate = document.getElementById('w-start')?.value;
+       wizardData.endDate = document.getElementById('w-end')?.value;
+       wizardData.notes = document.getElementById('w-notes')?.value;
++    }
++    return true;
++  }
+ 
++  let _wizardCreating = false;
++  async function wizardNext() {
++    if (wizardStep === 3) {
++      saveWizardStepData();
+       if (_wizardCreating) return;
+       _wizardCreating = true;
+-      const nextBtn = document.getElementById('wizard-next');
+-      if (nextBtn) { nextBtn.disabled = true; nextBtn.textContent = 'CreatingΓÇª'; }
++      const btn = document.getElementById('wizard-next');
++      if (btn) { btn.disabled = true; btn.textContent = 'CreatingΓÇª'; }
+       try {
+         const proj = await State.createProject(wizardData);
+-        if (!proj) { toast('Could not create project ΓÇö try again', 'error'); return; }
+-        const phases = Array.isArray(proj.phases) ? proj.phases : [];
+-        console.log('[App] Created project:', proj.name, 'id:', proj.id, 'phases:', phases.length);
+-        document.getElementById('project-wizard').classList.add('hidden');
++        if (!proj) { toast('Could not create ΓÇö try again', 'error'); return; }
++        document.getElementById('project-wizard')?.classList.add('hidden');
+         showMainApp(proj);
+-      } catch (createErr) {
+-        console.error('[App] Project creation error:', createErr);
+-        toast('Could not create project ΓÇö try again', 'error');
+-      } finally {
+-        _wizardCreating = false;
+-        if (nextBtn) { nextBtn.disabled = false; nextBtn.textContent = 'Create Project ΓåÆ'; }
+-      }
++      } catch (e) { console.error(e); toast('Could not create ΓÇö try again', 'error'); }
++      finally { _wizardCreating = false; if (btn) { btn.disabled = false; btn.textContent = 'Create  Γ£ô'; } }
+       return;
+     }
+-
++    if (wizardStep === 1 && !document.getElementById('w-name')?.value?.trim()) {
++      return toast('Enter a project name', 'warning');
++    }
++    if (!saveWizardStepData()) return;
+     wizardStep++;
+     renderWizardStep();
+   }
+ 
++  function wizardSkip() {
++    if (wizardStep === 2) {
++      wizardStep++;
++      renderWizardStep();
++    } else if (wizardStep === 3) {
++      saveWizardStepData();
++      if (_wizardCreating) return;
++      _wizardCreating = true;
++      const btn = document.getElementById('wizard-next');
++      if (btn) { btn.disabled = true; btn.textContent = 'CreatingΓÇª'; }
++
++      State.createProject(wizardData).then(proj => {
++        if (!proj) { toast('Could not create ΓÇö try again', 'error'); return; }
++        document.getElementById('project-wizard')?.classList.add('hidden');
++        showMainApp(proj);
++      }).catch(e => {
++        console.error(e);
++        toast('Could not create ΓÇö try again', 'error');
++      }).finally(() => {
++        _wizardCreating = false;
++        if (btn) { btn.disabled = false; btn.textContent = 'Create  Γ£ô'; }
++      });
++    }
++  }
++
+   function wizardBack() {
+     if (wizardStep > 1) {
++      saveWizardStepData();
+       wizardStep--;
+       renderWizardStep();
+-    } else {
+-      document.getElementById('project-wizard').classList.add('hidden');
+-      showWelcome();
+     }
++    else { document.getElementById('project-wizard')?.classList.add('hidden'); showWelcome(); }
+   }
+ 
+-  // ΓöÇΓöÇ Main App ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
++  // ΓöÇΓöÇ Main app ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
+   function showMainApp(proj) {
+-    if (!proj) {
+-      console.warn('[App] showMainApp called with no project ΓÇö falling back to welcome');
+-      return showWelcome();
+-    }
+-    // Ensure the project is set as the current one in state.
+-    // setCurrentProject just updates the pointer; createProject
+-    // already pushed the project into store.projects. This is a
+-    // safety net in case the local proj reference is stale.
++    if (!proj) return showWelcome();
+     State.setCurrentProject(proj.id);
+-
+-    document.getElementById('welcome-screen').classList.add('hidden');
+-    document.getElementById('project-wizard').classList.add('hidden');
+-    document.getElementById('main-app').classList.remove('hidden');
+-
+-    document.getElementById('current-project-name').textContent = proj.name;
+-
++    document.getElementById('welcome-screen')?.classList.add('hidden');
++    document.getElementById('project-wizard')?.classList.add('hidden');
++    document.getElementById('main-app')?.classList.remove('hidden');
++    const nameEl = document.getElementById('current-project-name');
++    if (nameEl) {
++      const isLocal = !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(proj.id);
++      if (isLocal) {
++        nameEl.innerHTML = `${escapeHtml(proj.name)} <button class="m-appbar-sync-btn" onclick="App.syncProjectToCloud('${proj.id}')" title="Sync Project to Cloud" style="background:transparent; border:none; color:var(--amber); cursor:pointer; padding:0 4px; display:inline-flex; align-items:center; vertical-align:middle;">${Icons.render('cloudUpload', 16)}</button>`;
++      } else {
++        nameEl.textContent = proj.name;
++      }
++    }
+     if (proj.currency) Financial.currency = proj.currency;
+-
+-    // Use the project from State (which has the canonical id and
+-    // full data after a possible cloud sync) rather than the local
+-    // proj reference, so getCurrentProject() in Dashboard.render()
+-    // can find the same object.
+-    const canonical = State.getCurrentProject() || proj;
+-    renderSidebar(canonical);
+-    showOverview(); // Start with dashboard
+-    Financial.updateAllTotals();
+-
++    showHub('dashboard');
++    Financial.updateAllTotals?.();
++    updateSyncStatus();
+     setTimeout(() => {
+-      AI.addMessage('info', Phases.iconFor('checkCircle', 14), 'Welcome', `Project "${canonical.name}" loaded. ${Financial.fmtFull(Financial.computeProjectTotal(canonical))} tracked so far. Fill in each phase and I'll flag risks as you go.`, ['Got it']);
++      try {
++        const total = Financial.computeProjectTotal(State.getCurrentProject());
++        AI.addMessage('info', '', 'Welcome', `Project "${proj.name}" loaded. ${Financial.fmtFull(total)} tracked so far.`, []);
++      } catch {}
+     }, 600);
+   }
+ 
+-  function showDashboardHome() {
+-    State.setCurrentProject(null);
+-    const projects = State.getProjects();
+-    showWelcomeWithProjects(projects);
+-    document.getElementById('main-app').classList.add('hidden');
+-    document.getElementById('welcome-screen').classList.remove('hidden');
+-  }
+-
+-  // ΓöÇΓöÇ Overview / Dashboard ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
+-  function showOverview() {
+-    currentView = 'overview';
+-    currentPhase = 0;
+-    currentCategory = null;
++  // ΓöÇΓöÇ Hub router ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
++  function showHub(name) {
++    if (!_isNavigatingBack && name !== currentHub) {
++      _pushNav({ type: 'hub', name: currentHub, ledgerTab: currentLedgerTab });
++    }
++    currentHub = name;
++    // bottom-nav active state
++    document.querySelectorAll('.m-tab').forEach(t => t.classList.toggle('active', t.dataset.tab === name));
++    const fab = document.getElementById('fab-container');
++    if (fab) fab.innerHTML = '';
+     const content = document.getElementById('content-area');
+     if (!content) return;
++    content.scrollTop = 0;
+ 
+-    // Update sidebar active state
+-    document.querySelectorAll('.phase-btn').forEach(b => b.classList.remove('active'));
+-    const overBtn = document.getElementById('phase-btn-overview');
+-    if (overBtn) overBtn.classList.add('active');
++    runWithTransition(content, () => {
++      if (name === 'dashboard')    return renderDashboardHub(content);
++      if (name === 'construction') return renderConstructionHub(content);
++      if (name === 'interior')     return renderInteriorTab(content);
++      if (name === 'ledgers')      return renderLedgersHub(content);
++      if (name === 'more')         return renderMoreHub(content);
++    });
++  }
+ 
++  // ΓöÇΓöÇ DASHBOARD HUB ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
++  function renderDashboardHub(content) {
++    currentView = 'overview';
++    currentPhase = 0;
+     content.innerHTML = Dashboard.render();
+-    AI.setWatching('Project Dashboard');
+-    content.scrollTop = 0;
++    AI.setWatching?.('Project Dashboard');
++    mountFAB([
++      { icon: Icons.render('userCircle', 18), label: 'Log Labour Attendance', action: () => { showHub('ledgers'); setLedgerTab('labour'); } },
++      { icon: Icons.render('plus', 18), label: 'Add Expense (Vendor)', action: () => { showHub('ledgers'); setLedgerTab('vendor'); } },
++      { icon: Icons.render('blocks', 18), label: 'Stock In / Out', action: () => { showHub('ledgers'); setLedgerTab('inventory'); } },
++    ]);
+   }
+ 
+-  // ΓöÇΓöÇ Sidebar ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
+-  function renderSidebar(proj) {
+-    const nav = document.getElementById('phase-nav');
+-    if (!nav) return;
+-
+-    // Safety: ensure phases is an array (could be missing on a
+-    // partially-loaded project during the boot sequence)
+-    const phases = Array.isArray(proj?.phases) ? proj.phases : [];
+-    if (!phases.length) {
+-      // Show a friendly message. The most common cause is the
+-      // user being on the dashboard ΓÇö they need to open a project
+-      // for the sidebar to populate.
+-      const onDashboard = currentView === 'overview';
+-      nav.innerHTML = `<div style="padding:24px 16px;color:var(--text-muted);font-size:12px;text-align:center;line-height:1.6">
+-        <div style="margin-bottom:8px;color:var(--text-muted);opacity:0.7">${Phases.iconFor('dashboard', 28)}</div>
+-        ${onDashboard
+-          ? 'No project open. Click an existing project above, or create a new one.'
+-          : 'Loading phasesΓÇª'}
+-      </div>`;
+-      return;
+-    }
+-    const constructionCollapsed = collapsedGroups.has('construction');
+-    const interiorCollapsed = collapsedGroups.has('interior');
+-    const toolsCollapsed = collapsedGroups.has('tools');
+-
+-    // Helper: a collapsible group header. `key` is the state key,
+-    // `icon` and `label` for display, `extra` for inline mini-info
+-    function groupHeader(key, icon, label, collapsed) {
+-      return `
+-        <div class="sidebar-group-header ${collapsed ? 'is-collapsed' : ''}" onclick="App.toggleSidebarGroup('${key}')" id="group-header-${key}">
+-          <span class="sidebar-group-toggle">${Phases.iconFor('chevronDown', 10)}</span>
+-          <span class="sidebar-group-icon">${Phases.iconFor(icon, 13)}</span>
+-          <span>${label}</span>
+-          <span class="sidebar-group-divider"></span>
+-        </div>`;
+-    }
+-
+-    // ΓöÇΓöÇ Dashboard: single block, no group header ΓöÇΓöÇ
+-    let html = `
+-      <button class="phase-btn ${currentView === 'overview' ? 'active' : ''}" onclick="App.showOverview()" id="phase-btn-overview">
+-        <span class="phase-btn-icon">${Phases.iconFor('dashboard', 15)}</span>
+-        <div class="phase-btn-content">
+-          <span class="phase-btn-label">Dashboard</span>
+-          <div class="phase-chip"><span class="phase-pct">Overview</span></div>
++  // ΓöÇΓöÇ CONSTRUCTION HUB (phases 1-9) ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
++  function renderConstructionHub(content) {
++    const proj = State.getCurrentProject();
++    if (!proj) { content.innerHTML = emptyState('No project open', 'Open or create a project from Dashboard.'); return; }
++    const phases = Array.isArray(proj.phases) ? proj.phases : [];
++    const construction = phases.filter(p => p.id >= 1 && p.id <= 9);
++    const totalProject = Financial.computeProjectTotal(proj);
++
++    const phaseCard = (ph) => {
++      const cost = Financial.computePhaseTotal(ph);
++      const comp = ph.completion || 0;
++      return `<button class="m-phase-card" onclick="App.showPhaseHub(${ph.id})">
++        <span class="m-phase-card-icon">${Icons.render(ph.icon, 22)}</span>
++        <div class="m-phase-card-body">
++          <div class="m-phase-card-name">${ph.name}</div>
++          <div class="m-phase-card-meta">
++            <span>${comp}% complete</span>
++            <span>┬╖</span>
++            <span class="m-phase-card-cost">${Financial.fmt(cost)}</span>
++          </div>
++          <div class="m-phase-card-progress"><i style="width:${comp}%"></i></div>
+         </div>
++        <span class="m-phase-card-chev">ΓÇ║</span>
+       </button>`;
++    };
+ 
+-    // ΓöÇΓöÇ Group 2: Construction (Phases 1-9 ΓÇö 9 trades) ΓÇö collapsible ΓöÇΓöÇ
+-    html += groupHeader('construction', 'building', 'Construction', constructionCollapsed);
+-    if (!constructionCollapsed) {
+-      // Construction is phases 1-9 (the 9 trade phases). Interior is #10.
+-      const constructionPhases = phases.filter(p => p.id >= 1 && p.id <= 9);
+-      html += constructionPhases.map(ph => {
+-        const phTotal = Financial.computePhaseTotal(ph);
+-        const isActive = currentPhase === ph.id && (currentView === 'phase-hub' || currentView === 'phase-category');
+-        return `
+-          <button class="phase-btn ${isActive ? 'active' : ''}" onclick="App.showPhaseHub(${ph.id})" id="phase-btn-${ph.id}">
+-            <span class="phase-btn-icon">${Phases.iconFor(ph.icon, 15)}</span>
+-            <div class="phase-btn-content">
+-              <span class="phase-btn-label">${ph.name}</span>
+-              <div class="phase-chip">
+-                <span class="phase-pct" id="phase-pct-${ph.id}">${ph.completion}%</span>
+-                <span class="phase-cost" id="phase-cost-${ph.id}">${Financial.fmt(phTotal)}</span>
+-              </div>
+-              <div class="phase-progress-mini">
+-                <div class="phase-progress-mini-fill" id="phase-prog-${ph.id}" style="width:${ph.completion}%"></div>
+-              </div>
+-            </div>
+-          </button>`;
+-      }).join('');
+-    }
+-
+-    // ΓöÇΓöÇ Group 3: Interior ΓÇö collapsible ΓöÇΓöÇ
+-    const interiorPhase = phases.find(p => p.id === 10);
+-    if (interiorPhase) {
+-      html += groupHeader('interior', 'sofa', 'Interior', interiorCollapsed);
+-      if (!interiorCollapsed) {
+-      const intTotal = Financial.computePhaseTotal(interiorPhase);
+-      const intActive = currentView === 'interior-hub' || currentView === 'interior-category' || currentView === 'colour-lab';
+-      html += `
+-        <button class="phase-btn ${intActive ? 'active' : ''}" onclick="App.showInteriorHub()" id="phase-btn-interior">
+-            <span class="phase-btn-icon">${Phases.iconFor('sofa', 15)}</span>
+-            <div class="phase-btn-content">
+-              <span class="phase-btn-label">Interior Finish</span>
+-              <div class="phase-chip">
+-                <span class="phase-pct" id="phase-pct-10">${interiorPhase.completion}%</span>
+-                <span class="phase-cost" id="phase-cost-10">${Financial.fmt(intTotal)}</span>
+-              </div>
+-              <div class="phase-progress-mini">
+-                <div class="phase-progress-mini-fill" id="phase-prog-10" style="width:${interiorPhase.completion}%"></div>
++    content.innerHTML = `
++      <div class="phase-workspace active">
++        <div class="m-hero-card">
++          <div class="m-hero-eyebrow">Construction Trades</div>
++          <div class="m-hero-amount">${Financial.fmtFull(totalProject)}</div>
++          <div class="m-hero-sub">${construction.length} phases ┬╖ all trades</div>
++        </div>
++        <div class="m-section-title">All Trades <span class="count">${construction.length}</span></div>
++        <div class="m-phase-grid">
++          ${construction.map(phaseCard).join('')}
++          <button class="m-phase-card" onclick="App.showConstructionBills()" style="border:1.5px solid var(--amber-glow); background:var(--charcoal-mid)">
++            <span class="m-phase-card-icon" style="color:var(--amber)">${Icons.render('fileText', 22)}</span>
++            <div class="m-phase-card-body">
++              <div class="m-phase-card-name" style="color:var(--amber)">All Bills (Construction)</div>
++              <div class="m-phase-card-meta">
++                <span>View and scan all construction receipts</span>
+               </div>
+             </div>
+-          </button>`;
+-      }
+-    }
+-
+-    // ΓöÇΓöÇ Group 4: Tools ΓÇö collapsible ΓöÇΓöÇ
+-    html += groupHeader('tools', 'tools', 'Tools', toolsCollapsed);
+-    if (!toolsCollapsed) {
+-      html += `
+-        <button class="phase-btn ${currentView === 'subcontractors' ? 'active' : ''}" onclick="App.showSubLedger()" id="phase-btn-sub">
+-          <span class="phase-btn-icon">${Phases.iconFor('userCircle', 15)}</span>
+-          <div class="phase-btn-content">
+-            <span class="phase-btn-label">Subcontractors</span>
+-            <div class="phase-chip"><span class="phase-pct">Ledger</span></div>
+-          </div>
+-        </button>
+-        <button class="phase-btn ${currentView === 'labour-hub' ? 'active' : ''}" onclick="App.showLabourHub()" id="phase-btn-labour">
+-          <span class="phase-btn-icon">≡ƒæ╖</span>
+-          <div class="phase-btn-content">
+-            <span class="phase-btn-label">Labour (Hajiri)</span>
+-            <div class="phase-chip"><span class="phase-pct">Attendance</span></div>
+-          </div>
+-        </button>
+-        <button class="phase-btn ${currentView === 'vendor-hub' ? 'active' : ''}" onclick="App.showVendorHub()" id="phase-btn-vendor">
+-          <span class="phase-btn-icon">≡ƒÅ¬</span>
+-          <div class="phase-btn-content">
+-            <span class="phase-btn-label">Vendor Khata</span>
+-            <div class="phase-chip"><span class="phase-pct">Udhaar</span></div>
+-          </div>
+-        </button>
+-        <button class="phase-btn ${currentView === 'inventory-hub' ? 'active' : ''}" onclick="App.showInventoryHub()" id="phase-btn-inventory">
+-          <span class="phase-btn-icon">≡ƒôª</span>
+-          <div class="phase-btn-content">
+-            <span class="phase-btn-label">Site Stock</span>
+-            <div class="phase-chip"><span class="phase-pct">Inventory</span></div>
+-          </div>
+-        </button>
+-        <button class="phase-btn ${currentView === 'ra-bills' ? 'active' : ''}" onclick="App.showRaBillsHub()" id="phase-btn-ra">
+-          <span class="phase-btn-icon">≡ƒº╛</span>
+-          <div class="phase-btn-content">
+-            <span class="phase-btn-label">RA Bills</span>
+-            <div class="phase-chip"><span class="phase-pct">Invoices</span></div>
+-          </div>
+-        </button>
+-        <button class="phase-btn ${currentView === 'tools' ? 'active' : ''}" onclick="App.showTools()" id="phase-btn-tools">
+-          <span class="phase-btn-icon">${Phases.iconFor('wrench', 15)}</span>
+-          <div class="phase-btn-content">
+-            <span class="phase-btn-label">Project Tools</span>
+-            <div class="phase-chip"><span class="phase-pct">Export ┬╖ AI</span></div>
+-          </div>
+-        </button>
+-        <button class="phase-btn ${currentView === 'flat-sales' ? 'active' : ''}" onclick="App.showFlatSales()" id="phase-btn-flatsales">
+-          <span class="phase-btn-icon">≡ƒÅá</span>
+-          <div class="phase-btn-content">
+-            <span class="phase-btn-label">Flat Sales</span>
+-            <div class="phase-chip"><span class="phase-pct">Buyers</span></div>
+-          </div>
+-        </button>`;
+-    }
+-
+-    nav.innerHTML = html;
++            <span class="m-phase-card-chev" style="color:var(--amber)">ΓÇ║</span>
++          </button>
++        </div>
++      </div>`;
++    AI.setWatching?.('Construction Trades');
+   }
+ 
+-  // Toggle a sidebar group's collapsed state and re-render
+-  function toggleSidebarGroup(key) {
+-    if (collapsedGroups.has(key)) collapsedGroups.delete(key);
+-    else collapsedGroups.add(key);
++  // ΓöÇΓöÇ INTERIOR TAB (phase 10 directly) ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
++  function renderInteriorTab(content) {
+     const proj = State.getCurrentProject();
+-    if (proj) renderSidebar(proj);
+-  }
+-
+-  // ΓöÇΓöÇ Phase Rendering ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
+-  // New flow: clicking a phase button shows the CATEGORY HUB
+-  // (a grid of cards). Clicking a card shows the detail form
+-  // for that category, with a back-to-hub button + breadcrumb.
+-  function showPhase(phaseId) {
+-    // Keyboard shortcuts (Ctrl+1..9) land here ΓÇö route to hub
+-    showPhaseHub(phaseId);
++    if (!proj) { content.innerHTML = emptyState('No project open', 'Open or create a project from Dashboard.'); return; }
++    const phase = proj.phases.find(p => p.id === 10);
++    if (!phase) {
++      content.innerHTML = `<div class="phase-workspace active"><div class="m-empty"><div class="m-empty-icon">${Icons.render('sofa', 40)}</div><div class="m-empty-title">No Interior Phase</div><div class="m-empty-desc">Add an interior finish phase to your project to get started.</div></div></div>`;
++      return;
++    }
++    content.innerHTML = `<div class="phase-workspace active">${Phases.renderPhaseHub(phase)}</div>`;
++    content.scrollTop = 0;
++    currentView = 'interior-hub';
++    currentPhase = 10;
++    AI.setWatching?.('Interior Finish ┬╖ Hub');
+   }
+ 
++  // Drill into a phase ΓÇö delegate to existing Phases module
+   function showPhaseHub(phaseId) {
+-    currentView = phaseId === 10 ? 'interior-hub' : 'phase-hub';
++    const isInterior = phaseId === 10;
++    if (!_isNavigatingBack) {
++      _pushNav({ type: 'hub', name: currentHub, ledgerTab: currentLedgerTab });
++    }
++    currentHub = isInterior ? 'interior' : 'construction';
+     currentPhase = phaseId;
+     currentCategory = null;
+-    const proj = State.getCurrentProject();
+-    if (!proj) return;
+-    const phase = proj.phases.find(p => p.id === phaseId);
+-    if (!phase) return;
+-
+-    // Update sidebar active state without full re-render
+-    document.querySelectorAll('.phase-btn').forEach(b => b.classList.remove('active'));
+-    const activeBtn = document.getElementById(`phase-btn-${phaseId}`) || document.getElementById('phase-btn-interior');
+-    if (activeBtn) activeBtn.classList.add('active');
+-
+-    const content = document.getElementById('content-area');
+-    if (!content) return;
+-
+-    content.innerHTML = Phases.renderPhaseHub(phase);
++    currentView = isInterior ? 'interior-hub' : 'phase-hub';
++    document.querySelectorAll('.m-tab').forEach(t => t.classList.toggle('active', t.dataset.tab === currentHub));
++    const proj = State.getCurrentProject(); if (!proj) return;
++    const phase = proj.phases.find(p => p.id === phaseId); if (!phase) return;
++    const content = document.getElementById('content-area'); if (!content) return;
++    document.getElementById('fab-container').innerHTML = '';
++    const backHub = isInterior ? 'interior' : 'construction';
++    const backLabel = isInterior ? 'Interior' : 'All Trades';
++    content.innerHTML = `
++      <button class="back-to-hub" onclick="App.showHub('${backHub}')">ΓåÉ ${backLabel}</button>
++      ${Phases.renderPhaseHub(phase)}`;
+     content.scrollTop = 0;
+-
+-    AI.setWatching(`Phase ${phaseId} ┬╖ ${phase.name} ┬╖ Hub`);
++    AI.setWatching?.(`Phase ${phaseId} ┬╖ ${phase.name} ┬╖ Hub`);
+   }
+ 
+-  // Interior gets its own dedicated entry point (no "Phase 9" numbering)
+-  function showInteriorHub() {
+-    showPhaseHub(10);
+-  }
++  function showInteriorHub() { showHub('interior'); }
+ 
+-  // Show the AI Bill Scanner ledger for a given phase
+-  function showPhaseBills(phaseId) {
+-    currentView = 'phase-bills';
+-    currentPhase = phaseId;
+-    currentCategory = 'bills';
+-    
+-    // Update sidebar active state
+-    document.querySelectorAll('.phase-btn').forEach(b => b.classList.remove('active'));
+-    const activeBtn = document.getElementById(`phase-btn-${phaseId}`) || document.getElementById('phase-btn-interior');
+-    if (activeBtn) activeBtn.classList.add('active');
++  function showPhaseCategory(phaseId, categoryId) {
++    if (!_isNavigatingBack) {
++      _pushNav({ type: 'phase-hub', phaseId: currentPhase });
++    }
++    currentHub = phaseId === 10 ? 'interior' : 'construction'; currentPhase = phaseId; currentCategory = categoryId;
++    currentView = phaseId === 10 ? 'interior-category' : 'phase-category';
++    const proj = State.getCurrentProject(); if (!proj) return;
++    const phase = proj.phases.find(p => p.id === phaseId); if (!phase) return;
++    const category = (Phases.CATEGORY_REGISTRY[phaseId] || []).find(c => c.id === categoryId);
++    if (!category) return showPhaseHub(phaseId);
++    const content = document.getElementById('content-area'); if (!content) return;
+ 
+-    const content = document.getElementById('content-area');
+-    if (!content) return;
++    let html = '';
++    switch (phaseId) {
++      case 1: html = Phases.renderTradePhase1(phase); break;
++      case 2: html = Phases.renderTradePhase2(phase); break;
++      case 3: html = Phases.renderTradePhase3(phase); break;
++      case 4: html = Phases.renderTradePhase4(phase); break;
++      case 5: html = Phases.renderTradePhase5(phase); break;
++      case 6: html = Phases.renderTradePhase6(phase); break;
++      case 7: html = Phases.renderTradePhase7(phase); break;
++      case 8: html = Phases.renderTradePhase8(phase); break;
++      case 9: html = Phases.renderTradePhase9(phase); break;
++      case 10: html = Phases.renderPhase9 ? Phases.renderPhase9(phase) : Phases.renderPhaseHub(phase); break;
++    }
++    const header = Phases.phaseHeader(phase);
++    const body = (category.sectionIds && category.sectionIds.length)
++      ? Phases.filterPhaseHtmlBySections(html, category.sectionIds)
++      : Phases.renderCategoryMetaCard(category);
+ 
+-    // Use the new BillScanner module to render the UI
+-    content.innerHTML = BillScanner.renderBillsHub(phaseId);
++    const backHub = phaseId === 10 ? 'interior' : 'construction';
++    const backLabel = phaseId === 10 ? 'Interior' : phase.name;
++    content.innerHTML = `
++      <div class="phase-workspace active" id="pw-${phaseId}">
++        <button class="back-to-hub" onclick="App.showHub('${backHub}')">ΓåÉ Back to ${backLabel}</button>
++        ${body}
++        ${header}
++      </div>`;
++    restorePhaseInputs(phase);
++    attachAllListeners(phase);
++    Financial.updateAllTotals?.();
++    AI.setWatching?.(`Phase ${phaseId} ┬╖ ${category.name}`);
++    AI.checkTriggers?.();
+     content.scrollTop = 0;
++  }
+ 
+-    AI.setWatching(`Phase ${phaseId} ┬╖ Bills Scanner`);
++  function showInputCard(phaseId, cardId) {
++    if (!_isNavigatingBack) {
++      _pushNav({ type: 'category', phaseId: currentPhase, categoryId: currentCategory });
++    }
++    currentHub = phaseId === 10 ? 'interior' : 'construction'; currentPhase = phaseId; currentCategory = cardId;
++    currentView = phaseId === 10 ? 'interior-category' : 'phase-category';
++    const proj = State.getCurrentProject(); if (!proj) return;
++    const phase = proj.phases.find(p => p.id === phaseId); if (!phase) return;
++    const card = Phases.getInputCard ? Phases.getInputCard(phaseId, cardId) : null;
++    if (!card) return showPhaseHub(phaseId);
++    const content = document.getElementById('content-area'); if (!content) return;
++    const backHub = phaseId === 10 ? 'interior' : 'construction';
++    const backLabel = phaseId === 10 ? 'Interior' : phase.name;
++    content.innerHTML = `
++      <div class="phase-workspace active" id="pw-${phaseId}">
++        <button class="back-to-hub" onclick="App.showHub('${backHub}')">ΓåÉ Back to ${backLabel}</button>
++        ${Phases.renderSingleInputCard(phase, card)}
++      </div>`;
++    content.scrollTop = 0;
++    AI.setWatching?.(`Phase ${phaseId} ┬╖ ${card.name}`);
++    Financial.updateAllTotals?.();
+   }
+ 
+-  // ΓöÇΓöÇ BUG 3 FIX: New entry-model routing functions ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
+   function showMaterialCards(phaseId) {
+     phaseId = parseInt(phaseId);
++    if (!_isNavigatingBack) {
++      _pushNav({ type: 'phase-hub', phaseId: currentPhase });
++    }
++    currentHub = 'construction'; currentPhase = phaseId; currentCategory = 'material';
+     currentView = 'material-cards';
+-    currentPhase = phaseId;
+-    currentCategory = 'material';
+-    const proj = State.getCurrentProject();
+-    if (!proj) return;
+-    renderSidebar(proj);
+-    const content = document.getElementById('content-area');
+-    if (!content) return;
+-    if (typeof Phases !== 'undefined' && Phases.renderCardListView) {
+-      // renderCardListView returns a .category-hub div ΓÇö wrap in phase-workspace
+-      content.innerHTML = `<div class="phase-workspace active">${Phases.renderCardListView(phaseId, false)}</div>`;
++    const content = document.getElementById('content-area'); if (!content) return;
++    const back = `App.showPhaseHub(${phaseId})`;
++    if (Phases?.renderCardListView) {
++      content.innerHTML = `<div class="phase-workspace active">
++        <button class="back-to-hub" onclick="${back}">ΓåÉ Back</button>
++        ${Phases.renderCardListView(phaseId, false)}</div>`;
+     } else {
+-      console.warn('[App] Phases.renderCardListView unavailable ΓÇö Phases:', typeof Phases, 'renderCardListView:', typeof Phases?.renderCardListView, 'window.__phasesCoreReady:', window.__phasesCoreReady);
+-      content.innerHTML = '<div style="padding:24px;color:var(--text-muted)">Material module loadingΓÇª</div>';
++      content.innerHTML = `<div class="phase-workspace active">
++        <button class="back-to-hub" onclick="${back}">ΓåÉ Back</button>
++        <div class="m-empty"><div class="m-empty-title">Module not loaded</div><div class="m-empty-desc">Try refreshing the page.</div></div></div>`;
+     }
+     content.scrollTop = 0;
+-    document.querySelectorAll('.phase-btn').forEach(b => b.classList.remove('active'));
+-    const btn = document.getElementById(`phase-btn-${phaseId}`);
+-    if (btn) btn.classList.add('active');
+-    AI.setWatching(`Phase ${phaseId} ┬╖ Material Costs`);
+   }
+-
+   function showLaborCards(phaseId) {
+     phaseId = parseInt(phaseId);
++
++    // If there is only one labor category for this phase, skip the list view and go directly to the entry form.
++    if (typeof Phases !== 'undefined' && typeof Phases.getLaborCardsForPhase === 'function') {
++      const laborCards = Phases.getLaborCardsForPhase(phaseId);
++      if (laborCards && laborCards.length === 1) {
++        if (!_isNavigatingBack) {
++          _pushNav({ type: 'phase-hub', phaseId: currentPhase });
++        }
++        const savedIsNavBack = _isNavigatingBack;
++        _isNavigatingBack = true;
++        showEntryForm(phaseId, laborCards[0].id);
++        _isNavigatingBack = savedIsNavBack;
++        return;
++      }
++    }
++
++    if (!_isNavigatingBack) {
++      _pushNav({ type: 'phase-hub', phaseId: currentPhase });
++    }
++    currentHub = 'construction'; currentPhase = phaseId; currentCategory = 'labor';
+     currentView = 'labor-cards';
+-    currentPhase = phaseId;
+-    currentCategory = 'labor';
+-    const proj = State.getCurrentProject();
+-    if (!proj) return;
+-    renderSidebar(proj);
+-    const content = document.getElementById('content-area');
+-    if (!content) return;
+-    if (typeof Phases !== 'undefined' && Phases.renderCardListView) {
+-      // renderCardListView returns a .category-hub div ΓÇö wrap in phase-workspace
+-      content.innerHTML = `<div class="phase-workspace active">${Phases.renderCardListView(phaseId, true)}</div>`;
++    const content = document.getElementById('content-area'); if (!content) return;
++    const back = `App.showPhaseHub(${phaseId})`;
++    if (Phases?.renderCardListView) {
++      content.innerHTML = `<div class="phase-workspace active">
++        <button class="back-to-hub" onclick="${back}">ΓåÉ Back</button>
++        ${Phases.renderCardListView(phaseId, true)}</div>`;
+     } else {
+-      console.warn('[App] Phases.renderCardListView (labor) unavailable ΓÇö Phases:', typeof Phases, 'renderCardListView:', typeof Phases?.renderCardListView, 'window.__phasesCoreReady:', window.__phasesCoreReady);
+-      content.innerHTML = '<div style="padding:24px;color:var(--text-muted)">Labour module loadingΓÇª</div>';
++      content.innerHTML = `<div class="phase-workspace active">
++        <button class="back-to-hub" onclick="${back}">ΓåÉ Back</button>
++        <div class="m-empty"><div class="m-empty-title">Module not loaded</div><div class="m-empty-desc">Try refreshing the page.</div></div></div>`;
+     }
+     content.scrollTop = 0;
+-    document.querySelectorAll('.phase-btn').forEach(b => b.classList.remove('active'));
+-    const btn = document.getElementById(`phase-btn-${phaseId}`);
+-    if (btn) btn.classList.add('active');
+-    AI.setWatching(`Phase ${phaseId} ┬╖ Labor Costing`);
+   }
+-
+   function showEntryForm(phaseId, cardId) {
+     phaseId = parseInt(phaseId);
++    if (!_isNavigatingBack) {
++      _pushNav({ type: 'category', phaseId: currentPhase, categoryId: currentCategory });
++    }
++    currentHub = 'construction'; currentPhase = phaseId; currentCategory = cardId;
+     currentView = 'entry-form';
+-    currentPhase = phaseId;
+-    currentCategory = cardId;
+-    const proj = State.getCurrentProject();
+-    if (!proj) return;
+-    renderSidebar(proj);
+-    const content = document.getElementById('content-area');
+-    if (!content) return;
+-    if (typeof Phases !== 'undefined' && Phases.renderEntryForm) {
+-      content.innerHTML = `<div class="phase-workspace active">${Phases.renderEntryForm(phaseId, cardId)}</div>`;
++    const content = document.getElementById('content-area'); if (!content) return;
++    const back = `App.showPhaseHub(${phaseId})`;
++    if (Phases?.renderEntryForm) {
++      content.innerHTML = `<div class="phase-workspace active">
++        <button class="back-to-hub" onclick="${back}">ΓåÉ Back</button>
++        ${Phases.renderEntryForm(phaseId, cardId)}</div>`;
+     } else {
+-      console.warn('[App] Phases.renderEntryForm unavailable ΓÇö Phases:', typeof Phases, 'renderEntryForm:', typeof Phases?.renderEntryForm, 'window.__phasesCoreReady:', window.__phasesCoreReady);
+-      content.innerHTML = '<div style="padding:24px;color:var(--text-muted)">Entry form loadingΓÇª</div>';
++      content.innerHTML = `<div class="phase-workspace active">
++        <button class="back-to-hub" onclick="${back}">ΓåÉ Back</button>
++        <div class="m-empty"><div class="m-empty-title">Module not loaded</div><div class="m-empty-desc">Try refreshing the page.</div></div></div>`;
+     }
+     content.scrollTop = 0;
+-    document.querySelectorAll('.phase-btn').forEach(b => b.classList.remove('active'));
+-    const btn = document.getElementById(`phase-btn-${phaseId}`);
+-    if (btn) btn.classList.add('active');
++  }
++  function showPhaseBills(phaseId) {
++    if (!_isNavigatingBack) {
++      _pushNav({ type: 'phase-hub', phaseId: currentPhase });
++    }
++    currentHub = 'construction'; currentPhase = phaseId; currentCategory = 'bills';
++    currentView = 'phase-bills';
++    const content = document.getElementById('content-area'); if (!content) return;
++    const back = `App.showPhaseHub(${phaseId})`;
++    if (typeof BillScanner !== 'undefined' && BillScanner.renderBillsHub) {
++      content.innerHTML = `<div class="phase-workspace active">
++        <button class="back-to-hub" onclick="${back}">ΓåÉ Back</button>
++        ${BillScanner.renderBillsHub(phaseId)}</div>`;
++    } else {
++      content.innerHTML = `<div class="phase-workspace active">
++        <button class="back-to-hub" onclick="${back}">ΓåÉ Back</button>
++        <div class="m-empty"><div class="m-empty-title">Bills module not loaded</div><div class="m-empty-desc">Try refreshing the page.</div></div></div>`;
++    }
++    content.scrollTop = 0;
++    AI.setWatching?.(`Phase ${phaseId} ┬╖ Bills`);
+   }
+ 
+-  // Open a single category's detail form
+-  function showPhaseCategory(phaseId, categoryId) {
+-    currentView = phaseId === 10 ? 'interior-category' : 'phase-category';
+-    currentPhase = phaseId;
+-    currentCategory = categoryId;
+-    const proj = State.getCurrentProject();
+-    if (!proj) return;
+-    const phase = proj.phases.find(p => p.id === phaseId);
+-    if (!phase) return;
+-
+-    const category = (Phases.CATEGORY_REGISTRY[phaseId] || []).find(c => c.id === categoryId);
+-    if (!category) return showPhaseHub(phaseId);
++  function showConstructionBills() {
++    if (!_isNavigatingBack) {
++      _pushNav({ type: 'hub', name: 'construction' });
++    }
++    currentHub = 'construction'; currentPhase = 'construction'; currentCategory = 'bills';
++    currentView = 'construction-bills';
++    const content = document.getElementById('content-area'); if (!content) return;
++    const back = `App.showHub('construction')`;
++    if (typeof BillScanner !== 'undefined' && BillScanner.renderBillsHub) {
++      content.innerHTML = `<div class="phase-workspace active">
++        <button class="back-to-hub" onclick="${back}">ΓåÉ Back</button>
++        ${BillScanner.renderBillsHub('construction')}</div>`;
++    } else {
++      content.innerHTML = `<div class="phase-workspace active">
++        <button class="back-to-hub" onclick="${back}">ΓåÉ Back</button>
++        <div class="m-empty"><div class="m-empty-title">Bills module not loaded</div><div class="m-empty-desc">Try refreshing the page.</div></div></div>`;
++    }
++    content.scrollTop = 0;
++    AI.setWatching?.(`Construction ┬╖ Bills`);
++  }
+ 
+-    // Update sidebar active state
+-    document.querySelectorAll('.phase-btn').forEach(b => b.classList.remove('active'));
+-    const activeBtn = document.getElementById(`phase-btn-${phaseId}`);
+-    if (activeBtn) activeBtn.classList.add('active');
++  // ΓöÇΓöÇ LEDGERS HUB ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
++  function renderLedgersHub(content) {
++    const proj = State.getCurrentProject();
++    if (!proj) { content.innerHTML = emptyState('No project open', 'Open a project first.'); return; }
++    const tabs = ['labour','vendor','inventory'];
++    const labels = { labour: 'Worker Attendance', vendor: 'Vendor ┬╖ Khata', inventory: 'Site Stock' };
++    content.innerHTML = `
++      <div class="phase-workspace active">
++        <div class="phase-header">
++          <div class="phase-title">${Icons.render('listChecks', 22)} Site Ledgers</div>
++          <div class="phase-subtitle">Daily attendance, vendor credits, and on-site stock</div>
++        </div>
++        <div class="m-tabbar" role="tablist">
++          ${tabs.map(t => `<button class="${currentLedgerTab===t?'active':''}" onclick="App.setLedgerTab('${t}')">${labels[t]}</button>`).join('')}
++        </div>
++        <div id="ledger-tab-content"></div>
++      </div>`;
++    renderLedgerTabContent();
++    AI.setWatching?.('Site Ledgers');
++  }
+ 
+-    const content = document.getElementById('content-area');
+-    if (!content) return;
++  function setLedgerTab(tab) {
++    currentLedgerTab = tab;
++    document.querySelectorAll('.m-tabbar button').forEach(b => b.classList.remove('active'));
++    const btns = document.querySelectorAll('.m-tabbar button');
++    const order = ['labour','vendor','inventory'];
++    const idx = order.indexOf(tab);
++    if (idx >= 0 && btns[idx]) btns[idx].classList.add('active');
++    renderLedgerTabContent();
++  }
+ 
+-    // Render ONLY this category's section cards. We call the full
+-    // renderTradePhaseN() (or renderPhase9 for Interior) to get
+-    // the standard HTML, then strip out every section card except
+-    // the ones this category owns.
+-    let fullPhaseHtml = '';
+-    switch (phaseId) {
+-      case 1: fullPhaseHtml = Phases.renderTradePhase1(phase); break;
+-      case 2: fullPhaseHtml = Phases.renderTradePhase2(phase); break;
+-      case 3: fullPhaseHtml = Phases.renderTradePhase3(phase); break;
+-      case 4: fullPhaseHtml = Phases.renderTradePhase4(phase); break;
+-      case 5: fullPhaseHtml = Phases.renderTradePhase5(phase); break;
+-      case 6: fullPhaseHtml = Phases.renderTradePhase6(phase); break;
+-      case 7: fullPhaseHtml = Phases.renderTradePhase7(phase); break;
+-      case 8: fullPhaseHtml = Phases.renderTradePhase8(phase); break;
+-      case 9: fullPhaseHtml = Phases.renderTradePhase9(phase); break;
+-      case 10: fullPhaseHtml = Phases.renderPhase9(phase); break; // Interior
++  function renderLedgerTabContent() {
++    const host = document.getElementById('ledger-tab-content');
++    if (!host) return;
++    try {
++      if (currentLedgerTab === 'labour' && typeof LabourVendors !== 'undefined' && LabourVendors.renderLabourHub) {
++        host.innerHTML = LabourVendors.renderLabourHub();
++        currentView = 'labour-hub';
++        AI.setWatching?.('Labour Ledger');
++      } else if (currentLedgerTab === 'vendor' && typeof VendorKhata !== 'undefined' && VendorKhata.renderVendorHub) {
++        host.innerHTML = VendorKhata.renderVendorHub();
++        currentView = 'vendor-hub';
++        AI.setWatching?.('Vendor Khata');
++      } else if (currentLedgerTab === 'inventory' && typeof SiteInventory !== 'undefined' && SiteInventory.renderInventoryHub) {
++        host.innerHTML = SiteInventory.renderInventoryHub();
++        currentView = 'inventory-hub';
++        AI.setWatching?.('Site Inventory');
++      } else {
++        host.innerHTML = emptyState('LoadingΓÇª', 'Module is still loading. Try again.');
++      }
++    } catch (e) {
++      console.warn('[Ledgers] render error:', e);
++      host.innerHTML = emptyState('Could not load', e.message || 'Unknown error');
+     }
++  }
+ 
+-    // Use the proper phaseHeader helper (now exported) so the
+-    // header + budget bar + completion bar render correctly
+-    const headerHtml = Phases.phaseHeader(phase);
+-    const filteredSectionsHtml = Phases.filterPhaseHtmlBySections(fullPhaseHtml, category.sectionIds || []);
+-
+-    // For "synthetic" categories (no actual section card) show a meta card
+-    const bodyHtml = (category.sectionIds && category.sectionIds.length > 0)
+-      ? filteredSectionsHtml
+-      : Phases.renderCategoryMetaCard(category);
+-
+-    // Breadcrumb + back button
+-    const backTarget = phaseId === 10 ? 'App.showInteriorHub()' : `App.showPhaseHub(${phaseId})`;
+-    const crumbHtml = `
+-      <div class="breadcrumb">
+-        <a onclick="App.showOverview()">Overview</a>
+-        <span class="breadcrumb-sep">ΓÇ║</span>
+-        <a onclick="${backTarget}">${Phases.iconFor(phase.icon, 11)} <span style="margin-left:6px">${phase.name}</span></a>
+-        <span class="breadcrumb-sep">ΓÇ║</span>
+-        <span class="breadcrumb-current">${Phases.iconFor(category.icon, 11)} <span style="margin-left:6px">${category.name}</span></span>
+-      </div>
+-      <button class="back-to-hub" onclick="${backTarget}">${Phases.iconFor('arrowLeft', 12)} Back to ${phase.name} categories</button>
+-    `;
++  // Legacy hooks (other modules call these)
++  function showLabourHub() { showHub('ledgers'); setLedgerTab('labour'); }
++  function showVendorHub() { showHub('ledgers'); setLedgerTab('vendor'); }
++  function showInventoryHub() { showHub('ledgers'); setLedgerTab('inventory'); }
+ 
+-    content.innerHTML = `<div class="phase-workspace active" id="pw-${phaseId}">${crumbHtml}${headerHtml}${bodyHtml}</div>`;
++  // ΓöÇΓöÇ MORE HUB ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
++  function renderMoreHub(content) {
++    const proj = State.getCurrentProject();
++    content.innerHTML = `
++      <div class="phase-workspace active">
++        <div class="phase-header">
++          <div class="phase-title">${Icons.render('settings', 22)} More</div>
++          <div class="phase-subtitle">Operations, exports, and account</div>
++        </div>
+ 
+-    // Restore data into inputs
+-    restorePhaseInputs(phase);
+-
+-    // Attach live listeners
+-    attachAllListeners(phase);
+-
+-    // Update completion input
+-    const compInp = document.getElementById(`comp-pct-${phaseId}`);
+-    if (compInp) compInp.value = phase.completion || 0;
+-    const compBar = document.getElementById(`comp-bar-${phaseId}`);
+-    if (compBar) compBar.style.width = (phase.completion || 0) + '%';
+-
+-    Financial.updateAllTotals();
+-    AI.setWatching(`Phase ${phaseId} ┬╖ ${category.name}`);
+-    AI.checkTriggers();
+-
+-    // Smooth scroll the focus category into view if possible
+-    content.scrollTop = 0;
+-  }
+-
+-  // Open a single input card's detail form (the new per-input design)
+-  // Used by the 9 trade phases. Each card has a specific set of
+-  // fields with their own costFn. The card is rendered with
+-  // breadcrumb + back-to-hub navigation.
+-  function showInputCard(phaseId, cardId) {
+-    currentView = phaseId === 10 ? 'interior-category' : 'phase-category';
+-    currentPhase = phaseId;
+-    currentCategory = cardId;
+-    const proj = State.getCurrentProject();
+-    if (!proj) return;
+-    const phase = proj.phases.find(p => p.id === phaseId);
+-    if (!phase) return;
+-
+-    // Look up the card spec from phases.js
+-    const card = Phases.getInputCard ? Phases.getInputCard(phaseId, cardId) : null;
+-    if (!card) {
+-      // Fallback: go to the phase hub
+-      return showPhaseHub(phaseId);
+-    }
+-
+-    // Update sidebar active state
+-    document.querySelectorAll('.phase-btn').forEach(b => b.classList.remove('active'));
+-    const activeBtn = document.getElementById(`phase-btn-${phaseId}`);
+-    if (activeBtn) activeBtn.classList.add('active');
+-
+-    const content = document.getElementById('content-area');
+-    if (!content) return;
+-
+-    // Breadcrumb + back button
+-    const backTarget = phaseId === 10 ? 'App.showInteriorHub()' : `App.showPhaseHub(${phaseId})`;
+-    const crumbHtml = `
+-      <div class="breadcrumb">
+-        <a onclick="App.showOverview()">Overview</a>
+-        <span class="breadcrumb-sep">ΓÇ║</span>
+-        <a onclick="${backTarget}">${Phases.iconFor(phase.icon, 11)} <span style="margin-left:6px">${phase.name}</span></a>
+-        <span class="breadcrumb-sep">ΓÇ║</span>
+-        <span class="breadcrumb-current">${Phases.iconFor(card.icon, 11)} <span style="margin-left:6px">${card.name}</span></span>
+-      </div>
+-      <button class="back-to-hub" onclick="${backTarget}">${Phases.iconFor('arrowLeft', 12)} Back to ${phase.name} categories</button>
+-    `;
+-
+-    const cardDetailHtml = Phases.renderSingleInputCard(phase, card);
+-    content.innerHTML = `<div class="phase-workspace active" id="pw-${phaseId}">${crumbHtml}${cardDetailHtml}</div>`;
+-    content.scrollTop = 0;
+-
+-    AI.setWatching(`Phase ${phaseId} ┬╖ ${card.name}`);
+-    Financial.updateAllTotals();
+-  }
+-
+-  function showLabourHub() {
+-    currentView = 'labour-hub';
+-    currentPhase = null;
+-    currentCategory = null;
+-    const proj = State.getCurrentProject();
+-    if (!proj) return;
+-    renderSidebar(proj);
+-
+-    const content = document.getElementById('content-area');
+-    if (!content) return;
+-
+-    if (typeof LabourVendors !== 'undefined' && LabourVendors.renderLabourHub) {
+-      content.innerHTML = LabourVendors.renderLabourHub();
+-    } else {
+-      console.warn('[App] LabourVendors.renderLabourHub unavailable ΓÇö LabourVendors:', typeof LabourVendors, 'renderLabourHub:', typeof LabourVendors?.renderLabourHub);
+-      content.innerHTML = '<div style="padding:24px">Labour module loading...</div>';
+-    }
+-  }
+-
+-  function showVendorHub() {
+-    currentView = 'vendor-hub';
+-    currentPhase = null;
+-    currentCategory = null;
+-    const proj = State.getCurrentProject();
+-    if (!proj) return;
+-    renderSidebar(proj);
++        <div class="m-section-title">Operations</div>
++        <div class="m-list-group">
++          <button class="m-list-row" onclick="App.showRaBillsHub()">
++            <span class="icon">${Icons.render('fileText', 18)}</span>
++            <div class="body"><div class="label">Subcontractor RA Bills</div><div class="desc">Running account invoices</div></div>
++            <span class="chev">ΓÇ║</span>
++          </button>
++          <button class="m-list-row" onclick="App.showSubLedger()">
++            <span class="icon">${Icons.render('users', 18)}</span>
++            <div class="body"><div class="label">Subcontractor Ledger</div><div class="desc">Trades ┬╖ contracts ┬╖ payments</div></div>
++            <span class="chev">ΓÇ║</span>
++          </button>
++          <button class="m-list-row" onclick="App.showFlatSales()">
++            <span class="icon">${Icons.render('building', 18)}</span>
++            <div class="body"><div class="label">Flat Sales</div><div class="desc">Buyers and payments received</div></div>
++            <span class="chev">ΓÇ║</span>
++          </button>
++        </div>
+ 
+-    const content = document.getElementById('content-area');
+-    if (!content) return;
++        <div class="m-section-title">Data Export</div>
++        <div class="m-list-group">
++          <button class="m-list-row" onclick="App.exportPDF()">
++            <span class="icon">${Icons.render('file', 18)}</span>
++            <div class="body"><div class="label">Export PDF Report</div><div class="desc">Single-page printable summary</div></div>
++            <span class="chev">ΓÇ║</span>
++          </button>
++          <button class="m-list-row" onclick="App.exportExcel()">
++            <span class="icon">${Icons.render('spreadsheet', 18)}</span>
++            <div class="body"><div class="label">Export CSV / Excel</div><div class="desc">All line items, machine-readable</div></div>
++            <span class="chev">ΓÇ║</span>
++          </button>
++        </div>
+ 
+-    if (typeof VendorKhata !== 'undefined' && VendorKhata.renderVendorHub) {
+-      content.innerHTML = VendorKhata.renderVendorHub();
+-    } else {
+-      content.innerHTML = '<div style="padding:24px">Vendor Khata module loading...</div>';
+-    }
+-    content.scrollTop = 0;
+-    AI.setWatching('Vendor Khata');
+-  }
++        <div class="m-section-title">AI Tools</div>
++        <div class="m-list-group">
++          <button class="m-list-row" onclick="App.toggleAI()">
++            <span class="icon">${Icons.render('bot', 18)}</span>
++            <div class="body"><div class="label">Open Build Assistant</div><div class="desc">AI co-pilot drawer</div></div>
++            <span class="chev">ΓÇ║</span>
++          </button>
++          <button class="m-list-row" onclick="AI.sendUserMessage('Give me a full project health analysis with risks and recommendations.')">
++            <span class="icon">${Icons.render('activity', 18)}</span>
++            <div class="body"><div class="label">AI Project Health</div><div class="desc">Risk ┬╖ variance ┬╖ recommendations</div></div>
++            <span class="chev">ΓÇ║</span>
++          </button>
++        </div>
+ 
+-  function showInventoryHub() {
+-    currentView = 'inventory-hub';
+-    currentPhase = null;
+-    currentCategory = null;
+-    const proj = State.getCurrentProject();
+-    if (!proj) return;
+-    renderSidebar(proj);
++        <div class="m-section-title">Help</div>
++        <div class="m-list-group">
++          <button class="m-list-row" onclick="App.showTutorial()">
++            <span class="icon">${Icons.render('help', 18)}</span>
++            <div class="body"><div class="label">App Tutorial</div><div class="desc">Replay the onboarding walkthrough</div></div>
++            <span class="chev">ΓÇ║</span>
++          </button>
++        </div>
+ 
+-    const content = document.getElementById('content-area');
+-    if (!content) return;
++        <div class="m-section-title">Project</div>
++        <div class="m-list-group">
++          <button class="m-list-row" onclick="App.showEditProjectModal()">
++            <span class="icon">${Icons.render('pencil', 18)}</span>
++            <div class="body"><div class="label">Edit Project Info</div><div class="desc">Name, budget, dates, contractorΓÇª</div></div>
++            <span class="chev">ΓÇ║</span>
++          </button>
++          <button class="m-list-row" onclick="App.showProjectPicker()">
++            <span class="icon">${Icons.render('building', 18)}</span>
++            <div class="body"><div class="label">Switch Project</div><div class="desc">${proj ? proj.name : 'ΓÇö'}</div></div>
++            <span class="chev">ΓÇ║</span>
++          </button>
++          <button class="m-list-row" onclick="App.confirmDeleteProject()">
++            <span class="icon" style="color:var(--danger)">${Icons.render('trash', 18)}</span>
++            <div class="body"><div class="label" style="color:var(--danger)">Delete this project</div><div class="desc">Permanent ΓÇö cannot be undone</div></div>
++            <span class="chev">ΓÇ║</span>
++          </button>
++        </div>
+ 
+-    if (typeof SiteInventory !== 'undefined' && SiteInventory.renderInventoryHub) {
+-      content.innerHTML = SiteInventory.renderInventoryHub();
+-    } else {
+-      content.innerHTML = '<div style="padding:24px">Site Inventory module loading...</div>';
+-    }
+-    content.scrollTop = 0;
+-    AI.setWatching('Site Stock');
++        <div class="m-section-title">Account</div>
++        <div class="m-list-group">
++          <button class="m-list-row" onclick="App.signOut()">
++            <span class="icon">${Icons.render('logout', 18)}</span>
++            <div class="body"><div class="label">Sign out</div></div>
++            <span class="chev">ΓÇ║</span>
++          </button>
++          <button class="m-list-row" onclick="App.confirmDeleteAccount()">
++            <span class="icon" style="color:var(--danger)">${Icons.render('alert', 18)}</span>
++            <div class="body"><div class="label" style="color:var(--danger)">Delete account</div><div class="desc">Removes all data permanently</div></div>
++            <span class="chev">ΓÇ║</span>
++          </button>
++        </div>
++      </div>`;
++    AI.setWatching?.('More');
+   }
+ 
++  // ΓöÇΓöÇ Sub-pages reachable from More ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
+   function showRaBillsHub() {
+-    currentView = 'ra-bills';
+-    currentPhase = null;
+-    currentCategory = null;
+-    const proj = State.getCurrentProject();
+-    if (!proj) return;
+-    renderSidebar(proj);
+-
+-    const content = document.getElementById('content-area');
+-    if (!content) return;
+-
++    if (!_isNavigatingBack) _pushNav({ type: 'more-back' });
++    currentHub = 'more'; currentView = 'ra-bills';
++    const content = document.getElementById('content-area'); if (!content) return;
+     if (typeof RaBills !== 'undefined' && RaBills.renderRaBillsHub) {
+-      content.innerHTML = RaBills.renderRaBillsHub();
+-    } else {
+-      content.innerHTML = '<div style="padding:24px">RA Bills module loading...</div>';
++      content.innerHTML = `<div class="phase-workspace active">
++        <button class="back-to-hub" onclick="App.showHub('more')">ΓåÉ More</button>
++        ${RaBills.renderRaBillsHub()}</div>`;
+     }
+-    content.scrollTop = 0;
+-    AI.setWatching('RA Bills');
++    content.scrollTop = 0; AI.setWatching?.('RA Bills');
+   }
+-
+-
+-
+   function showFlatSales() {
+-    currentView = 'flat-sales';
+-    currentPhase = null;
+-    currentCategory = null;
+-    const proj = State.getCurrentProject();
+-    if (!proj) return;
+-    renderSidebar(proj);
+-
+-    const content = document.getElementById('content-area');
+-    if (!content) return;
+-
++    if (!_isNavigatingBack) _pushNav({ type: 'more-back' });
++    currentHub = 'more'; currentView = 'flat-sales';
++    const content = document.getElementById('content-area'); if (!content) return;
+     if (typeof FlatSales !== 'undefined' && FlatSales.renderHub) {
+-      content.innerHTML = FlatSales.renderHub();
+-    } else {
+-      console.warn('[App] FlatSales.renderHub unavailable ΓÇö FlatSales:', typeof FlatSales, 'renderHub:', typeof FlatSales?.renderHub);
+-      content.innerHTML = '<div style="padding:24px;color:var(--text-muted)">Flat Sales module loadingΓÇª</div>';
++      content.innerHTML = `<div class="phase-workspace active">
++        <button class="back-to-hub" onclick="App.showHub('more')">ΓåÉ More</button>
++        ${FlatSales.renderHub()}</div>`;
+     }
+     content.scrollTop = 0;
+-    AI.setWatching('Flat Sales');
+   }
+-
+   function showFlatSalesBuyer(buyerId) {
+-    currentView = 'flat-sales-buyer';
+-    const proj = State.getCurrentProject();
+-    if (!proj) return;
+-    renderSidebar(proj);
+-
+-    const content = document.getElementById('content-area');
+-    if (!content) return;
+-
++    if (!_isNavigatingBack) _pushNav({ type: 'flat-sales' });
++    const content = document.getElementById('content-area'); if (!content) return;
+     if (typeof FlatSales !== 'undefined' && FlatSales.renderBuyerDetail) {
+-      content.innerHTML = FlatSales.renderBuyerDetail(buyerId);
++      content.innerHTML = `<div class="phase-workspace active">
++        <button class="back-to-hub" onclick="App.showFlatSales()">ΓåÉ Buyers</button>
++        ${FlatSales.renderBuyerDetail(buyerId)}</div>`;
+     }
+     content.scrollTop = 0;
+   }
+-
+   function showSubLedger() {
+-    currentView = 'subcontractors';
+-    currentPhase = 0;
+-    currentCategory = null;
+-    const content = document.getElementById('content-area');
+-    if (!content) return;
+-
+-    document.querySelectorAll('.phase-btn').forEach(b => b.classList.remove('active'));
+-    const subBtn = document.getElementById('phase-btn-sub');
+-    if (subBtn) subBtn.classList.add('active');
+-
+-    content.innerHTML = `
+-      <div class="phase-workspace active">
+-        <div class="breadcrumb">
+-          <a onclick="App.showOverview()">Overview</a>
+-          <span class="breadcrumb-sep">ΓÇ║</span>
+-          <span class="breadcrumb-current">${Phases.iconFor('userCircle', 11)} <span style="margin-left:6px">Subcontractors</span></span>
+-        </div>
+-        <div class="phase-header">
+-          <div class="phase-title-block">
+-            <div class="phase-title">${Phases.iconFor('userCircle', 22)} <span style="margin-left:8px">Subcontractor & Trade Ledger</span></div>
+-            <div class="phase-subtitle">Track all trades, contracts, and payments</div>
+-          </div>
+-        </div>
+-        ${Phases.renderSubcontractorLedger()}
+-      </div>`;
+-
+-    AI.setWatching('Subcontractor Ledger');
++    if (!_isNavigatingBack) _pushNav({ type: 'more-back' });
++    currentHub = 'more'; currentView = 'subcontractors'; currentPhase = 0;
++    const content = document.getElementById('content-area'); if (!content) return;
++    content.innerHTML = `<div class="phase-workspace active">
++      <button class="back-to-hub" onclick="App.showHub('more')">ΓåÉ More</button>
++      <div class="phase-header">
++        <div class="phase-title">${Icons.render('users', 22)} Subcontractor Ledger</div>
++        <div class="phase-subtitle">Trades ┬╖ contracts ┬╖ payments</div>
++      </div>
++      ${Phases.renderSubcontractorLedger()}
++    </div>`;
++    content.scrollTop = 0; AI.setWatching?.('Subcontractors');
+   }
+-
+-  // ΓöÇΓöÇ Colour Lab (Interior Colour Visualiser) ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
+-  function showColourLab() {
+-    currentView = 'colour-lab';
+-    currentPhase = 10;
+-    currentCategory = null;
+-    const content = document.getElementById('content-area');
+-    if (!content) return;
+-
+-    // Clear any previous canvas
+-    if (typeof ColourLab !== 'undefined' && ColourLab.destroy) ColourLab.destroy();
+-
+-    document.querySelectorAll('.phase-btn').forEach(b => b.classList.remove('active'));
+-    const interiorBtn = document.getElementById('phase-btn-interior');
+-    if (interiorBtn) interiorBtn.classList.add('active');
+-
+-    content.innerHTML = `
+-      <div class="phase-workspace active">
+-        <div class="breadcrumb">
+-          <a onclick="App.showOverview()">Overview</a>
+-          <span class="breadcrumb-sep">ΓÇ║</span>
+-          <a onclick="App.showInteriorHub()">Interior Finish</a>
+-          <span class="breadcrumb-sep">ΓÇ║</span>
+-          <span class="breadcrumb-current">≡ƒÄ¿ Colour Lab</span>
+-        </div>
+-        <button class="back-to-hub" onclick="App.showInteriorHub()">
+-          ΓåÉ Back to Interior categories
+-        </button>
+-        ${typeof ColourLab !== 'undefined' ? ColourLab.renderView() : '<p>Colour Lab not loaded.</p>'}
+-      </div>`;
+-
+-    // Init canvas after DOM is painted
+-    setTimeout(() => {
+-      if (typeof ColourLab !== 'undefined') ColourLab.init();
+-    }, 60);
+-
+-    content.scrollTop = 0;
+-    AI.setWatching('Colour Lab');
++  function showTools() { showHub('more'); }
++
++  // Legacy alias
++  function showOverview() { showHub('dashboard'); }
++  function showPhase(id) { showPhaseHub(id); }
++  function showDashboard() { showProjectPicker(); }
++
++  // ΓöÇΓöÇ FAB ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
++  let _fabOpen = false;
++  function mountFAB(actions) {
++    const host = document.getElementById('fab-container'); if (!host) return;
++    _fabOpen = false;
++    host.innerHTML = `
++      <div class="m-fab-menu hidden" id="fab-menu">
++        ${actions.map((a, i) => `<button class="m-fab-action" onclick="App._fabAction(${i})">${a.icon}<span>${a.label}</span></button>`).join('')}
++      </div>
++      <button class="m-fab" onclick="App._toggleFab()" aria-label="Quick action">∩╝ï</button>`;
++    window.__fabActions = actions;
++  }
++  function _toggleFab() {
++    _fabOpen = !_fabOpen;
++    const menu = document.getElementById('fab-menu'); if (!menu) return;
++    menu.classList.toggle('hidden', !_fabOpen);
++    const btn = document.querySelector('.m-fab');
++    if (btn) btn.style.transform = _fabOpen ? 'rotate(45deg)' : '';
++  }
++  function _fabAction(i) {
++    const a = (window.__fabActions || [])[i];
++    _toggleFab();
++    if (a && typeof a.action === 'function') a.action();
+   }
+ 
+-  function showTools() {
+-    currentView = 'tools';
+-    currentPhase = 0;
+-    currentCategory = null;
+-    const content = document.getElementById('content-area');
+-    if (!content) return;
+-
+-    document.querySelectorAll('.phase-btn').forEach(b => b.classList.remove('active'));
+-    const toolsBtn = document.getElementById('phase-btn-tools');
+-    if (toolsBtn) toolsBtn.classList.add('active');
+-
+-    const proj = State.getCurrentProject();
+-    const total = proj ? Financial.computeProjectTotal(proj) : 0;
+-    const budget = proj ? proj.totalBudget : 0;
+-    const pct = budget > 0 ? Math.round((total / budget) * 100) : 0;
+-
+-    content.innerHTML = `
+-      <div class="phase-workspace active">
+-        <div class="breadcrumb">
+-          <a onclick="App.showOverview()">Overview</a>
+-          <span class="breadcrumb-sep">ΓÇ║</span>
+-          <span class="breadcrumb-current">${Phases.iconFor('wrench', 11)} <span style="margin-left:6px">Project Tools</span></span>
+-        </div>
+-        <div class="category-hub">
+-          <div class="category-hub-header">
+-            <div>
+-              <div class="category-hub-title">${Phases.iconFor('wrench', 26)} <span style="margin-left:10px">Project Tools</span></div>
+-              <div class="category-hub-subtitle">Export your data, generate AI insights, and manage project artifacts</div>
+-            </div>
+-          </div>
+-          <div class="category-grid">
+-            <button class="category-card" onclick="App.exportPDF()">
+-              <span class="category-card-arrow">ΓåÆ</span>
+-              <span class="category-card-icon">${Phases.iconFor('fileText', 28)}</span>
+-              <div class="category-card-name">Export PDF Report</div>
+-              <div class="category-card-desc">Generate a printable project summary with all phases, line items, and totals.</div>
+-              <div class="category-card-meta">
+-                <div class="category-card-progress">
+-                  <div class="category-card-progress-label">Printable ┬╖ single page summary</div>
+-                </div>
+-              </div>
+-            </button>
+-            <button class="category-card" onclick="App.exportExcel()">
+-              <span class="category-card-arrow">ΓåÆ</span>
+-              <span class="category-card-icon">${Phases.iconFor('dashboard', 28)}</span>
+-              <div class="category-card-name">Export CSV / Excel</div>
+-              <div class="category-card-desc">Download all phase data as CSV for analysis in Excel, Sheets, or Power BI.</div>
+-              <div class="category-card-meta">
+-                <div class="category-card-progress">
+-                  <div class="category-card-progress-label">All line items ┬╖ machine-readable</div>
+-                </div>
+-              </div>
+-            </button>
+-            <button class="category-card" onclick="AI.sendUserMessage('Give me a full project health analysis with risks and recommendations.')">
+-              <span class="category-card-arrow">ΓåÆ</span>
+-              <span class="category-card-icon">${Phases.iconFor('bot', 28)}</span>
+-              <div class="category-card-name">AI Project Health</div>
+-              <div class="category-card-desc">Run a deep AI analysis: budget risk, over-spend alerts, cost optimization, scope risks.</div>
+-              <div class="category-card-meta">
+-                <div class="category-card-progress">
+-                  <div class="category-card-progress-label">Powered by Gemini ┬╖ uses live project data</div>
+-                </div>
+-              </div>
+-            </button>
+-            <button class="category-card" onclick="AI.sendUserMessage('List every line item across all phases with quantities and unit prices.')">
+-              <span class="category-card-arrow">ΓåÆ</span>
+-              <span class="category-card-icon">${Phases.iconFor('listChecks', 28)}</span>
+-              <div class="category-card-name">AI Line-Item Dump</div>
+-              <div class="category-card-desc">Have the AI enumerate every entered field, quantity, and price ΓÇö useful for audits.</div>
+-              <div class="category-card-meta">
+-                <div class="category-card-progress">
+-                  <div class="category-card-progress-label">Comprehensive data export via AI</div>
+-                </div>
+-              </div>
+-            </button>
+-            <button class="category-card" onclick="App.toggleAI()">
+-              <span class="category-card-arrow">ΓåÆ</span>
+-              <span class="category-card-icon">${Phases.iconFor('chat', 28)}</span>
+-              <div class="category-card-name">Open AI Assistant</div>
+-              <div class="category-card-desc">Open the Build Assistant drawer to ask anything about costs, materials, or schedules.</div>
+-              <div class="category-card-meta">
+-                <div class="category-card-progress">
+-                  <div class="category-card-progress-label">Always-on co-pilot</div>
+-                </div>
+-              </div>
+-            </button>
+-            <button class="category-card" onclick="App.showDashboard()">
+-              <span class="category-card-arrow">ΓåÆ</span>
+-              <span class="category-card-icon">${Phases.iconFor('dashboard', 28)}</span>
+-              <div class="category-card-name">Back to Dashboard</div>
+-              <div class="category-card-desc">Return to the project overview and switch projects.</div>
+-              <div class="category-card-meta">
+-                <div class="category-card-progress">
+-                  <div class="category-card-progress-label">Project home</div>
+-                </div>
+-              </div>
+-            </button>
+-          </div>
+-        </div>
+-      </div>`;
++  // ΓöÇΓöÇ AI Drawer ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
++  function toggleAI() {
++    aiOpen ? closeAI() : openAI();
++  }
++  function openAI() {
++    aiOpen = true;
++    document.getElementById('ai-drawer')?.classList.add('open');
++    document.getElementById('ai-scrim')?.classList.add('open');
++    AI.clearPulse?.();
++  }
++  function closeAI() {
++    aiOpen = false;
++    document.getElementById('ai-drawer')?.classList.remove('open');
++    document.getElementById('ai-scrim')?.classList.remove('open');
++  }
++  function minimizeAI() { closeAI(); }
+ 
+-    AI.setWatching('Project Tools');
++  function sendAIMessage() {
++    const inp = document.getElementById('ai-input');
++    if (!inp || !inp.value.trim()) return;
++    const msg = inp.value.trim(); inp.value = '';
++    AI.sendUserMessage?.(msg);
+   }
+ 
+-  // ΓöÇΓöÇ Data Restoration ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
++  // ΓöÇΓöÇ Data restoration / listeners (kept identical to legacy) ΓöÇΓöÇ
+   function restorePhaseInputs(phase) {
+-    const d = phase.data;
+-
+-    function restoreSection(sectionData) {
+-      if (!sectionData || typeof sectionData !== 'object') return;
+-      Object.entries(sectionData).forEach(([key, val]) => {
+-        if (Array.isArray(val)) return;
+-        const el = document.getElementById(key);
++    const d = phase.data || {};
++    function restore(section) {
++      if (!section || typeof section !== 'object') return;
++      Object.entries(section).forEach(([k, v]) => {
++        if (Array.isArray(v)) return;
++        const el = document.getElementById(k);
+         if (!el) return;
+-        if (el.type === 'checkbox') el.checked = !!val;
+-        else el.value = val || '';
++        if (el.type === 'checkbox') el.checked = !!v;
++        else el.value = v || '';
+       });
+     }
+-
+-    Object.values(d).forEach(section => {
+-      if (section && typeof section === 'object' && !Array.isArray(section)) {
+-        restoreSection(section);
+-      }
+-    });
+-
+-    // Special: restore sheets calc for phase 5
++    Object.values(d).forEach(s => { if (s && typeof s === 'object' && !Array.isArray(s)) restore(s); });
+     if (phase.id === 5) {
+       const dw = d.drywall || {};
+       const sqft = dw.drywall_sqft || dw.total_sqft;
+       const sheetsEl = document.getElementById('sheets-calc');
+-      if (sheetsEl && sqft) {
+-        const sheets = Math.ceil((parseFloat(sqft) / 32) * 1.1);
+-        sheetsEl.textContent = sheets + ' sheets';
+-      }
+-    }
+-
+-    // Restore toggle card states
+-    if (d.temp_infra) {
+-      Object.entries(d.temp_infra).forEach(([key, val]) => {
+-        if (key.endsWith('_active') && val) {
+-          const id = key.replace('_active', '');
+-          const card = document.getElementById(`tc-${id}`);
+-          const sw = document.getElementById(`ts-${id}`);
+-          if (card) card.classList.add('active');
+-          if (sw) sw.classList.add('on');
+-        }
+-      });
++      if (sheetsEl && sqft) sheetsEl.textContent = Math.ceil((parseFloat(sqft) / 32) * 1.1) + ' sheets';
+     }
++    if (d.temp_infra) Object.entries(d.temp_infra).forEach(([k, v]) => {
++      if (k.endsWith('_active') && v) {
++        const id = k.replace('_active', '');
++        document.getElementById(`tc-${id}`)?.classList.add('active');
++        document.getElementById(`ts-${id}`)?.classList.add('on');
++      }
++    });
+   }
+ 
+-  // ΓöÇΓöÇ Input Listeners ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
+   function attachAllListeners(phase) {
+-    const workspace = document.getElementById(`pw-${phase.id}`);
+-    if (!workspace) return;
+-
+-    // All inputs and selects in the workspace
+-    workspace.querySelectorAll('input:not([type=checkbox]):not([type=date]):not([readonly]), select').forEach(el => {
++    const ws = document.getElementById(`pw-${phase.id}`); if (!ws) return;
++    ws.querySelectorAll('input:not([type=checkbox]):not([type=date]):not([readonly]), select').forEach(el => {
+       el.addEventListener('input', () => {
+         saveInputToState(phase.id, el);
+-        Financial.scheduleUpdate();
+-
+-        // Special auto-calcs
++        // Derive sheets from sqft and haul loads from cut_vol ΓÇö cheap, no full update
+         if (el.id === 'drywall_sqft' || el.id === 'total_sqft') {
+           const sheets = Math.ceil((parseFloat(el.value || 0) / 32) * 1.1);
+-          const sheetsEl = document.getElementById('sheets-calc');
+-          if (sheetsEl) sheetsEl.textContent = sheets + ' sheets';
++          const s = document.getElementById('sheets-calc'); if (s) s.textContent = sheets + ' sheets';
+         }
+         if (el.id === 'cut_vol') {
+           const loadEl = document.getElementById('haul_loads');
+@@ -1091,279 +1120,175 @@ const App = (() => {
+       });
+       el.addEventListener('change', () => {
+         saveInputToState(phase.id, el);
+-        Financial.scheduleUpdate();
+-        AI.checkTriggers();
+-
+-        // Flash green on change
++        Financial.scheduleUpdate?.();
++        AI.checkTriggers?.();
+         el.classList.add('saved');
+         setTimeout(() => el.classList.remove('saved'), 800);
+       });
+     });
+-
+-    // Checkboxes
+-    workspace.querySelectorAll('input[type=checkbox]').forEach(el => {
+-      el.addEventListener('change', () => {
+-        saveInputToState(phase.id, el);
+-      });
+-    });
+-
+-    // Date inputs
+-    workspace.querySelectorAll('input[type=date]').forEach(el => {
+-      el.addEventListener('change', () => {
+-        saveInputToState(phase.id, el);
+-      });
++    ws.querySelectorAll('input[type=checkbox], input[type=date]').forEach(el => {
++      el.addEventListener('change', () => saveInputToState(phase.id, el));
+     });
+   }
+ 
+   function saveInputToState(phaseId, el) {
+     if (!el.id) return;
+-    const proj = State.getCurrentProject();
+-    if (!proj) return;
+-    const phase = proj.phases.find(p => p.id === phaseId);
+-    if (!phase) return;
+-
+-    // Find which section this belongs to by checking section card parents
++    const proj = State.getCurrentProject(); if (!proj) return;
++    const phase = proj.phases.find(p => p.id === phaseId); if (!phase) return;
+     const sectionCard = el.closest('.section-card');
+     const sectionId = (sectionCard?.id || 'general').replace('sc-', '');
+-
+-    // Map input to phase data
+-    const sectionMap = {
+-      'p1-survey': 'survey', 'p1-infra': 'temp_infra',
+-      'p2-earth': 'earthwork', 'p2-concrete': 'concrete', 'p2-utility': 'utility',
+-      'p3-skel': 'skeleton', 'p3-roof': 'roofing', 'p3-windows': 'windows',
+-      'p4-hvac': 'hvac', 'p4-plumb': 'plumbing', 'p4-elec': 'electrical', 'p4-block': 'blocking',
+-      'p5-ins': 'insulation', 'p5-drywall': 'drywall',
+-      'p6-clad': 'cladding', 'p6-cab': 'cabinetry', 'p6-trim': 'trim',
+-      'p7-elec': 'elec_trim', 'p7-plumb': 'plumb_trim', 'p7-counter': 'countertops',
+-      'p8-hand': 'handover',
++    const map = {
++      'p1-survey':'survey','p1-infra':'temp_infra',
++      'p2-earth':'earthwork','p2-concrete':'concrete','p2-utility':'utility',
++      'p3-skel':'skeleton','p3-roof':'roofing','p3-windows':'windows',
++      'p4-hvac':'hvac','p4-plumb':'plumbing','p4-elec':'electrical','p4-block':'blocking',
++      'p5-ins':'insulation','p5-drywall':'drywall',
++      'p6-clad':'cladding','p6-cab':'cabinetry','p6-trim':'trim',
++      'p7-elec':'elec_trim','p7-plumb':'plumb_trim','p7-counter':'countertops',
++      'p8-hand':'handover',
+     };
+-
+-    const sectionKey = sectionMap[sectionId] || 'general';
+-    if (!phase.data[sectionKey]) phase.data[sectionKey] = {};
+-
+-    const val = el.type === 'checkbox' ? el.checked : el.value;
+-    phase.data[sectionKey][el.id] = val;
+-
+-    // Clear Phase 10 manual total override if a sub-field is changed
+-    if (phase.id === 10 && !el.id.includes('-total')) {
+-      delete phase.data[`_manual_${sectionId}-total`];
+-    }
+-
+-    State.save();
+-  }
+-
+-  // ΓöÇΓöÇ UI Controls ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
+-  function toggleSidebar() {
+-    sidebarOpen = !sidebarOpen;
+-    const sb = document.getElementById('sidebar');
+-    if (sb) sb.classList.toggle('collapsed', !sidebarOpen);
+-  }
+-
+-  function toggleAI() {
+-    aiOpen = !aiOpen;
+-    const drawer = document.getElementById('ai-drawer');
+-    if (drawer) drawer.classList.toggle('hidden-drawer', !aiOpen);
+-    AI.clearPulse();
+-  }
+-
+-  function minimizeAI() { toggleAI(); }
+-
+-  function closeAI() {
+-    aiOpen = false;
+-    const drawer = document.getElementById('ai-drawer');
+-    if (drawer) drawer.classList.add('hidden-drawer');
+-  }
+-
+-  function sendAIMessage() {
+-    const inp = document.getElementById('ai-input');
+-    if (!inp || !inp.value.trim()) return;
+-    const msg = inp.value.trim();
+-    inp.value = '';
+-    AI.sendUserMessage(msg);
++    const k = map[sectionId] || 'general';
++    if (!phase.data[k]) phase.data[k] = {};
++    phase.data[k][el.id] = el.type === 'checkbox' ? el.checked : el.value;
++    if (phase.id === 10 && !el.id.includes('-total')) delete phase.data[`_manual_${sectionId}-total`];
++    // Save is handled by Financial.scheduleUpdate on change (blur), not on every keystroke
+   }
+ 
+   function exportPDF() { Export.exportPDF(); }
+   function exportExcel() { Export.exportExcel(); }
+ 
+-  // ΓöÇΓöÇ Toast Notifications ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
++  // ΓöÇΓöÇ Toast ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
+   function toast(message, type = 'info') {
+-    const container = document.getElementById('toast-container');
+-    if (!container) return;
+-
++    const container = document.getElementById('toast-container'); if (!container) return;
+     const t = document.createElement('div');
+     t.className = `toast ${type}`;
+-    t.innerHTML = `${type === 'success' ? Icons.render('check', 12) : type === 'warning' ? Icons.render('alert', 12) : Icons.render('info', 12)} <span style="margin-left:6px">${message}</span>`;
++    const sym = type === 'success' ? 'Γ£ô' : type === 'warning' ? 'ΓÜá' : type === 'error' ? 'Γ£ò' : 'Γä╣';
++    t.innerHTML = `<span>${sym}</span><span>${message}</span>`;
+     container.appendChild(t);
+-
+     setTimeout(() => {
+-      t.style.opacity = '0';
+-      t.style.transform = 'translateX(100%)';
+-      t.style.transition = 'all 0.3s var(--ease-out)';
+-      setTimeout(() => t.remove(), 300);
+-    }, 3500);
+-  }
+-
+-  // ΓöÇΓöÇ Generic Modal ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
+-  function showModal(contentHtml) {
+-    let modal = document.getElementById('generic-modal');
+-    if (!modal) {
+-      modal = document.createElement('div');
+-      modal.id = 'generic-modal';
+-      document.body.appendChild(modal);
+-    }
+-    modal.className = 'confirm-modal-overlay';
+-    modal.innerHTML = `
+-      <div class="confirm-modal-box" style="max-width: 500px; text-align: left;">
+-        <div id="generic-modal-body">${contentHtml}</div>
+-      </div>
+-    `;
+-    modal.classList.remove('hidden');
+-    modal.style.display = 'flex'; // ensures visibility
++      t.style.opacity = '0'; t.style.transform = 'translateY(20px)';
++      t.style.transition = 'all 220ms var(--ease-out)';
++      setTimeout(() => t.remove(), 240);
++    }, 3200);
+   }
+ 
++  // ΓöÇΓöÇ Generic modal ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
++  function showModal(html) {
++    let m = document.getElementById('generic-modal');
++    if (!m) { m = document.createElement('div'); m.id = 'generic-modal'; document.body.appendChild(m); }
++    m.className = 'm-modal-overlay';
++    m.innerHTML = `<div class="m-modal-box" style="text-align:left"><div id="generic-modal-body">${html}</div></div>`;
++    m.classList.remove('hidden');
++    m.style.display = 'flex';
++  }
+   function closeModal() {
+-    const modal = document.getElementById('generic-modal');
+-    if (modal) {
+-      modal.classList.add('hidden');
+-      modal.style.display = 'none';
+-    }
++    const m = document.getElementById('generic-modal');
++    if (m) { m.classList.add('hidden'); m.style.display = 'none'; }
+   }
+ 
+-  // ΓöÇΓöÇ Confirm Delete Modal ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
+-  let _confirmAction = null;
+-  let _confirmRequired = null; // string that must be typed, or null
+-
+-  function showConfirmModal({ icon = '≡ƒùæ', title, body, confirmLabel = 'Delete', confirmRequired = null, onConfirm }) {
+-    _confirmAction = onConfirm;
+-    _confirmRequired = confirmRequired;
+-
+-    document.getElementById('confirm-modal-icon').textContent = icon;
++  // ΓöÇΓöÇ Confirm modal ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
++  let _confirmAction = null, _confirmRequired = null;
++  function showConfirmModal({ icon, title, body, confirmLabel='Delete', confirmRequired=null, onConfirm }) {
++    if (!icon) icon = Icons.render('trash', 24);
++    _confirmAction = onConfirm; _confirmRequired = confirmRequired;
++    document.getElementById('confirm-modal-icon').innerHTML = icon;
+     document.getElementById('confirm-modal-title').textContent = title;
+     document.getElementById('confirm-modal-body').textContent = body;
+     document.getElementById('confirm-modal-btn').textContent = confirmLabel;
+-
+-    const inputWrap = document.getElementById('confirm-modal-input-wrap');
++    const wrap = document.getElementById('confirm-modal-input-wrap');
+     const input = document.getElementById('confirm-modal-input');
+     if (confirmRequired) {
+-      inputWrap.style.display = 'block';
++      wrap.style.display = 'block';
+       document.getElementById('confirm-modal-input-label').textContent = `Type "${confirmRequired}" to confirm:`;
+-      input.placeholder = confirmRequired;
+-      input.value = '';
++      input.placeholder = confirmRequired; input.value = '';
+       document.getElementById('confirm-modal-btn').disabled = true;
+     } else {
+-      inputWrap.style.display = 'none';
++      wrap.style.display = 'none';
+       document.getElementById('confirm-modal-btn').disabled = false;
+     }
+-
+     document.getElementById('confirm-modal').classList.remove('hidden');
+     if (confirmRequired) setTimeout(() => input.focus(), 100);
+   }
+-
+   function closeConfirmModal(e) {
+-    if (e && e.target !== document.getElementById('confirm-modal')) return;
+-    document.getElementById('confirm-modal').classList.add('hidden');
+-    _confirmAction = null;
+-    _confirmRequired = null;
++    // Only close when clicking the backdrop itself, not any child element
++    if (e && !e.target.classList.contains('m-modal-overlay')) return;
++    const el = document.getElementById('confirm-modal');
++    if (el) {
++      el.classList.add('hidden');
++      el.style.display = 'none';
++    }
++    _confirmAction = null; _confirmRequired = null;
+   }
+-
+   function onConfirmInput() {
+     if (!_confirmRequired) return;
+-    const val = document.getElementById('confirm-modal-input').value;
+-    document.getElementById('confirm-modal-btn').disabled = (val !== _confirmRequired);
++    const v = document.getElementById('confirm-modal-input').value;
++    document.getElementById('confirm-modal-btn').disabled = (v !== _confirmRequired);
+   }
+-
+   async function executeConfirmAction() {
+     if (!_confirmAction) return;
+     const btn = document.getElementById('confirm-modal-btn');
+-    btn.disabled = true;
+-    btn.textContent = 'DeletingΓÇª';
+-    try {
+-      await _confirmAction();
+-    } catch (err) {
+-      toast('Delete failed: ' + (err.message || err), 'warning');
+-    }
++    btn.disabled = true; btn.textContent = 'DeletingΓÇª';
++    try { await _confirmAction(); } catch (e) { toast('Failed: ' + (e.message || e), 'warning'); }
+     document.getElementById('confirm-modal').classList.add('hidden');
+-    _confirmAction = null;
+-    _confirmRequired = null;
++    _confirmAction = null; _confirmRequired = null;
+   }
+ 
+-  // ΓöÇΓöÇ Delete Project ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
+   function confirmDeleteProject() {
+     const proj = State.getCurrentProject();
+-    // Close user dropdown
+     document.getElementById('user-dropdown')?.classList.add('hidden');
+-    if (!proj) {
+-      toast('No project open to delete', 'warning');
+-      return;
+-    }
++    if (!proj) return toast('No project open', 'warning');
+     showConfirmModal({
+-      icon: '≡ƒùæ',
+       title: `Delete "${proj.name}"?`,
+-      body: `All phases, subcontractors, invoices and punch items in this project will be permanently deleted. This cannot be undone.`,
++      body: 'All phases, subcontractors, invoices and punch items will be permanently deleted.',
+       confirmLabel: 'Delete Project',
+-      onConfirm: async () => {
+-        await State.deleteProject(proj.id);
+-        showDashboardHome();
+-        toast('Project deleted', 'success');
+-      }
++      onConfirm: async () => { await State.deleteProject(proj.id); showProjectPicker(); toast('Project deleted', 'success'); }
+     });
+   }
+-
+-  // Called from the welcome screen project list
+   function confirmDeleteProjectById(id, name, e) {
+     e?.stopPropagation();
+     showConfirmModal({
+-      icon: '≡ƒùæ',
+       title: `Delete "${name}"?`,
+-      body: `All data for this project will be permanently removed. This cannot be undone.`,
++      body: 'All data for this project will be permanently removed.',
+       confirmLabel: 'Delete Project',
+       onConfirm: async () => {
+         await State.deleteProject(id);
+-        const remaining = State.getProjects();
+-        if (remaining.length > 0) showWelcomeWithProjects(remaining);
+-        else showWelcome();
++        const rem = State.getProjects();
++        if (rem.length) showWelcomeWithProjects(rem); else showWelcome();
+         toast('Project deleted', 'success');
+       }
+     });
+   }
+-
+-  // ΓöÇΓöÇ Delete Account ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
+   function confirmDeleteAccount() {
+     document.getElementById('user-dropdown')?.classList.add('hidden');
+-    const user = SupabaseClient.getUser?.();
+-    const email = user?.email || 'your account';
++    const u = SupabaseClient.getUser?.();
++    const email = u?.email || 'your account';
+     showConfirmModal({
+-      icon: 'ΓÜá∩╕Å',
++      icon: Icons.render('alert', 24),
+       title: 'Delete Your Account?',
+-      body: `This will permanently delete ${email} and ALL your projects, phases, subcontractors, and data. This cannot be undone.`,
++      body: `Permanently deletes ${email} and ALL projects.`,
+       confirmLabel: 'Delete Everything',
+       confirmRequired: 'DELETE',
+       onConfirm: async () => {
+         await SupabaseClient.deleteUser();
+         try { localStorage.clear(); } catch {}
+-        toast('Account deleted. RedirectingΓÇª', 'success');
++        toast('Account deleted', 'success');
+         setTimeout(() => { window.location.href = '/auth.html'; }, 1200);
+       }
+     });
+   }
+ 
+-  // ΓöÇΓöÇ User Menu ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
++  // ΓöÇΓöÇ User menu ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
+   function _closeMenuOnOutsideClick(e) {
+-    if (!e.target.closest('#user-menu')) {
+-      const dd = document.getElementById('user-dropdown');
+-      if (dd) dd.classList.add('hidden');
++    if (!e.target.closest('#user-dropdown') && !e.target.closest('#user-menu-btn')) {
++      document.getElementById('user-dropdown')?.classList.add('hidden');
+       document.removeEventListener('click', _closeMenuOnOutsideClick);
+     }
+   }
+-
+   function toggleUserMenu() {
+-    const dd = document.getElementById('user-dropdown');
+-    if (!dd) return;
+-    // Show/hide delete-project button based on whether a project is open
+-    const delProjBtn = document.getElementById('btn-delete-project');
+-    if (delProjBtn) delProjBtn.style.display = State.getCurrentProject() ? 'block' : 'none';
++    const dd = document.getElementById('user-dropdown'); if (!dd) return;
++    const delBtn = document.getElementById('btn-delete-project');
++    if (delBtn) delBtn.style.display = State.getCurrentProject() ? 'block' : 'none';
+     dd.classList.toggle('hidden');
+-    // Close on outside click ΓÇö single persistent listener
+     if (!dd.classList.contains('hidden')) {
+       document.removeEventListener('click', _closeMenuOnOutsideClick);
+       setTimeout(() => document.addEventListener('click', _closeMenuOnOutsideClick), 0);
+@@ -1371,85 +1296,477 @@ const App = (() => {
+   }
+ 
+   async function signOut() {
+-    try {
+-      if (typeof SupabaseClient !== 'undefined') {
+-        await SupabaseClient.signOut();
+-      }
+-    } catch (err) {
+-      console.warn('Sign out error:', err);
+-    }
+-    // Clear local app state (but keep Supabase auth session cleared via signOut)
+-    // Legacy localStorage key from prior brand naming
++    try { if (typeof SupabaseClient !== 'undefined') await SupabaseClient.signOut(); } catch(e) {}
+     try { localStorage.removeItem('buildmanager_v2'); } catch {}
+     window.location.href = '/auth.html';
+   }
+ 
+-  // ΓöÇΓöÇ Init ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
++  // ΓöÇΓöÇ Helpers ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
++
++  function showEditProjectModal() {
++    const proj = State.getCurrentProject();
++    if (!proj) return toast('No project open', 'warning');
++
++    showModal(`
++      <h3 class="modal-title">${Icons.render('pencil', 18)} Edit Project Info</h3>
++      <div class="field-group" style="margin-bottom:12px">
++        <label class="field-label">Project Name *</label>
++        <input class="field-input" id="ep-name" value="${(proj.name||'').replace(/"/g,'&quot;')}">
++      </div>
++      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px">
++        <div class="field-group">
++          <label class="field-label">Client Name</label>
++          <input class="field-input" id="ep-client" value="${(proj.client||'').replace(/"/g,'&quot;')}">
++        </div>
++        <div class="field-group">
++          <label class="field-label">Project Type</label>
++          <select class="field-select" id="ep-type">
++            <option value="residential" ${proj.type==='residential'?'selected':''}>Residential ΓÇö New Construction</option>
++            <option value="commercial" ${proj.type==='commercial'?'selected':''}>Commercial Build</option>
++            <option value="renovation" ${proj.type==='renovation'?'selected':''}>Renovation / Remodel</option>
++            <option value="addition" ${proj.type==='addition'?'selected':''}>Addition</option>
++          </select>
++        </div>
++      </div>
++      <div class="field-group" style="margin-bottom:12px">
++        <label class="field-label">Project Address</label>
++        <input class="field-input" id="ep-address" value="${(proj.address||'').replace(/"/g,'&quot;')}">
++      </div>
++      <div style="background:var(--bg-elev-2);border-radius:var(--r-md);padding:14px;margin-bottom:12px">
++        <div style="font-size:11px;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:.06em;margin-bottom:12px">Budget & Currency</div>
++        <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px">
++          <div class="field-group">
++            <label class="field-label">Total Budget (Γé╣)</label>
++            <input class="field-input mono" type="number" id="ep-budget" value="${proj.totalBudget||''}" min="0" style="font-family:var(--font-mono)">
++          </div>
++          <div class="field-group">
++            <label class="field-label">Contingency %</label>
++            <input class="field-input mono" type="number" id="ep-contingency" value="${proj.contingency||10}" min="0" max="30" style="font-family:var(--font-mono)">
++          </div>
++        </div>
++        <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
++          <div class="field-group">
++            <label class="field-label">Currency</label>
++            <select class="field-select" id="ep-currency">
++              <option value="INR" ${(proj.currency||'INR')==='INR'?'selected':''}>Γé╣ INR</option>
++              <option value="USD" ${(proj.currency||'')==='USD'?'selected':''}>$ USD</option>
++            </select>
++          </div>
++          <div class="field-group">
++            <label class="field-label">Primary Contractor</label>
++            <input class="field-input" id="ep-contractor" value="${(proj.contractor||'').replace(/"/g,'&quot;')}">
++          </div>
++        </div>
++      </div>
++      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px">
++        <div class="field-group">
++          <label class="field-label">Start Date</label>
++          <input class="field-input" type="date" id="ep-start" value="${proj.startDate||''}">
++        </div>
++        <div class="field-group">
++          <label class="field-label">Target Completion</label>
++          <input class="field-input" type="date" id="ep-end" value="${proj.endDate||''}">
++        </div>
++      </div>
++      <div class="field-group" style="margin-bottom:20px">
++        <label class="field-label">Scope Notes</label>
++        <textarea class="field-textarea" id="ep-notes" rows="3" placeholder="Brief description of scopeΓÇª">${(proj.notes||'').replace(/"/g,'&quot;')}</textarea>
++      </div>
++      <div style="display:flex;gap:12px">
++        <button onclick="App.closeModal()" class="modal-btn-cancel" style="flex:1;padding:11px;border-radius:10px;cursor:pointer;font-size:13px;font-weight:700;font-family:inherit">Cancel</button>
++        <button onclick="App.saveEditProject()" style="flex:1;padding:11px;border-radius:10px;cursor:pointer;font-size:13px;font-weight:700;font-family:inherit;background:linear-gradient(180deg,var(--amber-soft),var(--amber));color:#fff;border:none">${Icons.render('check', 14)} Save Changes</button>
++      </div>
++    `);
++  }
++
++  function saveEditProject() {
++    const proj = State.getCurrentProject();
++    if (!proj) return toast('No project open', 'warning');
++
++    const name = document.getElementById('ep-name')?.value?.trim();
++    if (!name) return toast('Project name is required', 'warning');
++
++    const updates = {
++      name,
++      client: document.getElementById('ep-client')?.value?.trim() || '',
++      address: document.getElementById('ep-address')?.value?.trim() || '',
++      type: document.getElementById('ep-type')?.value || 'residential',
++      totalBudget: parseFloat(document.getElementById('ep-budget')?.value) || 0,
++      contingency: parseFloat(document.getElementById('ep-contingency')?.value) || 10,
++      currency: document.getElementById('ep-currency')?.value || 'INR',
++      contractor: document.getElementById('ep-contractor')?.value?.trim() || '',
++      startDate: document.getElementById('ep-start')?.value || '',
++      endDate: document.getElementById('ep-end')?.value || '',
++      notes: document.getElementById('ep-notes')?.value?.trim() || '',
++    };
++
++    State.updateProjectInfo(updates);
++
++    // Update the app bar name
++    const nameEl = document.getElementById('current-project-name');
++    if (nameEl) nameEl.textContent = name;
++
++    // Refresh Financial currency
++    Financial.currency = updates.currency;
++
++    closeModal();
++    toast('Project info updated', 'success');
++
++    // Re-render current hub to reflect changes
++    showHub(currentHub);
++    Financial.updateAllTotals?.();
++  }
++
++  function emptyState(title, desc) {
++    return `<div class="m-empty"><div class="m-empty-icon">${Icons.render('inbox', 40)}</div><div class="m-empty-title">${title}</div><div class="m-empty-desc">${desc || ''}</div></div>`;
++  }
++
++  // ΓöÇΓöÇ Back Button (Android hardware + browser) ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
++  function _pushNav(dest) {
++    // Avoid duplicates: compare meaningful properties based on type
++    const last = _navStack[_navStack.length - 1];
++    if (!last) { _navStack.push(dest); return; }
++    if (last.type !== dest.type) { _navStack.push(dest); return; }
++    // Same type ΓÇö check deeper to avoid duplicates
++    if (dest.type === 'hub' && last.name === dest.name) return;
++    if (dest.type === 'phase-hub' && last.phaseId === dest.phaseId) return;
++    if (dest.type === 'category' && last.phaseId === dest.phaseId && last.categoryId === dest.categoryId) return;
++    _navStack.push(dest);
++  }
++
++  function handleBack() {
++    // 1. AI drawer open ΓåÆ close it
++    if (aiOpen) { closeAI(); return; }
++
++    // 2. Generic modal open ΓåÆ close it
++    const gModal = document.getElementById('generic-modal');
++    if (gModal && gModal.style.display === 'flex') { closeModal(); return; }
++
++    // 3. Confirm modal open ΓåÆ close it
++    const cModal = document.getElementById('confirm-modal');
++    if (cModal && !cModal.classList.contains('hidden')) {
++      cModal.classList.add('hidden');
++      cModal.style.display = 'none';
++      _confirmAction = null;
++      _confirmRequired = null;
++      return;
++    }
++
++    // 4. User dropdown open ΓåÆ close it
++    const dd = document.getElementById('user-dropdown');
++    if (dd && !dd.classList.contains('hidden')) { dd.classList.add('hidden'); return; }
++
++    // 5. Wizard is open ΓåÆ wizardBack
++    const wizard = document.getElementById('project-wizard');
++    if (wizard && !wizard.classList.contains('hidden')) { wizardBack(); return; }
++
++    // 6. Pop nav history and restore previous view
++    if (_navStack.length > 0) {
++      const prev = _navStack.pop();
++      _isNavigatingBack = true;
++      if (prev.type === 'hub') {
++        showHub(prev.name);
++        if (prev.ledgerTab) setLedgerTab(prev.ledgerTab);
++      } else if (prev.type === 'phase-hub') {
++        showPhaseHub(prev.phaseId);
++      } else if (prev.type === 'category') {
++        showPhaseCategory(prev.phaseId, prev.categoryId);
++      } else if (prev.type === 'input-card') {
++        showInputCard(prev.phaseId, prev.cardId);
++      } else if (prev.type === 'more-back') {
++        showHub('more');
++      } else if (prev.type === 'flat-sales') {
++        showFlatSales();
++      }
++      _isNavigatingBack = false;
++      return;
++    }
++
++    // 7. At root ΓåÆ minimize app (Capacitor) not close it
++    if (typeof Capacitor !== 'undefined') {
++      try { Capacitor.Plugins.App.minimizeApp(); } catch (e) {}
++    }
++  }
++
++  function _setupBackButton() {
++    if (_backSetup) return;
++    _backSetup = true;
++
++    // ΓöÇΓöÇ Helper: register the Capacitor App.backButton listener ΓöÇΓöÇ
++    function registerCapacitorBackButton() {
++      if (typeof Capacitor === 'undefined') return false;
++      try {
++        if (Capacitor.Plugins && Capacitor.Plugins.App && typeof Capacitor.Plugins.App.addListener === 'function') {
++          Capacitor.Plugins.App.addListener('backButton', () => {
++            handleBack();
++          });
++          console.log('[Back] Γ£ô Capacitor backButton listener registered');
++          return true;
++        }
++        console.warn('[Back] Capacitor.Plugins.App.addListener not available yet');
++      } catch (e) {
++        console.error('[Back] Failed to register Capacitor listener:', e);
++      }
++      return false;
++    }
++
++    // ΓöÇΓöÇ Method 1: Try immediately ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
++    // Capacitor's bridge is usually ready by DOMContentLoaded.  If this
++    // succeeds, we're done.
++    let registered = registerCapacitorBackButton();
++
++    // ΓöÇΓöÇ Method 2: deviceready event (backup) ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
++    // Standard Cordova/Capacitor event fired once the native bridge is
++    // fully initialised.  On many devices this fires BEFORE
++    // DOMContentLoaded, so it's a safety net for the async-init case.
++    if (!registered) {
++      document.addEventListener('deviceready', () => {
++        console.log('[Back] deviceready fired ΓÇö retrying');
++        registerCapacitorBackButton();
++      });
++    }
++
++    // ΓöÇΓöÇ Method 3: Delayed retry (last resort) ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
++    // If deviceready already fired before DOMContentLoaded, the listener
++    // above will never fire.  This catch-all covers that edge case.
++    if (!registered) {
++      setTimeout(() => {
++        if (!registerCapacitorBackButton()) {
++          console.warn('[Back] All Capacitor registration attempts failed');
++        }
++      }, 800);
++    }
++
++    // ΓöÇΓöÇ Method 4: Cordova-compat backbutton event (fallback) ΓöÇΓöÇΓöÇΓöÇ
++    // Works in some Capacitor/Cordova runtimes even when the App
++    // plugin listener isn't available.
++    document.addEventListener('backbutton', (e) => {
++      e.preventDefault();
++      handleBack();
++    });
++
++    // ΓöÇΓöÇ Browser fallback via popstate ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
++    // Used when running outside Capacitor (dev in browser, etc.)
++    window.addEventListener('popstate', (e) => {
++      // Only intercept if we have navigation to handle
++      if (_navStack.length > 0 || aiOpen ||
++          !document.getElementById('project-wizard')?.classList.contains('hidden') ||
++          document.getElementById('generic-modal')?.style.display === 'flex' ||
++          !document.getElementById('confirm-modal')?.classList.contains('hidden')) {
++        e.preventDefault();
++        handleBack();
++      }
++    });
++
++    // Push a dummy history entry so popstate fires on back in browser
++    if (window.history && window.history.pushState) {
++      window.history.pushState({ app: true }, '');
++    }
++  }
++
++  let _isSyncing = false;
++
++  function updateSyncStatus() {
++    const badge = document.getElementById('sync-status-badge');
++    if (!badge) return;
++
++    const proj = State.getCurrentProject();
++    if (!proj) {
++      badge.style.display = 'none';
++      return;
++    }
++
++    const isLocalProject = !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(proj.id);
++    if (isLocalProject) {
++      badge.style.display = 'inline-flex';
++      badge.className = 'sync-badge offline-local';
++      badge.innerHTML = 'Local Only';
++      return;
++    }
++
++    badge.style.display = 'inline-flex';
++    const isOnline = navigator.onLine;
++
++    if (!isOnline) {
++      badge.className = 'sync-badge offline-local';
++      badge.innerHTML = 'ΓÜá Offline';
++    } else if (_isSyncing) {
++      badge.className = 'sync-badge syncing';
++      badge.innerHTML = 'SyncingΓÇª';
++    } else {
++      const unsynced = State.hasUnsyncedChanges();
++      if (unsynced) {
++        badge.className = 'sync-badge offline-local';
++        badge.style.border = '1px dashed var(--warning)';
++        badge.style.color = 'var(--warning)';
++        badge.innerHTML = 'Unsynced';
++      } else {
++        badge.className = 'sync-badge online-synced';
++        badge.style.border = '';
++        badge.style.color = '';
++        badge.innerHTML = 'Γ£ô Synced';
++      }
++    }
++  }
++
++  // ΓöÇΓöÇ Boot ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
+   async function boot() {
+-    // Wait for state to finish loading (localStorage first, then Supabase)
+-    try {
+-      await State.load();
+-    } catch (err) {
+-      console.warn('[App] State load error:', err);
++    try { await State.load(); } catch (e) { console.warn(e); }
++
++    // Auth Guard: redirect to login if not authenticated and not onboarding
++    const needsOnboarding = !localStorage.getItem('recon_onboarded_v1');
++    if (!needsOnboarding && typeof SupabaseClient !== 'undefined' && !SupabaseClient.isAuthenticated()) {
++      SupabaseClient.requireAuth();
++      return;
+     }
++
++    // Ensure state is saved before tab close
++    window.addEventListener('beforeunload', () => State.save());
++    _setupBackButton();
+     init();
+ 
+-    // BUG 5 FIX: After Supabase sync completes, re-render the UI
+-    // so fresh cloud data replaces the localStorage snapshot
++    // Wire up sync queue events
++    window.addEventListener('online', () => {
++      updateSyncStatus();
++      toast('Connection restored. Syncing changes to cloud...', 'info');
++      State.replaySyncQueue();
++    });
++    window.addEventListener('offline', () => {
++      updateSyncStatus();
++      toast('Connection lost. Operating offline.', 'warning');
++    });
++    window.addEventListener('syncqueuechanged', updateSyncStatus);
++    window.addEventListener('syncstart', () => {
++      _isSyncing = true;
++      updateSyncStatus();
++    });
++    window.addEventListener('syncend', (e) => {
++      _isSyncing = false;
++      updateSyncStatus();
++      if (e.detail && e.detail.success) {
++        toast('Cloud sync complete!', 'success');
++      } else {
++        toast('Sync paused: some mutations are pending connection.', 'warning');
++      }
++    });
++
+     window.addEventListener('statesynced', () => {
+-      console.log('[App] Supabase sync complete ΓÇö refreshing UI');
++      updateSyncStatus();
+       const proj = State.getCurrentProject();
+       if (proj) {
+-        // Re-render sidebar with updated totals
+-        renderSidebar(proj);
+-        // Re-render current view
+-        if (currentView === 'overview' || currentView === 'dashboard') {
+-          showOverview();
+-        } else if (currentPhase && currentPhase >= 1 && currentPhase <= 10) {
+-          showPhaseHub(currentPhase);
++        const nameEl = document.getElementById('current-project-name');
++        if (nameEl) {
++          const isLocal = !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(proj.id);
++          if (isLocal) {
++            nameEl.innerHTML = `${proj.name} <button class="m-appbar-sync-btn" onclick="App.syncProjectToCloud('${proj.id}')" title="Sync Project to Cloud" style="background:transparent; border:none; color:var(--amber); cursor:pointer; padding:0 4px; display:inline-flex; align-items:center; vertical-align:middle;">${Icons.render('cloudUpload', 16)}</button>`;
++          } else {
++            nameEl.textContent = proj.name;
++          }
+         }
+-        // Always refresh totals
+-        if (typeof Financial !== 'undefined') Financial.updateAllTotals();
++        showHub(currentHub);
++        Financial.updateAllTotals?.();
+       } else {
+-        // No project after sync ΓÇö show welcome
+-        const projects = State.getProjects();
+-        if (projects.length > 0) showWelcomeWithProjects(projects);
+-        else showWelcome();
++        const ps = State.getProjects();
++        if (ps.length) showWelcomeWithProjects(ps); else showWelcome();
+       }
+-    }, { once: false });
++    });
+ 
+-    // Listen for phases-new-core.js patching (even without Supabase)
+-    // so we can re-render if the user clicked Material/Labor during
+-    // the retry window and got a fallback "module loadingΓÇª" message.
+     window.addEventListener('phasescoreready', () => {
+-      console.log('[App] Phases core ready ΓÇö re-rendering current view if needed');
+       if (currentView === 'material-cards') showMaterialCards(currentPhase);
+       else if (currentView === 'labor-cards') showLaborCards(currentPhase);
+       else if (currentView === 'entry-form') showEntryForm(currentPhase, currentCategory);
+     });
++
++    // Initial sync status check and auto-replay
++    updateSyncStatus();
++    if (navigator.onLine) {
++      State.replaySyncQueue();
++    }
+   }
+ 
+-  if (document.readyState === 'loading') {
+-    document.addEventListener('DOMContentLoaded', boot);
+-  } else {
+-    boot();
++  function showSyncConstraintModal() {
++    const sqlScript = `ALTER TABLE public.phases DROP CONSTRAINT IF EXISTS phases_phase_number_check;\nALTER TABLE public.phases ADD CONSTRAINT phases_phase_number_check CHECK (phase_number BETWEEN 1 AND 12);`;
++    
++    showModal(`
++      <div style="display:flex; flex-direction:column; gap:12px; text-align:left">
++        <div style="display:flex; align-items:center; gap:8px; color:var(--warning)">
++          ${Icons.render('alert', 24)}
++          <h3 style="margin:0; font-size:18px; font-weight:700">Database Schema Outdated</h3>
++        </div>
++        <p style="font-size:13px; color:var(--text-secondary); line-height:1.5; margin:0">
++          Your remote Supabase database has a check constraint restricting <code>phase_number</code> to 9 phases. Since the app has been updated to include 10 phases (including Interior), your schema needs to be updated.
++        </p>
++        <p style="font-size:13px; color:var(--text-secondary); font-weight:600; margin:0">
++          Copy and run the following SQL command in your <strong>Supabase SQL Editor</strong> to fix this:
++        </p>
++        <div style="position:relative; margin-top:4px">
++          <textarea readonly style="width:100%; height:80px; font-family:var(--font-mono); font-size:11px; padding:10px; border:1px solid var(--border-strong); border-radius:8px; background:var(--bg-elev-2); color:var(--text); resize:none; outline:none; box-sizing:border-box" id="sync-sql-box">${sqlScript}</textarea>
++          <button onclick="navigator.clipboard.writeText(document.getElementById('sync-sql-box').value); App.toast('SQL copied to clipboard!', 'success')" style="position:absolute; bottom:8px; right:8px; background:var(--amber); color:#fff; border:none; padding:4px 8px; border-radius:4px; font-size:11px; cursor:pointer; font-weight:700">
++            Copy
++          </button>
++        </div>
++        <div style="display:flex; gap:8px; margin-top:8px">
++          <button class="m-btn m-btn-primary m-btn-grow" onclick="App.closeModal()">OK, I will run this</button>
++        </div>
++      </div>
++    `);
+   }
+ 
++  async function syncProjectToCloud(projectId, event) {
++    if (event) event.stopPropagation();
++    if (!navigator.onLine) {
++      toast('Cannot sync project: You are currently offline.', 'warning');
++      return;
++    }
++    toast('Syncing project to cloud...', 'info');
++    try {
++      await State.syncProjectToCloud(projectId);
++      toast('Project synced to cloud successfully!', 'success');
++      // Redraw screen
++      const projects = State.getProjects();
++      const proj = State.getCurrentProject();
++      if (proj && String(proj.id) === String(projectId)) {
++        showMainApp(proj);
++      } else if (projects.length) {
++        showWelcomeWithProjects(projects);
++      }
++    } catch (err) {
++      console.error('[App] Sync to cloud failed:', err);
++      const msg = err.message || '';
++      if (msg.includes('phases_phase_number_check')) {
++        showSyncConstraintModal();
++      } else {
++        toast('Sync failed: ' + msg, 'error');
++      }
++    }
++  }
++
++  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', boot);
++  else boot();
++
+   return {
+-    init, startNewProject, openProject,
+-    wizardNext, wizardBack,
+-    showPhase, showPhaseHub, showPhaseCategory, showInputCard, showInteriorHub, showPhaseBills,
+-    showMaterialCards, showLaborCards, showEntryForm,
+-    showSubLedger, showLabourHub, showVendorHub, showInventoryHub, showRaBillsHub,
+-    showTools, showColourLab, showFlatSales, showFlatSalesBuyer,
+-    showDashboard: showDashboardHome,
+-    showOverview,
+-    toggleSidebar, toggleSidebarGroup, toggleAI, minimizeAI, closeAI,
+-    sendAIMessage, exportPDF, exportExcel,
++    init, startNewProject, openProject, showProjectPicker, syncProjectToCloud,
++    wizardNext, wizardBack, wizardSkip,
++    showHub, setLedgerTab,
++    // phase routes
++    showPhase, showPhaseHub, showInteriorHub, showPhaseCategory, showInputCard,
++    showMaterialCards, showLaborCards, showEntryForm, showPhaseBills, showConstructionBills,
++    // more routes
++    showRaBillsHub, showSubLedger, showFlatSales, showFlatSalesBuyer, showTools,
++    // legacy aliases
++    showLabourHub, showVendorHub, showInventoryHub, showOverview, showDashboard,
++    // AI / FAB
++    toggleAI, openAI, closeAI, minimizeAI, sendAIMessage, _toggleFab, _fabAction,
++    // export
++    exportPDF, exportExcel,
++    // user / modals
+     toggleUserMenu, signOut, toast, showModal, closeModal,
+-    // Delete system
+     showConfirmModal, closeConfirmModal, onConfirmInput, executeConfirmAction,
++    handleBack,
++    showTutorial: window.showTutorial || function(){},
++    showEditProjectModal, saveEditProject,
+     confirmDeleteProject, confirmDeleteProjectById, confirmDeleteAccount,
+-    toast,
++    // legacy no-ops
++    toggleSidebar() {}, toggleSidebarGroup() {},
+   };
+ })();

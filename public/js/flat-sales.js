@@ -31,18 +31,13 @@ const FlatSales = (() => {
     const proj = State.getCurrentProject();
 
     let html = `
-      <div class="phase-workspace active">
-        <div class="breadcrumb">
-          <a onclick="App.showOverview()">Overview</a>
-          <span class="breadcrumb-sep">›</span>
-          <span class="breadcrumb-current">🏠 Flat Sales</span>
-        </div>
-
         <!-- Page Header -->
         <div class="hub-header" style="margin-bottom:20px">
           <div class="hub-header-left">
-            <h2 class="hub-title" style="font-size:22px">🏠 Flat Sales</h2>
-            <p class="hub-subtitle">Track buyers, agreed amounts, instalments and payment proofs.</p>
+            <div>
+              <h2 class="hub-title" style="font-size:22px">${Icons.render('building', 22)} Flat Sales</h2>
+              <p class="hub-subtitle">Track buyers, agreed amounts, instalments and payment proofs.</p>
+            </div>
           </div>
           <div class="hub-header-right">
             <div class="phase-chip" style="margin-right:8px">
@@ -60,7 +55,7 @@ const FlatSales = (() => {
         <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:12px;margin-bottom:24px">
           ${_summaryCard('Total Agreed', fmtF(totalAgreed), '#9E7758')}
           ${_summaryCard('Total Received', fmtF(totalReceived), '#A8B89C')}
-          ${_summaryCard('Pending', fmtF(totalPending), totalPending > 0 ? '#C77966' : '#A8B89C')}
+          ${totalPending > 0 ? _summaryCard('Pending', fmtF(totalPending), '#C77966') : _summaryCard('Fully Paid ✓', 'All Cleared', '#A8B89C')}
           ${_summaryCard('Buyers', buyers.length, 'var(--steel-light)')}
         </div>
     `;
@@ -68,7 +63,7 @@ const FlatSales = (() => {
     if (buyers.length === 0) {
       html += `
         <div style="padding:60px 32px;text-align:center;border:1px dashed var(--charcoal-border);border-radius:12px;background:var(--charcoal-mid)">
-          <div style="font-size:48px;margin-bottom:12px">🏠</div>
+          <div style="margin-bottom:12px;color:var(--text-muted)">${Icons.render('building', 48)}</div>
           <h3 style="color:var(--text-secondary);font-size:16px;font-weight:700;margin-bottom:8px">No Buyers Added Yet</h3>
           <p style="color:var(--text-muted);font-size:13px;margin-bottom:20px">Add your first flat buyer to track their payment schedule and record installments.</p>
           <button class="btn btn-primary" onclick="FlatSales.showAddBuyerModal()">+ Add First Buyer</button>
@@ -85,19 +80,19 @@ const FlatSales = (() => {
         const sc = statusColor[b.status] || '#9E7758';
 
         html += `
-          <div onclick="App.showFlatSalesBuyer('${b.id}')"
+          <div onclick="App.showFlatSalesBuyer('${escapeAttr(b.id)}')"
                style="background:var(--charcoal-mid);border:1px solid var(--charcoal-border);border-radius:12px;padding:20px;cursor:pointer;transition:border-color .15s,box-shadow .15s"
                onmouseover="this.style.borderColor='var(--amber-muted)';this.style.boxShadow='0 4px 20px rgba(0,0,0,.3)'"
                onmouseout="this.style.borderColor='var(--charcoal-border)';this.style.boxShadow=''">
             <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:16px;flex-wrap:wrap">
               <div style="min-width:0;flex:1">
                 <div style="display:flex;align-items:center;gap:10px;margin-bottom:4px">
-                  <span style="font-size:18px;font-weight:800;color:var(--text-primary)">${b.name}</span>
-                  <span style="font-size:10px;font-weight:700;padding:3px 8px;border-radius:20px;background:${sc}20;color:${sc}">${b.status || 'Booked'}</span>
-                  ${b.flatNo ? `<span style="font-size:11px;color:var(--text-muted)">Flat ${b.flatNo}</span>` : ''}
+                  <span style="font-size:18px;font-weight:800;color:var(--text-primary)">${escapeHtml(b.name)}</span>
+                  <span style="font-size:10px;font-weight:700;padding:3px 8px;border-radius:20px;background:${sc}20;color:${sc}">${escapeHtml(b.status || 'Booked')}</span>
+                  ${b.flatNo ? `<span style="font-size:11px;color:var(--text-muted)">Flat ${escapeHtml(b.flatNo)}</span>` : ''}
                 </div>
                 <div style="font-size:12px;color:var(--text-muted);margin-bottom:10px">
-                  ${b.phone ? `📞 ${b.phone}` : ''} ${b.address ? ` &nbsp;·&nbsp; ${b.address}` : ''}
+                  ${b.phone ? `📞 ${escapeHtml(b.phone)}` : ''} ${b.address ? ` &nbsp;·&nbsp; ${escapeHtml(b.address)}` : ''}
                 </div>
                 <!-- Progress bar -->
                 <div style="background:var(--charcoal);border-radius:4px;height:6px;overflow:hidden;max-width:400px">
@@ -117,7 +112,6 @@ const FlatSales = (() => {
       html += `</div>`;
     }
 
-    html += `</div>`; // close phase-workspace
     return html;
   }
 
@@ -140,60 +134,60 @@ const FlatSales = (() => {
     const today = new Date().toISOString().split('T')[0];
 
     App.showModal(`
-      <h3 style="font-size:17px;font-weight:800;color:#1A1A2E;margin-bottom:20px">
-        🏠 ${isEdit ? 'Edit Buyer' : 'Add New Buyer'}
+      <h3 class="modal-title">
+        ${Icons.render('building', 16)} ${isEdit ? 'Edit Buyer' : 'Add New Buyer'}
       </h3>
 
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px">
         <div>
           <label class="fs-label">Buyer Name *</label>
-          <input id="fs-name" class="fs-inp" placeholder="e.g. Ramesh Sharma" value="${b.name||''}">
+          <input id="fs-name" class="fs-inp" placeholder="e.g. Ramesh Sharma" value="${escapeAttr(b.name||'')}">
         </div>
         <div>
           <label class="fs-label">Flat / Unit No.</label>
-          <input id="fs-flatno" class="fs-inp" placeholder="e.g. A-301" value="${b.flatNo||''}">
+          <input id="fs-flatno" class="fs-inp" placeholder="e.g. A-301" value="${escapeAttr(b.flatNo||'')}">
         </div>
       </div>
 
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px">
         <div>
           <label class="fs-label">Phone Number</label>
-          <input id="fs-phone" class="fs-inp" placeholder="10-digit mobile" value="${b.phone||''}" style="font-family:monospace">
+          <input id="fs-phone" class="fs-inp" placeholder="10-digit mobile" value="${escapeAttr(b.phone||'')}" style="font-family:var(--font-mono)">
         </div>
         <div>
           <label class="fs-label">Status</label>
           <select id="fs-status" class="fs-inp">
-            ${FLAT_STATUS.map(s => `<option value="${s}" ${(b.status||'Booked')===s?'selected':''}>${s}</option>`).join('')}
+            ${FLAT_STATUS.map(s => `<option value="${escapeAttr(s)}" ${(b.status||'Booked')===s?'selected':''}>${escapeHtml(s)}</option>`).join('')}
           </select>
         </div>
       </div>
 
       <div style="margin-bottom:12px">
         <label class="fs-label">Buyer Address</label>
-        <input id="fs-address" class="fs-inp" placeholder="Current residential address" value="${b.address||''}">
+        <input id="fs-address" class="fs-inp" placeholder="Current residential address" value="${escapeAttr(b.address||'')}">
       </div>
 
-      <div style="background:#f0f4f8;border-radius:10px;padding:14px;margin-bottom:12px">
-        <div style="font-size:11px;font-weight:700;color:#6B7280;text-transform:uppercase;letter-spacing:.06em;margin-bottom:12px">💰 Payment Details</div>
+      <div style="background:var(--bg-elev-2);border-radius:var(--r-md);padding:14px;margin-bottom:12px">
+        <div style="font-size:11px;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:.06em;margin-bottom:12px">💰 Payment Details</div>
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px">
           <div>
             <label class="fs-label">Agreed Total Amount (₹) *</label>
-            <input type="number" id="fs-agreed" class="fs-inp mono" placeholder="0" value="${b.agreedAmount||''}" min="0">
+            <input type="number" id="fs-agreed" class="fs-inp" placeholder="0" value="${escapeAttr(b.agreedAmount||'')}" min="0" style="font-family:var(--font-mono)">
           </div>
           <div>
             <label class="fs-label">Down Payment (₹)</label>
-            <input type="number" id="fs-down" class="fs-inp mono" placeholder="0" value="${b.downPayment||''}" min="0">
+            <input type="number" id="fs-down" class="fs-inp" placeholder="0" value="${escapeAttr(b.downPayment||'')}" min="0" style="font-family:var(--font-mono)">
           </div>
         </div>
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
           <div>
             <label class="fs-label">Monthly Installment (₹)</label>
-            <input type="number" id="fs-emi" class="fs-inp mono" placeholder="0" value="${b.monthlyEMI||''}" min="0">
+            <input type="number" id="fs-emi" class="fs-inp" placeholder="0" value="${escapeAttr(b.monthlyEMI||'')}" min="0" style="font-family:var(--font-mono)">
           </div>
           <div>
             <label class="fs-label">Mode of Payment</label>
             <select id="fs-mode" class="fs-inp">
-              ${PAYMENT_MODES.map(m => `<option value="${m}" ${(b.paymentMode||'Cash')===m?'selected':''}>${m}</option>`).join('')}
+              ${PAYMENT_MODES.map(m => `<option value="${escapeAttr(m)}" ${(b.paymentMode||'Cash')===m?'selected':''}>${escapeHtml(m)}</option>`).join('')}
             </select>
           </div>
         </div>
@@ -201,25 +195,18 @@ const FlatSales = (() => {
 
       <div style="margin-bottom:20px">
         <label class="fs-label">Date of First Payment / Booking</label>
-        <input type="date" id="fs-firstdate" class="fs-inp" value="${b.firstPaymentDate||today}">
+        <input type="date" id="fs-firstdate" class="fs-inp" value="${escapeAttr(b.firstPaymentDate||today)}">
       </div>
 
       <div style="margin-bottom:20px">
         <label class="fs-label">Notes</label>
-        <textarea id="fs-notes" class="fs-inp" rows="2" placeholder="Any additional terms, remarks…" style="resize:vertical">${b.notes||''}</textarea>
+        <textarea id="fs-notes" class="fs-inp" rows="2" placeholder="Any additional terms, remarks…" style="resize:vertical">${escapeHtml(b.notes||'')}</textarea>
       </div>
 
       <div style="display:flex;gap:12px">
-        <button onclick="App.closeModal()" style="flex:1;padding:11px;border:1.5px solid #E5E7EB;background:none;border-radius:10px;cursor:pointer;font-size:13px;font-weight:700;color:#6B7280;font-family:inherit">Cancel</button>
-        <button onclick="FlatSales.saveBuyer(${isEdit ? `'${editId}'` : 'null'})" style="flex:1;padding:11px;border:none;background:linear-gradient(135deg,#705748,#9E7758);color:#F5E4CC;border-radius:10px;cursor:pointer;font-size:13px;font-weight:700;font-family:inherit">${isEdit ? 'Update Buyer' : 'Save Buyer'}</button>
+        <button onclick="App.closeModal()" class="modal-btn-cancel" style="flex:1;padding:11px;border-radius:10px;cursor:pointer;font-size:13px;font-weight:700;font-family:inherit">Cancel</button>
+        <button onclick="FlatSales.saveBuyer(${isEdit ? `'${escapeAttr(editId)}'` : 'null'})" class="modal-btn-primary" style="flex:1;padding:11px;border-radius:10px;cursor:pointer;font-size:13px;font-weight:700;font-family:inherit">${isEdit ? 'Update Buyer' : 'Save Buyer'}</button>
       </div>
-
-      <style>
-        .fs-label { display:block;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:#6B7280;margin-bottom:5px }
-        .fs-inp   { width:100%;padding:9px 11px;border:1.5px solid #E5E7EB;border-radius:8px;font-size:13px;background:#F9FAFB;color:#1A1A2E;outline:none;font-family:inherit;box-sizing:border-box }
-        .fs-inp:focus { border-color:#9E7758 }
-        .mono     { font-family:monospace }
-      </style>
     `);
   }
 
@@ -288,38 +275,27 @@ const FlatSales = (() => {
     });
 
     return `
-      <div class="phase-workspace active">
-        <!-- Breadcrumb -->
-        <div class="breadcrumb">
-          <a onclick="App.showOverview()">Overview</a>
-          <span class="breadcrumb-sep">›</span>
-          <a onclick="App.showFlatSales()">🏠 Flat Sales</a>
-          <span class="breadcrumb-sep">›</span>
-          <span class="breadcrumb-current">${b.name}</span>
-        </div>
-        <button class="back-to-hub" onclick="App.showFlatSales()">← Back to Flat Sales</button>
-
         <!-- Buyer Header Card -->
         <div style="background:var(--charcoal-mid);border:1px solid var(--charcoal-border);border-radius:14px;padding:22px 24px;margin-bottom:20px">
           <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:16px;flex-wrap:wrap">
             <div>
               <div style="display:flex;align-items:center;gap:10px;margin-bottom:6px">
-                <span style="font-size:22px;font-weight:800;color:var(--text-primary)">${b.name}</span>
-                <span style="font-size:10px;font-weight:700;padding:3px 8px;border-radius:20px;background:${sc}20;color:${sc}">${b.status||'Booked'}</span>
-                ${b.flatNo ? `<span style="font-size:12px;color:var(--text-muted);font-weight:600">Flat ${b.flatNo}</span>` : ''}
+                <span style="font-size:22px;font-weight:800;color:var(--text-primary)">${escapeHtml(b.name)}</span>
+                <span style="font-size:10px;font-weight:700;padding:3px 8px;border-radius:20px;background:${sc}20;color:${sc}">${escapeHtml(b.status||'Booked')}</span>
+                ${b.flatNo ? `<span style="font-size:12px;color:var(--text-muted);font-weight:600">Flat ${escapeHtml(b.flatNo)}</span>` : ''}
               </div>
-              ${b.phone ? `<div style="font-size:13px;color:var(--text-secondary);margin-bottom:3px">📞 ${b.phone}</div>` : ''}
-              ${b.address ? `<div style="font-size:12px;color:var(--text-muted)">📍 ${b.address}</div>` : ''}
-              ${b.notes ? `<div style="font-size:12px;color:var(--text-muted);margin-top:6px;font-style:italic">📝 ${b.notes}</div>` : ''}
+              ${b.phone ? `<div style="font-size:13px;color:var(--text-secondary);margin-bottom:3px">📞 ${escapeHtml(b.phone)}</div>` : ''}
+              ${b.address ? `<div style="font-size:12px;color:var(--text-muted)">📍 ${escapeHtml(b.address)}</div>` : ''}
+              ${b.notes ? `<div style="font-size:12px;color:var(--text-muted);margin-top:6px;font-style:italic">📝 ${escapeHtml(b.notes)}</div>` : ''}
             </div>
             <div style="display:flex;gap:8px;flex-shrink:0">
-              <button onclick="FlatSales.showAddBuyerModal('${b.id}')"
+              <button onclick="FlatSales.showAddBuyerModal('${escapeAttr(b.id)}')"
                 style="padding:8px 16px;border:1px solid var(--charcoal-border);background:var(--charcoal);color:var(--text-secondary);border-radius:8px;cursor:pointer;font-size:12px;font-weight:600;font-family:inherit">
-                ✏️ Edit
+                ${Icons.render('pencil', 12)} Edit
               </button>
-              <button onclick="FlatSales.confirmDeleteBuyer('${b.id}','${b.name.replace(/'/g,"\\'")}');"
+              <button onclick="FlatSales.confirmDeleteBuyer('${escapeAttr(b.id)}','${escapeAttr(b.name)}');"
                 style="padding:8px 16px;border:1px solid #C7796630;background:none;color:#C77966;border-radius:8px;cursor:pointer;font-size:12px;font-weight:600;font-family:inherit">
-                🗑 Delete
+                ${Icons.render('trash', 12)} Delete
               </button>
             </div>
           </div>
@@ -348,10 +324,10 @@ const FlatSales = (() => {
         <!-- Payment History -->
         <div class="section-card">
           <div class="section-card-header" style="cursor:default">
-            <span class="section-card-title">💳 Payment History</span>
+            <span class="section-card-title">${Icons.render('listChecks', 16)} Payment History</span>
             <div style="display:flex;align-items:center;gap:10px">
               <span style="font-family:var(--font-mono);font-weight:700;color:var(--amber)">${fmtF(totalPaid)}</span>
-              <button onclick="FlatSales.showAddPaymentModal('${b.id}')"
+              <button onclick="FlatSales.showAddPaymentModal('${escapeAttr(b.id)}')"
                 class="btn btn-primary" style="padding:6px 14px;font-size:12px">+ Add Payment</button>
             </div>
           </div>
@@ -382,31 +358,31 @@ const FlatSales = (() => {
                 </tfoot>
               </table>`}
           </div>
-        </div>
-      </div>`;
+        </div>`;
   }
 
   function _chip(label, value, color) {
     return `<div style="background:var(--charcoal);border:1px solid var(--charcoal-border);border-radius:8px;padding:8px 12px;min-width:0">
-      <div style="font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--text-muted);margin-bottom:3px">${label}</div>
-      <div style="font-family:var(--font-mono);font-weight:700;font-size:13px;color:${color}">${value}</div>
+      <div style="font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--text-muted);margin-bottom:3px">${escapeHtml(label)}</div>
+      <div style="font-family:var(--font-mono);font-weight:700;font-size:13px;color:${color}">${escapeHtml(value)}</div>
     </div>`;
   }
 
   function _paymentRow(p, buyerId, isDown) {
+    const resolvedUrl = typeof State !== 'undefined' ? State.getLocalImage(p.proofUrl) : p.proofUrl;
     const proofCell = p.proofUrl
-      ? `<td style="padding:10px 14px"><img src="${p.proofUrl}" alt="proof" style="height:36px;border-radius:4px;cursor:pointer;object-fit:cover" onclick="FlatSales._viewProof('${p.proofUrl}')"></td>`
+      ? `<td style="padding:10px 14px"><img src="${escapeAttr(resolvedUrl)}" alt="proof" style="height:36px;border-radius:4px;cursor:pointer;object-fit:cover" onclick="FlatSales._viewProof('${escapeAttr(resolvedUrl)}')"></td>`
       : `<td style="padding:10px 14px;color:var(--text-muted);font-size:11px">—</td>`;
-    const deleteBtn = isDown ? '' : `<button onclick="FlatSales.deletePayment('${buyerId}','${p.id}')" style="background:none;border:1px solid #C7796640;color:#C77966;padding:4px 8px;border-radius:4px;font-size:11px;cursor:pointer">Del</button>`;
-    const refText = p.refNo ? `<div style="font-size:11px;color:var(--text-muted)">Ref: ${p.refNo}</div>` : '';
+    const deleteBtn = isDown ? '' : `<button onclick="FlatSales.deletePayment('${escapeAttr(buyerId)}','${escapeAttr(p.id)}')" style="background:none;border:1px solid #C7796640;color:#C77966;padding:4px 8px;border-radius:4px;font-size:11px;cursor:pointer">Del</button>`;
+    const refText = p.refNo ? `<div style="font-size:11px;color:var(--text-muted)">Ref: ${escapeHtml(p.refNo)}</div>` : '';
     return `
       <tr style="border-bottom:1px solid var(--charcoal-border)">
         <td style="padding:10px 14px;font-family:var(--font-mono);font-size:12px;color:var(--text-muted);white-space:nowrap">${fmtDate(p.date)}</td>
         <td style="padding:10px 14px;font-size:13px;color:var(--text-secondary)">
-          ${p.notes || (isDown ? 'Down Payment' : 'Instalment')}
+          ${escapeHtml(p.notes || (isDown ? 'Down Payment' : 'Instalment'))}
           ${refText}
         </td>
-        <td style="padding:10px 14px;font-size:12px;color:var(--text-muted)">${p.mode || '—'}</td>
+        <td style="padding:10px 14px;font-size:12px;color:var(--text-muted)">${escapeHtml(p.mode || '—')}</td>
         ${proofCell}
         <td style="padding:10px 14px;font-family:var(--font-mono);font-weight:700;color:#A8B89C;text-align:right;white-space:nowrap">${fmtF(p.amount)}</td>
         <td style="padding:10px 14px;text-align:right">${deleteBtn}</td>
@@ -420,8 +396,8 @@ const FlatSales = (() => {
     const defaultMode = b?.paymentMode || 'Cash';
 
     App.showModal(`
-      <h3 style="font-size:17px;font-weight:800;color:#1A1A2E;margin-bottom:20px">💳 Record Payment</h3>
-      <input type="hidden" id="pay-buyer-id" value="${buyerId}">
+      <h3 class="modal-title">💳 Record Payment</h3>
+      <input type="hidden" id="pay-buyer-id" value="${escapeAttr(buyerId)}">
 
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:14px">
         <div>
@@ -430,7 +406,7 @@ const FlatSales = (() => {
         </div>
         <div>
           <label class="fs-label">Amount (₹) *</label>
-          <input type="number" id="pay-amount" class="fs-inp" style="font-family:monospace" placeholder="0" min="0">
+          <input type="number" id="pay-amount" class="fs-inp" style="font-family:var(--font-mono)" placeholder="0" min="0">
         </div>
       </div>
 
@@ -438,12 +414,12 @@ const FlatSales = (() => {
         <div>
           <label class="fs-label">Mode of Payment</label>
           <select id="pay-mode" class="fs-inp">
-            ${PAYMENT_MODES.map(m=>`<option value="${m}" ${defaultMode===m?'selected':''}>${m}</option>`).join('')}
+            ${PAYMENT_MODES.map(m=>`<option value="${escapeAttr(m)}" ${defaultMode===m?'selected':''}>${escapeHtml(m)}</option>`).join('')}
           </select>
         </div>
         <div>
           <label class="fs-label">Reference / Cheque No.</label>
-          <input id="pay-ref" class="fs-inp" placeholder="UTR, Cheque No., etc." style="font-family:monospace">
+          <input id="pay-ref" class="fs-inp" placeholder="UTR, Cheque No., etc." style="font-family:var(--font-mono)">
         </div>
       </div>
 
@@ -455,27 +431,36 @@ const FlatSales = (() => {
       <!-- Proof Upload -->
       <div style="margin-bottom:20px">
         <label class="fs-label">Payment Proof (Photo / Screenshot)</label>
-        <div style="display:flex;align-items:center;gap:10px;margin-top:6px">
+        <div style="display:flex;align-items:center;gap:10px;margin-top:6px;flex-wrap:wrap">
           <input type="file" id="pay-proof-file" accept="image/*" style="display:none" onchange="FlatSales._handleProofUpload(this)">
-          <button onclick="document.getElementById('pay-proof-file').click()"
-            style="padding:9px 16px;background:#F9FAFB;border:1.5px solid #E5E7EB;border-radius:8px;cursor:pointer;font-size:12px;font-weight:600;font-family:inherit;color:#6B7280">
-            📎 Upload Proof
-          </button>
-          <span id="pay-proof-status" style="font-size:12px;color:#9CA3AF">No file chosen</span>
+          <input type="file" id="pay-proof-file-cam" accept="image/*" capture="environment" style="display:none" onchange="FlatSales._handleProofUpload(this)">
+          ${/Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent) ? `
+            <button onclick="document.getElementById('pay-proof-file-cam').click()"
+              class="modal-btn-cancel"
+              style="padding:9px 14px;border-radius:8px;cursor:pointer;font-size:12px;font-weight:600;font-family:inherit">
+              📷 Take Photo
+            </button>
+            <button onclick="document.getElementById('pay-proof-file').click()"
+              class="modal-btn-cancel"
+              style="padding:9px 14px;border-radius:8px;cursor:pointer;font-size:12px;font-weight:600;font-family:inherit">
+              📎 Upload Proof
+            </button>
+          ` : `
+            <button onclick="document.getElementById('pay-proof-file').click()"
+              class="modal-btn-cancel"
+              style="padding:9px 16px;border-radius:8px;cursor:pointer;font-size:12px;font-weight:600;font-family:inherit">
+              📎 Upload Proof
+            </button>
+          `}
+          <span id="pay-proof-status" style="font-size:12px;color:var(--text-muted)">No file chosen</span>
         </div>
         <div id="pay-proof-preview" style="margin-top:8px"></div>
       </div>
 
       <div style="display:flex;gap:12px">
-        <button onclick="App.closeModal()" style="flex:1;padding:11px;border:1.5px solid #E5E7EB;background:none;border-radius:10px;cursor:pointer;font-size:13px;font-weight:700;color:#6B7280;font-family:inherit">Cancel</button>
-        <button onclick="FlatSales.savePayment()" style="flex:1;padding:11px;border:none;background:linear-gradient(135deg,#5A7A6A,#A8B89C);color:#fff;border-radius:10px;cursor:pointer;font-size:13px;font-weight:700;font-family:inherit">💳 Save Payment</button>
+        <button onclick="App.closeModal()" class="modal-btn-cancel" style="flex:1;padding:11px;border-radius:10px;cursor:pointer;font-size:13px;font-weight:700;font-family:inherit">Cancel</button>
+        <button onclick="FlatSales.savePayment()" style="flex:1;padding:11px;border-radius:10px;cursor:pointer;font-size:13px;font-weight:700;font-family:inherit;background:var(--success);color:#fff;border:none;font-family:inherit">💳 Save Payment</button>
       </div>
-
-      <style>
-        .fs-label { display:block;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:#6B7280;margin-bottom:5px }
-        .fs-inp   { width:100%;padding:9px 11px;border:1.5px solid #E5E7EB;border-radius:8px;font-size:13px;background:#F9FAFB;color:#1A1A2E;outline:none;font-family:inherit;box-sizing:border-box }
-        .fs-inp:focus { border-color:#9E7758 }
-      </style>
     `);
   }
 
@@ -511,7 +496,7 @@ const FlatSales = (() => {
         canvas.getContext('2d').drawImage(img, 0, 0, canvas.width, canvas.height);
         const compressed = canvas.toDataURL('image/jpeg', 0.75);
         // Store URL on the status element for savePayment to read
-        if (statusEl) { statusEl.textContent = '✅ ' + file.name; statusEl.dataset.url = compressed; }
+        if (statusEl) { statusEl.innerHTML = `${Icons.render('check', 11)} ` + file.name; statusEl.dataset.url = compressed; }
         if (previewEl) previewEl.innerHTML = `<img src="${compressed}" style="max-height:120px;max-width:100%;border-radius:8px;margin-top:4px;object-fit:contain">`;
       };
       img.src = e.target.result;
@@ -527,12 +512,26 @@ const FlatSales = (() => {
     const refNo   = document.getElementById('pay-ref')?.value?.trim();
     const notes   = document.getElementById('pay-notes')?.value?.trim();
     const statusEl = document.getElementById('pay-proof-status');
-    const proofUrl = statusEl?.dataset?.url || '';
+    const rawProof = statusEl?.dataset?.url || '';
 
     if (!date) { App.toast('Date is required', 'warning'); return; }
     if (!amount || amount <= 0) { App.toast('Enter a valid amount', 'warning'); return; }
 
-    State.addBuyerPayment(buyerId, { date, amount, mode, refNo, notes, proofUrl });
+    const paymentId = generateId();
+    let proofUrl = '';
+    if (rawProof) {
+      if (rawProof.startsWith('data:image')) {
+        const key = paymentId + '_proof';
+        if (typeof State !== 'undefined' && State.saveLocalImage) {
+          State.saveLocalImage(key, rawProof);
+        }
+        proofUrl = 'local-image://' + key;
+      } else {
+        proofUrl = rawProof;
+      }
+    }
+
+    State.addBuyerPayment(buyerId, { id: paymentId, date, amount, mode, refNo, notes, proofUrl });
     App.closeModal();
     App.toast('Payment recorded', 'success');
     App.showFlatSalesBuyer(buyerId);
@@ -540,11 +539,14 @@ const FlatSales = (() => {
 
   function deletePayment(buyerId, paymentId) {
     App.showConfirmModal({
-      icon: '💳',
+      icon: Icons.render('fileText', 24),
       title: 'Delete Payment?',
       body: 'This payment record will be permanently removed.',
       confirmLabel: 'Delete Payment',
       onConfirm: () => {
+        if (typeof State !== 'undefined' && State.deleteLocalImage) {
+          State.deleteLocalImage(paymentId + '_proof');
+        }
         State.deleteBuyerPayment(buyerId, paymentId);
         App.toast('Payment deleted', 'info');
         App.showFlatSalesBuyer(buyerId);
@@ -554,8 +556,8 @@ const FlatSales = (() => {
 
   function confirmDeleteBuyer(id, name) {
     App.showConfirmModal({
-      icon: '🏠',
-      title: `Delete "${name}"?`,
+      icon: Icons.render('building', 24),
+      title: `Delete "${escapeHtml(name)}"?`,
       body: 'This will permanently delete this buyer and all their payment records.',
       confirmLabel: 'Delete Buyer',
       onConfirm: () => {
@@ -570,11 +572,19 @@ const FlatSales = (() => {
     const overlay = document.createElement('div');
     overlay.style = 'position:fixed;inset:0;background:rgba(0,0,0,.92);z-index:9999;display:flex;align-items:center;justify-content:center;cursor:pointer';
     overlay.onclick = () => overlay.remove();
-    overlay.innerHTML = `
-      <div style="position:relative">
-        <img src="${url}" style="max-width:92vw;max-height:88vh;border-radius:10px;box-shadow:0 8px 40px rgba(0,0,0,.6)">
-        <div style="position:absolute;top:-10px;right:-10px;background:#fff;border-radius:50%;width:28px;height:28px;display:flex;align-items:center;justify-content:center;font-size:14px;cursor:pointer" onclick="this.closest('[style]').remove()">✕</div>
-      </div>`;
+    // Build proof overlay via DOM to avoid innerHTML injection from crafted URLs
+    const wrapper = document.createElement('div');
+    wrapper.style.cssText = 'position:relative';
+    const img = document.createElement('img');
+    img.src = url;   // Safe — DOM property, no HTML parsing
+    img.style.cssText = 'max-width:92vw;max-height:88vh;border-radius:10px;box-shadow:0 8px 40px rgba(0,0,0,.6)';
+    const closeBtn = document.createElement('div');
+    closeBtn.style.cssText = 'position:absolute;top:-10px;right:-10px;background:#fff;border-radius:50%;width:28px;height:28px;display:flex;align-items:center;justify-content:center;font-size:14px;cursor:pointer';
+    closeBtn.textContent = '✕';
+    closeBtn.onclick = () => overlay.remove();
+    wrapper.appendChild(img);
+    wrapper.appendChild(closeBtn);
+    overlay.appendChild(wrapper);
     document.body.appendChild(overlay);
   };
 

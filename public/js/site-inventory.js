@@ -22,15 +22,19 @@ const SiteInventory = (() => {
     let html = `
       <div class="hub-header">
         <div class="hub-header-left">
-          <h2 class="hub-title">Site Stock (Inventory)</h2>
-          <p class="hub-subtitle">Track material inward/outward movements. Know exactly what's on site.</p>
+          <div>
+            <h2 class="hub-title">Site Stock (Inventory)</h2>
+            <p class="hub-subtitle" style="margin-bottom: 8px">Track material inward/outward movements. Know exactly what's on site.</p>
+            <div style="display: flex; gap: 8px; flex-wrap: wrap">
+              <div class="phase-chip">
+                <span class="phase-pct">${totalItems} Materials</span>
+              </div>
+              ${lowStock > 0 ? `<div class="phase-chip" style="background:#C7796620; color:#C77966"><span class="phase-pct">${Icons.render('alert', 10)} ${lowStock} Low Stock</span></div>` : ''}
+            </div>
+          </div>
         </div>
         <div class="hub-header-right">
-          <div class="phase-chip" style="margin-right: 12px">
-            <span class="phase-pct">${totalItems} Materials</span>
-          </div>
-          ${lowStock > 0 ? `<div class="phase-chip" style="margin-right:12px; background:#C7796620; color:#C77966"><span class="phase-pct">⚠ ${lowStock} Low Stock</span></div>` : ''}
-          <button class="btn btn-primary" onclick="SiteInventory.showAddMaterialModal()" style="margin-left:8px">+ Add Material</button>
+          <button class="btn btn-primary" onclick="SiteInventory.showAddMaterialModal()">+ Add Material</button>
         </div>
       </div>
     `;
@@ -39,7 +43,7 @@ const SiteInventory = (() => {
       html += `
         <div class="cards-grid">
           <div style="grid-column:1/-1; padding:60px 32px; text-align:center; border:1px dashed var(--charcoal-border); border-radius:12px; background:var(--charcoal-mid)">
-            <div style="font-size:40px; margin-bottom:12px">📦</div>
+            <div style="font-size:40px; margin-bottom:12px">${Icons.render('package', 40)}</div>
             <h3 style="color:var(--text-secondary); font-size:16px; font-weight:700; margin-bottom:8px">No Materials Tracked</h3>
             <p style="color:var(--text-muted); font-size:13px; margin-bottom:20px">Add cement, steel, tiles, or any material to track stock on site.</p>
             <button class="btn btn-primary" onclick="SiteInventory.showAddMaterialModal()">+ Add First Material</button>
@@ -56,25 +60,25 @@ const SiteInventory = (() => {
         const unitLabel = UNIT_LABELS[m.unit] || m.unit;
 
         html += `
-          <div class="category-card" onclick="SiteInventory.showMaterialDetail('${m.id}')" style="cursor:pointer; transition:transform 0.15s, box-shadow 0.15s" onmouseover="this.style.transform='translateY(-2px)';this.style.boxShadow='0 8px 24px rgba(0,0,0,0.3)'" onmouseout="this.style.transform='';this.style.boxShadow=''">
+          <div class="category-card" onclick="SiteInventory.showMaterialDetail('${escapeAttr(m.id)}')" style="cursor:pointer; transition:transform 0.15s, box-shadow 0.15s" onmouseover="this.style.transform='translateY(-2px)';this.style.boxShadow='0 8px 24px rgba(0,0,0,0.3)'" onmouseout="this.style.transform='';this.style.boxShadow=''">
             <div class="cat-card-header">
               <div class="cat-card-icon" style="background:${isLow ? '#C7796618' : 'var(--charcoal-surface)'}">
-                ${isLow ? '⚠️' : '📦'}
+                ${isLow ? Icons.render('alert', 18) : Icons.render('package', 18)}
               </div>
               <div>
-                <div class="cat-card-title">${m.name}</div>
-                <div style="font-size:11px; color:var(--text-muted); margin-top:2px; text-transform:uppercase; letter-spacing:0.04em">${unitLabel}</div>
+                <div class="cat-card-title">${escapeHtml(m.name)}</div>
+                <div style="font-size:11px; color:var(--text-muted); margin-top:2px; text-transform:uppercase; letter-spacing:0.04em">${escapeHtml(unitLabel)}</div>
               </div>
             </div>
             <div style="margin-top:16px">
               <div style="display:flex; justify-content:space-between; margin-bottom:6px">
                 <span style="font-size:11px; color:var(--text-muted)">In Stock</span>
-                <span style="font-family:var(--font-mono); font-weight:700; font-size:15px; color:${isLow ? '#C77966' : 'var(--steel-light)'}">${stock} ${unitLabel}</span>
+                <span style="font-family:var(--font-mono); font-weight:700; font-size:15px; color:${isLow ? '#C77966' : 'var(--steel-light)'}">${stock} ${escapeHtml(unitLabel)}</span>
               </div>
               <div style="height:4px; background:var(--charcoal-border); border-radius:2px; overflow:hidden">
                 <div style="height:100%; width:${stockPct}%; background:${isLow ? '#C77966' : '#A8B89C'}; border-radius:2px; transition:width 0.3s"></div>
               </div>
-              ${isLow ? `<div style="font-size:10px; color:#C77966; margin-top:4px; font-weight:600">⚠ LOW STOCK</div>` : ''}
+              ${isLow ? `<div style="font-size:10px; color:#C77966; margin-top:4px; font-weight:600">${Icons.render('alert', 10)} LOW STOCK</div>` : ''}
             </div>
             <div style="margin-top:12px; padding-top:12px; border-top:1px solid var(--charcoal-border); display:grid; grid-template-columns:1fr 1fr; gap:8px">
               <div style="text-align:center">
@@ -99,30 +103,31 @@ const SiteInventory = (() => {
   function showAddMaterialModal() {
     const unitOptions = UNITS.map(u => `<option value="${u}">${UNIT_LABELS[u]}</option>`).join('');
     App.showModal(`
-      <h3 style="font-size:17px; font-weight:800; color:#1A1A2E; margin-bottom:20px">📦 Add Material to Inventory</h3>
-      <div class="field-group" style="margin-bottom:14px">
-        <label style="display:block; color:#6B7280; font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:0.06em; margin-bottom:6px">Material Name *</label>
-        <input type="text" id="new-mat-name" placeholder="e.g. OPC Cement (53 Grade)" style="width:100%; padding:10px 12px; border:1.5px solid #E5E7EB; border-radius:8px; font-size:13px; background:#F9FAFB; color:#1A1A2E; outline:none">
+      <h3 class="modal-title">${Icons.render('package', 18)} Add Material to Inventory</h3>
+      <div style="margin-bottom:14px">
+        <label class="modal-label">Material Name *</label>
+        <input class="modal-input" type="text" id="new-mat-name" placeholder="e.g. OPC Cement (53 Grade)">
       </div>
       <div style="display:grid; grid-template-columns:1fr 1fr; gap:12px; margin-bottom:14px">
-        <div class="field-group">
-          <label style="display:block; color:#6B7280; font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:0.06em; margin-bottom:6px">Unit *</label>
-          <select id="new-mat-unit" style="width:100%; padding:10px 12px; border:1.5px solid #E5E7EB; border-radius:8px; font-size:13px; background:#F9FAFB; color:#1A1A2E; outline:none; appearance:none; cursor:pointer">
+        <div>
+          <label class="modal-label">Unit *</label>
+          <select class="modal-input" id="new-mat-unit" style="appearance:none;cursor:pointer">
             ${unitOptions}
           </select>
         </div>
-        <div class="field-group">
-          <label style="display:block; color:#6B7280; font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:0.06em; margin-bottom:6px">Opening Stock</label>
-          <input type="number" id="new-mat-opening" placeholder="0" style="width:100%; padding:10px 12px; border:1.5px solid #E5E7EB; border-radius:8px; font-size:13px; background:#F9FAFB; color:#1A1A2E; outline:none; font-family:monospace">
+        <div>
+          <label class="modal-label">Opening Stock</label>
+          <input class="modal-input" type="number" id="new-mat-opening" placeholder="0" style="font-family:var(--font-mono)">
         </div>
       </div>
-      <div class="field-group" style="margin-bottom:20px">
-        <label style="display:block; color:#6B7280; font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:0.06em; margin-bottom:6px">Notes</label>
-        <input type="text" id="new-mat-notes" placeholder="e.g. Store in dry location. Check for lumps before use." style="width:100%; padding:10px 12px; border:1.5px solid #E5E7EB; border-radius:8px; font-size:13px; background:#F9FAFB; color:#1A1A2E; outline:none">
+      <div style="margin-bottom:20px">
+        <label class="modal-label">Notes</label>
+        <input class="modal-input" type="text" id="new-mat-notes"
+          placeholder="e.g. Store in dry location. Check for lumps before use.">
       </div>
       <div style="display:flex; gap:12px">
-        <button onclick="App.closeModal()" style="flex:1; padding:11px; border:1.5px solid #E5E7EB; background:none; border-radius:10px; cursor:pointer; font-size:13px; font-weight:700; color:#6B7280; font-family:inherit">Cancel</button>
-        <button onclick="SiteInventory.saveNewMaterial()" style="flex:1; padding:11px; border:none; background:linear-gradient(135deg,#705748,#9E7758); color:#F5E4CC; border-radius:10px; cursor:pointer; font-size:13px; font-weight:700; font-family:inherit">Add Material</button>
+        <button onclick="App.closeModal()" class="modal-btn-cancel" style="flex:1; padding:11px; border-radius:10px; cursor:pointer; font-size:13px; font-weight:700; font-family:inherit">Cancel</button>
+        <button onclick="SiteInventory.saveNewMaterial()" class="modal-btn-primary" style="flex:1; padding:11px; border-radius:10px; cursor:pointer; font-size:13px; font-weight:700; font-family:inherit">Add Material</button>
       </div>
     `);
   }
@@ -161,13 +166,13 @@ const SiteInventory = (() => {
         <div class="hub-header-left">
           <button onclick="App.showInventoryHub()" style="padding:6px 12px; margin-right:12px; border:1px solid var(--charcoal-border); background:var(--charcoal-mid); color:var(--text-secondary); border-radius:8px; cursor:pointer; font-size:12px; font-weight:600">← Back</button>
           <div>
-            <h2 class="hub-title">${m.name}</h2>
-            <p class="hub-subtitle">${unitLabel} ${m.notes ? '· ' + m.notes : ''}</p>
+            <h2 class="hub-title">${escapeHtml(m.name)}</h2>
+            <p class="hub-subtitle">${escapeHtml(unitLabel)} ${m.notes ? '· ' + escapeHtml(m.notes) : ''}</p>
           </div>
         </div>
         <div class="hub-header-right">
-          <button class="btn btn-secondary" onclick="SiteInventory.showMaterialLogModal('${m.id}','outward')" style="margin-right:8px">↑ Outward (Used)</button>
-          <button class="btn btn-primary" onclick="SiteInventory.showMaterialLogModal('${m.id}','inward')">↓ Inward (Received)</button>
+          <button class="btn btn-secondary" onclick="SiteInventory.showMaterialLogModal('${escapeAttr(m.id)}','outward')" style="margin-right:8px">↑ Outward (Used)</button>
+          <button class="btn btn-primary" onclick="SiteInventory.showMaterialLogModal('${escapeAttr(m.id)}','inward')">↓ Inward (Received)</button>
         </div>
       </div>
 
@@ -176,7 +181,7 @@ const SiteInventory = (() => {
           <div style="font-size:11px; color:var(--text-muted); text-transform:uppercase; letter-spacing:0.06em; margin-bottom:8px">Current Stock</div>
           <div style="font-family:var(--font-mono); font-size:28px; font-weight:800; color:${isLow ? '#C77966' : 'var(--steel-light)'}">${stock}</div>
           <div style="font-size:12px; color:var(--text-muted); margin-top:4px">${unitLabel}</div>
-          ${isLow ? `<div style="font-size:10px; color:#C77966; margin-top:6px; font-weight:700; background:#C7796614; padding:3px 8px; border-radius:4px; display:inline-block">⚠ LOW STOCK</div>` : ''}
+          ${isLow ? `<div style="font-size:10px; color:#C77966; margin-top:6px; font-weight:700; background:#C7796614; padding:3px 8px; border-radius:4px; display:inline-block">${Icons.render('alert', 10)} LOW STOCK</div>` : ''}
         </div>
         <div style="background:var(--charcoal-mid); border:1px solid var(--charcoal-border); border-radius:12px; padding:20px; text-align:center">
           <div style="font-size:11px; color:var(--text-muted); text-transform:uppercase; letter-spacing:0.06em; margin-bottom:8px">Total Received</div>
@@ -226,8 +231,8 @@ const SiteInventory = (() => {
                 ${isIn ? '↓ INWARD' : '↑ OUTWARD'}
               </span>
             </td>
-            <td style="padding:12px; text-align:right; font-family:var(--font-mono); font-weight:700; color:${isIn ? '#A8B89C' : '#C77966'}">${isIn ? '+' : '-'}${l.qty} ${unitLabel}</td>
-            <td style="padding:12px; font-size:12px; color:var(--text-secondary)">${l.notes || '—'}</td>
+            <td style="padding:12px; text-align:right; font-family:var(--font-mono); font-weight:700; color:${isIn ? '#A8B89C' : '#C77966'}">${isIn ? '+' : '-'}${l.qty} ${escapeHtml(unitLabel)}</td>
+            <td style="padding:12px; font-size:12px; color:var(--text-secondary)">${escapeHtml(l.notes || '—')}</td>
           </tr>
         `;
       });
@@ -237,7 +242,7 @@ const SiteInventory = (() => {
         </tbody>
       </table>
       <div style="margin-top:32px; text-align:right">
-        <button onclick="SiteInventory.deleteMaterial('${m.id}')" style="padding:8px 16px; border:1.5px solid #DC262620; background:none; border-radius:8px; cursor:pointer; font-size:12px; font-weight:700; color:#DC2626; font-family:inherit">🗑 Remove Material</button>
+        <button onclick="SiteInventory.deleteMaterial('${escapeAttr(m.id)}')" style="padding:8px 16px; border:1.5px solid #DC262620; background:none; border-radius:8px; cursor:pointer; font-size:12px; font-weight:700; color:#DC2626; font-family:inherit">${Icons.render('trash', 12)} Remove Material</button>
       </div>
     `;
 
@@ -249,26 +254,29 @@ const SiteInventory = (() => {
     const today = new Date().toISOString().split('T')[0];
     const isIn = type === 'inward';
     App.showModal(`
-      <h3 style="font-size:17px; font-weight:800; color:#1A1A2E; margin-bottom:20px">${isIn ? '↓ Record Inward' : '↑ Record Outward (Used)'}</h3>
+      <h3 class="modal-title">${isIn ? '↓ Record Inward' : '↑ Record Outward (Used)'}</h3>
       <input type="hidden" id="log-mat-id" value="${materialId}">
       <input type="hidden" id="log-mat-type" value="${type}">
       <div style="display:grid; grid-template-columns:1fr 1fr; gap:12px; margin-bottom:14px">
         <div>
-          <label style="display:block; color:#6B7280; font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:0.06em; margin-bottom:6px">Date *</label>
-          <input type="date" id="log-mat-date" value="${today}" style="width:100%; padding:10px 12px; border:1.5px solid #E5E7EB; border-radius:8px; font-size:13px; background:#F9FAFB; color:#1A1A2E; outline:none; font-family:monospace">
+          <label class="modal-label">Date *</label>
+          <input class="modal-input" type="date" id="log-mat-date" value="${today}" style="font-family:var(--font-mono)">
         </div>
         <div>
-          <label style="display:block; color:#6B7280; font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:0.06em; margin-bottom:6px">Quantity *</label>
-          <input type="number" id="log-mat-qty" placeholder="0" style="width:100%; padding:10px 12px; border:1.5px solid #E5E7EB; border-radius:8px; font-size:13px; background:#F9FAFB; color:#1A1A2E; outline:none; font-family:monospace">
+          <label class="modal-label">Quantity *</label>
+          <input class="modal-input" type="number" id="log-mat-qty" placeholder="0" style="font-family:var(--font-mono)">
         </div>
       </div>
       <div style="margin-bottom:20px">
-        <label style="display:block; color:#6B7280; font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:0.06em; margin-bottom:6px">Notes</label>
-        <input type="text" id="log-mat-notes" placeholder="${isIn ? 'e.g. Received from Ramesh Hardware' : 'e.g. Used for 2nd floor slab work'}" style="width:100%; padding:10px 12px; border:1.5px solid #E5E7EB; border-radius:8px; font-size:13px; background:#F9FAFB; color:#1A1A2E; outline:none">
+        <label class="modal-label">Notes</label>
+        <input class="modal-input" type="text" id="log-mat-notes"
+          placeholder="${isIn ? 'e.g. Received from Ramesh Hardware' : 'e.g. Used for 2nd floor slab work'}">
       </div>
       <div style="display:flex; gap:12px">
-        <button onclick="App.closeModal()" style="flex:1; padding:11px; border:1.5px solid #E5E7EB; background:none; border-radius:10px; cursor:pointer; font-size:13px; font-weight:700; color:#6B7280; font-family:inherit">Cancel</button>
-        <button onclick="SiteInventory.saveMaterialLog()" style="flex:1; padding:11px; border:none; background:${isIn ? '#A8B89C' : '#C77966'}; color:#fff; border-radius:10px; cursor:pointer; font-size:13px; font-weight:700; font-family:inherit">${isIn ? 'Record Inward' : 'Record Outward'}</button>
+        <button onclick="App.closeModal()" class="modal-btn-cancel" style="flex:1; padding:11px; border-radius:10px; cursor:pointer; font-size:13px; font-weight:700; font-family:inherit">Cancel</button>
+        <button onclick="SiteInventory.saveMaterialLog()"
+          class="${isIn ? 'modal-btn-success' : 'modal-btn-warning'}"
+          style="flex:1; padding:11px; border-radius:10px; cursor:pointer; font-size:13px; font-weight:700; font-family:inherit">${isIn ? 'Record Inward' : 'Record Outward'}</button>
       </div>
     `);
   }
@@ -291,7 +299,7 @@ const SiteInventory = (() => {
 
   async function deleteMaterial(id) {
     App.showConfirmModal({
-      icon: '📦',
+      icon: Icons.render('package', 24),
       title: 'Remove Material?',
       body: 'This will remove the material and all its movement logs permanently.',
       confirmLabel: 'Remove Material',

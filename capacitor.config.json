@@ -1,0 +1,25 @@
+{
+  "appId": "com.recon.buildmanager",
+  "appName": "RECON",
+  "webDir": "public",
+  "bundledWebRuntime": false,
+  "server": {
+    "cleartext": true,
+    "androidScheme": "http",
+    "url": "http://localhost:8080"
+  },
+  "android": {
+    "buildOptions": {
+      "keystorePath": null,
+      "keystoreAlias": null,
+      "keystorePassword": null,
+      "keystoreAliasPassword": null
+    }
+  },
+  "plugins": {
+    "SplashScreen": {
+      "launchShowDuration": 2000,
+      "backgroundColor": "#EAECEF"
+    }
+  }
+}
