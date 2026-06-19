@@ -14,6 +14,10 @@ const app = express();
 const PORT = process.env.PORT || 8080;
 const IS_PRODUCTION = process.env.NODE_ENV === 'production';
 
+// SEC-02: in production we sit behind a reverse proxy (Nginx/Cloudflare/Render).
+// Trust the first proxy hop so req.ip reflects the real client for rate-limiting.
+if (IS_PRODUCTION) app.set('trust proxy', 1);
+
 // ── Middleware ──────────────────────────────
 
 // Security headers (X-Content-Type-Options, X-Frame-Options,
@@ -34,7 +38,7 @@ app.use(helmet({
         "ws:",
         "wss:"
       ],
-      imgSrc: ["'self'", "data:", "blob:", "https://*.supabase.co"],
+      imgSrc: ["'self'", "data:", "blob:", "https://*.supabase.co", "https://lh3.googleusercontent.com", "https://*.googleusercontent.com"],
       frameSrc: ["'none'"],
       upgradeInsecureRequests: IS_PRODUCTION ? [] : null,
     },
@@ -50,7 +54,10 @@ const ALLOWED_ORIGINS = [
   'capacitor://localhost', // iOS Capacitor local assets origin
   'ionic://localhost',     // Ionic iOS local assets origin
 ];
-if (process.env.PRODUCTION_URL) ALLOWED_ORIGINS.push(process.env.PRODUCTION_URL);
+if (process.env.PRODUCTION_URL) {
+  // Accept a comma-separated list so apex + www + CDN domains can all be allowed.
+  process.env.PRODUCTION_URL.split(',').map(s => s.trim()).filter(Boolean).forEach(o => ALLOWED_ORIGINS.push(o));
+}
 
 app.use(cors({
   origin: (origin, callback) => {
@@ -97,6 +104,7 @@ app.get('/api/config', (req, res) => {
   res.json({
     supabaseUrl: process.env.SUPABASE_URL || '',
     supabaseAnonKey: process.env.SUPABASE_ANON_KEY || '',
+    googleWebClientId: process.env.GOOGLE_WEB_CLIENT_ID || '',
   });
 });
 
@@ -295,6 +303,20 @@ Schema:
 
 // ── Delete User Account (server-side, needs service key) ──
 app.post('/api/user/delete', async (req, res) => {
+  // GAP-07: apply the same Upstash rate limiter to this destructive endpoint.
+  if (ratelimit) {
+    try {
+      const { success, reset } = await ratelimit.limit(`delete:${req.ip}`);
+      if (!success) {
+        return res.status(429).json({
+          error: 'Rate limited',
+          message: 'Too many delete attempts. Please wait a moment.',
+          retryAfter: Math.ceil((reset - Date.now()) / 1000)
+        });
+      }
+    } catch (e) { /* fail open if redis is down */ }
+  }
+
   const authHeader = req.headers['authorization'];
   if (!authHeader?.startsWith('Bearer ')) {
     return res.status(401).json({ error: 'Unauthorized', message: 'Missing auth token' });
@@ -364,7 +386,10 @@ app.get('*', (req, res) => {
 async function start() {
   await initRateLimiter();
 
-  app.listen(PORT, () => {
+  // GAP-08: in production bind to loopback only — a reverse proxy handles external traffic.
+  // In dev we keep 0.0.0.0 so mobile devices on the same WiFi can reach the server.
+  const HOST = IS_PRODUCTION ? '127.0.0.1' : '0.0.0.0';
+  app.listen(PORT, HOST, () => {
     console.log('');
     console.log('  ╔══════════════════════════════════════╗');
     console.log('  ║   RECON — Server Running     ║');

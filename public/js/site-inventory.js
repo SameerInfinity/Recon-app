@@ -176,7 +176,7 @@ const SiteInventory = (() => {
         </div>
       </div>
 
-      <div style="display:grid; grid-template-columns:repeat(3,1fr); gap:16px; margin:20px 0">
+      <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(140px, 1fr)); gap:16px; margin:20px 0">
         <div style="background:var(--charcoal-mid); border:1px solid var(--charcoal-border); border-radius:12px; padding:20px; text-align:center">
           <div style="font-size:11px; color:var(--text-muted); text-transform:uppercase; letter-spacing:0.06em; margin-bottom:8px">Current Stock</div>
           <div style="font-family:var(--font-mono); font-size:28px; font-weight:800; color:${isLow ? '#C77966' : 'var(--steel-light)'}">${stock}</div>

@@ -1,8 +1,72 @@
+# ── Node.js ────────────────────────────────
 node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.pnpm-store/
+
+# ── Environment ────────────────────────────
 .env
-*.log
+.env.local
+.env.*.local
+
+# ── OS files ───────────────────────────────
 .DS_Store
-.claude/
-.sixth/
-nul
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+*.swp
+*.swo
+*~
+
+# ── IDE / Editor ──────────────────────────
+.idea/
+.vscode/
+*.sublime-project
+*.sublime-workspace
+.zed/
+
+# ── Project artifacts ─────────────────────
+*.zip
+*.rar
+*.7z
+*.tar.gz
+buildmanager - Copy.*
+app_diff.txt
+diff.patch
 output.txt
+
+# ── Logs ──────────────────────────────────
+*.log
+
+# ── Android / Capacitor build ─────────────
+android/.gradle/
+android/build/
+android/app/build/
+android/capacitor-cordova-android-plugins/
+android/.idea/
+android/local.properties
+android/captures/
+*.apk
+*.aab
+*.ap_
+*.dex
+local.properties
+
+# ── Capacitor ──────────────────────────────
+capacitor-cordova-android-plugins/
+capacitor-cordova-ios-plugins/
+ios/
+
+# ── System / dotfiles ─────────────────────
+.sixth/
+.claude/
+.kilo/
+nul
+
+# ── Miscellaneous ─────────────────────────
+*.test.js.snap
+coverage/
+dist/
+tmp/
+temp/

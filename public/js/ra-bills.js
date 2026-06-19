@@ -86,7 +86,8 @@ const RaBills = (() => {
     const today = new Date().toISOString().split('T')[0];
     const contractValue = proj.totalBudget || 0;
     const existingBills = proj.raBills || [];
-    const prevPaid = existingBills.filter(b => b.status === 'paid').reduce((s, b) => s + (parseFloat(b.amountDue) || 0), 0);
+    // Exclude the bill being edited so its own amountDue does not inflate the baseline.
+    const prevPaid = existingBills.filter(b => b.status === 'paid' && b.id !== editId).reduce((s, b) => s + (parseFloat(b.amountDue) || 0), 0);
     const nextNum = `RA-${String(existingBills.length + 1).padStart(3, '0')}`;
 
     const edit = editId ? existingBills.find(b => b.id === editId) : null;
@@ -109,7 +110,7 @@ const RaBills = (() => {
         <input class="modal-input" type="text" id="ra-work-desc" value="${escapeAttr(edit ? edit.workDescription : '')}"
           placeholder="e.g. 2nd Floor Slab Casting Complete — Column & Beam Work">
       </div>
-      <div style="display:grid; grid-template-columns:1fr 1fr 1fr; gap:12px; margin-bottom:14px">
+      <div style="display:grid; grid-template-columns:repeat(auto-fit,minmax(140px,1fr)); gap:12px; margin-bottom:14px">
         <div>
           <label class="modal-label">Contract Value (₹)</label>
           <input class="modal-input" type="number" id="ra-contract-val" value="${escapeAttr(edit ? edit.contractValue : contractValue)}" oninput="RaBills.calcRaAmount()" style="font-family:var(--font-mono)">
@@ -148,6 +149,39 @@ const RaBills = (() => {
           </select>
         </div>
       </div>
+
+      <!-- BOQ Table -->
+      <div style="margin-bottom:20px">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
+          <div>
+            <label class="modal-label" style="margin:0">BOQ / Measurement Sheet</label>
+            <div style="font-size:10px;color:var(--text-muted);margin-top:2px">Item-wise quantity × rate breakdown (required for client acceptance)</div>
+          </div>
+          <button onclick="RaBills.addBOQRow()" style="padding:5px 12px;background:var(--charcoal-surface);border:1px solid var(--charcoal-border);color:var(--text-secondary);border-radius:6px;font-size:11px;font-weight:700;cursor:pointer;font-family:inherit">+ Add Item</button>
+        </div>
+        <div id="ra-boq-table-wrap">
+          <table style="width:100%;border-collapse:collapse;font-size:12px">
+            <thead>
+              <tr style="background:var(--charcoal-mid)">
+                <th style="padding:6px 8px;text-align:left;color:var(--text-muted);font-weight:700;border-bottom:1px solid var(--charcoal-border)">Description</th>
+                <th style="padding:6px 8px;text-align:center;color:var(--text-muted);font-weight:700;border-bottom:1px solid var(--charcoal-border);width:60px">Unit</th>
+                <th style="padding:6px 8px;text-align:right;color:var(--text-muted);font-weight:700;border-bottom:1px solid var(--charcoal-border);width:70px">Qty</th>
+                <th style="padding:6px 8px;text-align:right;color:var(--text-muted);font-weight:700;border-bottom:1px solid var(--charcoal-border);width:90px">Rate (₹)</th>
+                <th style="padding:6px 8px;text-align:right;color:var(--amber);font-weight:700;border-bottom:1px solid var(--charcoal-border);width:90px">Amount</th>
+                <th style="width:32px;border-bottom:1px solid var(--charcoal-border)"></th>
+              </tr>
+            </thead>
+            <tbody id="ra-boq-rows">
+              ${(edit && edit.boqItems && edit.boqItems.length > 0) ? edit.boqItems.map((item, i) => RaBills._boqRowHtml(i, item)).join('') : RaBills._boqRowHtml(0)}
+            </tbody>
+          </table>
+          <div style="display:flex;justify-content:flex-end;padding:8px;background:var(--charcoal-mid);border-top:1px solid var(--charcoal-border)">
+            <span style="font-size:11px;color:var(--text-muted);margin-right:12px;align-self:center">BOQ Total:</span>
+            <span id="ra-boq-total" style="font-family:var(--font-mono);font-weight:800;color:var(--amber);font-size:16px">₹0</span>
+          </div>
+        </div>
+      </div>
+
       <div style="display:flex; gap:12px">
         <button onclick="App.closeModal()" class="modal-btn-cancel" style="flex:1; padding:11px; border-radius:10px; cursor:pointer; font-size:13px; font-weight:700; font-family:inherit">Cancel</button>
         <button onclick="RaBills.saveRaBill()" class="modal-btn-primary" style="flex:1; padding:11px; border-radius:10px; cursor:pointer; font-size:13px; font-weight:700; font-family:inherit">${edit ? 'Update Bill' : 'Create RA Bill'}</button>
@@ -155,7 +189,7 @@ const RaBills = (() => {
     `);
 
     // Auto-calculate on open
-    setTimeout(() => calcRaAmount(), 50);
+    setTimeout(() => { calcRaAmount(); RaBills.recalcBOQ(); }, 50);
   }
 
   function calcRaAmount() {
@@ -165,15 +199,23 @@ const RaBills = (() => {
     const deductions = parseFloat(document.getElementById('ra-deductions')?.value) || 0;
 
     const grossAmount = (contractVal * pct) / 100;
-    const amountDue = Math.max(0, grossAmount - prevPaid - deductions);
+    const rawDue = grossAmount - prevPaid - deductions;
+    const amountDue = Math.max(0, rawDue);
+    const isCredit = rawDue < 0;
 
     const disp = document.getElementById('ra-amount-display');
     const breakdown = document.getElementById('ra-calc-breakdown');
-    if (disp) disp.textContent = Financial.fmt(amountDue);
-    if (breakdown) {
-      breakdown.textContent = `(${Financial.fmt(contractVal)} × ${pct}%) − Prev Paid ${Financial.fmt(prevPaid)} − Deductions ${Financial.fmt(deductions)}`;
+    if (disp) {
+      disp.textContent = Financial.fmt(amountDue);
+      disp.style.color = isCredit ? 'var(--ember, #C77966)' : '';
     }
-    return { amountDue, contractVal, pct, prevPaid, deductions };
+    if (breakdown) {
+      const base = `(${Financial.fmt(contractVal)} × ${pct}%) − Prev Paid ${Financial.fmt(prevPaid)} − Deductions ${Financial.fmt(deductions)}`;
+      breakdown.textContent = isCredit
+        ? `${base}  ⚠ Deductions exceed balance — would result in a credit of ${Financial.fmt(-rawDue)}.`
+        : base;
+    }
+    return { amountDue, contractVal, pct, prevPaid, deductions, isCredit, rawDue };
   }
 
   async function saveRaBill() {
@@ -186,13 +228,23 @@ const RaBills = (() => {
     const status = document.getElementById('ra-status').value;
     const billNumber = document.getElementById('ra-billnum').value.trim();
 
+    // Collect BOQ items
+    const boqItems = [];
+    document.querySelectorAll('#ra-boq-rows tr').forEach(row => {
+      const desc = row.querySelector('.boq-desc')?.value?.trim();
+      const unit = row.querySelector('.boq-unit')?.value?.trim();
+      const qty  = parseFloat(row.querySelector('.boq-qty')?.value) || 0;
+      const rate = parseFloat(row.querySelector('.boq-rate')?.value) || 0;
+      if (desc || qty || rate) boqItems.push({ desc: desc || '', unit: unit || '', qty, rate, amount: qty * rate });
+    });
+
     const editIdEl = document.getElementById('ra-edit-id');
     if (editIdEl) {
-      await State.updateRaBill(editIdEl.value, { workDescription, contractValue: contractVal, percentageComplete: pct, previousPaid: prevPaid, deductions, amountDue, issueDate, dueDate, status, billNumber });
+      await State.updateRaBill(editIdEl.value, { workDescription, contractValue: contractVal, percentageComplete: pct, previousPaid: prevPaid, deductions, amountDue, issueDate, dueDate, status, billNumber, boqItems });
       App.closeModal();
       App.toast('RA Bill updated', 'success');
     } else {
-      await State.addRaBill({ workDescription, contractValue: contractVal, percentageComplete: pct, previousPaid: prevPaid, deductions, amountDue, issueDate, dueDate, status, billNumber });
+      await State.addRaBill({ workDescription, contractValue: contractVal, percentageComplete: pct, previousPaid: prevPaid, deductions, amountDue, issueDate, dueDate, status, billNumber, boqItems });
       App.closeModal();
       App.toast('RA Bill created', 'success');
     }
@@ -228,7 +280,7 @@ const RaBills = (() => {
         </div>
       </div>
 
-      <div style="display:grid; grid-template-columns:repeat(4,1fr); gap:16px; margin:20px 0">
+      <div style="display:grid; grid-template-columns:repeat(auto-fit,minmax(140px,1fr)); gap:16px; margin:20px 0">
         <div style="background:var(--charcoal-mid); border:1px solid var(--charcoal-border); border-radius:12px; padding:20px">
           <div style="font-size:10px; color:var(--text-muted); text-transform:uppercase; letter-spacing:0.06em; margin-bottom:8px">Contract Value</div>
           <div style="font-family:var(--font-mono); font-size:20px; font-weight:800; color:var(--text-primary)">${Financial.fmt(b.contractValue)}</div>
@@ -263,6 +315,8 @@ const RaBills = (() => {
           </tr>
         </table>
       </div>
+
+      ${renderBOQSection(b.boqItems)}
 
       <div style="display:flex; gap:12px; margin-top:24px">
         ${b.status !== 'paid' ? `<button onclick="RaBills.updateBillStatus('${escapeAttr(b.id)}','paid')" style="padding:10px 18px; border:none; background:var(--success); color:#fff; border-radius:8px; cursor:pointer; font-size:13px; font-weight:700; font-family:inherit">${Icons.render('check', 12)} Mark as Paid</button>` : ''}
@@ -373,7 +427,7 @@ const RaBills = (() => {
           <tbody>
             <tr>
               <td>Gross Amount (${b.contractValue ? Financial.fmtFull(b.contractValue) : '—'} × ${b.percentageComplete}%)</td>
-              <td style="text-align:right; font-family:monospace">${Financial.fmtFull((b.contractValue * b.percentageComplete) / 100)}</td>
+              <td style="text-align:right; font-family:monospace">${Financial.fmtFull((parseFloat(b.contractValue) || 0) * (parseFloat(b.percentageComplete) || 0) / 100)}</td>
             </tr>
             <tr>
               <td>Less: Amount Previously Paid</td>
@@ -431,10 +485,85 @@ const RaBills = (() => {
     });
   }
 
+  // ── BOQ Helper Functions ─────────────────────────────────
+  function _boqRowHtml(idx, item = {}) {
+    const iStyle = 'background:var(--charcoal);border:1px solid var(--charcoal-border);color:var(--text-primary);padding:5px 7px;border-radius:5px;font-size:12px;width:100%;box-sizing:border-box;font-family:var(--font-body)';
+    const mStyle = iStyle + ';font-family:var(--font-mono)';
+    return `<tr data-boq-idx="${idx}" style="border-bottom:1px solid var(--charcoal-border)">
+      <td style="padding:4px 6px"><input class="boq-desc" value="${escapeAttr(item.desc||'')}" placeholder="Item description" style="${iStyle}" oninput="RaBills.recalcBOQ()"></td>
+      <td style="padding:4px 6px"><input class="boq-unit" value="${escapeAttr(item.unit||'')}" placeholder="Sqft" style="${iStyle};width:60px;text-align:center" oninput="RaBills.recalcBOQ()"></td>
+      <td style="padding:4px 6px"><input class="boq-qty" type="number" value="${item.qty||''}" placeholder="0" style="${mStyle};width:70px;text-align:right" oninput="RaBills.recalcBOQRow(this);RaBills.recalcBOQ()"></td>
+      <td style="padding:4px 6px"><input class="boq-rate" type="number" value="${item.rate||''}" placeholder="0" style="${mStyle};width:90px;text-align:right" oninput="RaBills.recalcBOQRow(this);RaBills.recalcBOQ()"></td>
+      <td style="padding:4px 6px;text-align:right;font-family:var(--font-mono);font-size:12px;font-weight:700;color:var(--amber)" class="boq-amt">${item.qty && item.rate ? Financial.fmt(item.qty * item.rate) : '—'}</td>
+      <td style="padding:4px 6px;text-align:center"><button onclick="this.closest('tr').remove();RaBills.recalcBOQ()" style="background:none;border:none;color:#C77966;cursor:pointer;font-size:14px;padding:2px 6px">×</button></td>
+    </tr>`;
+  }
+
+  function addBOQRow() {
+    const tbody = document.getElementById('ra-boq-rows');
+    if (!tbody) return;
+    const idx = tbody.children.length;
+    tbody.insertAdjacentHTML('beforeend', _boqRowHtml(idx));
+  }
+
+  function recalcBOQRow(input) {
+    const row = input.closest('tr');
+    if (!row) return;
+    const qty = parseFloat(row.querySelector('.boq-qty')?.value) || 0;
+    const rate = parseFloat(row.querySelector('.boq-rate')?.value) || 0;
+    const amtEl = row.querySelector('.boq-amt');
+    if (amtEl) amtEl.textContent = (qty && rate) ? Financial.fmt(qty * rate) : '—';
+  }
+
+  function recalcBOQ() {
+    const rows = document.querySelectorAll('#ra-boq-rows tr');
+    let total = 0;
+    rows.forEach(row => {
+      const qty = parseFloat(row.querySelector('.boq-qty')?.value) || 0;
+      const rate = parseFloat(row.querySelector('.boq-rate')?.value) || 0;
+      total += qty * rate;
+    });
+    const el = document.getElementById('ra-boq-total');
+    if (el) el.textContent = Financial.fmt(total);
+  }
+
+  // Render BOQ table in detail view
+  function renderBOQSection(boqItems) {
+    if (!boqItems || !boqItems.length) return '';
+    const total = boqItems.reduce((s, i) => s + (i.qty * i.rate || i.amount || 0), 0);
+    const rows = boqItems.map((item, i) => `
+      <tr style="border-bottom:1px solid var(--charcoal-border)">
+        <td style="padding:9px 12px;font-size:13px">${i+1}. ${escapeHtml(item.desc||'—')}</td>
+        <td style="padding:9px 12px;text-align:center;font-size:12px;color:var(--text-muted)">${escapeHtml(item.unit||'—')}</td>
+        <td style="padding:9px 12px;text-align:right;font-family:var(--font-mono);font-size:13px">${item.qty||'—'}</td>
+        <td style="padding:9px 12px;text-align:right;font-family:var(--font-mono);font-size:13px">${item.rate ? Financial.fmt(item.rate) : '—'}</td>
+        <td style="padding:9px 12px;text-align:right;font-family:var(--font-mono);font-size:13px;font-weight:700;color:var(--amber)">${Financial.fmt(item.qty * item.rate || item.amount || 0)}</td>
+      </tr>`).join('');
+    return `
+      <div style="background:var(--charcoal-mid);border:1px solid var(--charcoal-border);border-radius:12px;overflow:hidden;margin-bottom:20px">
+        <div style="padding:14px 20px;border-bottom:1px solid var(--charcoal-border);font-weight:700;font-size:13px">BOQ / Measurement Sheet</div>
+        <table style="width:100%;border-collapse:collapse">
+          <thead><tr style="background:var(--charcoal-surface)">
+            <th style="padding:8px 12px;text-align:left;font-size:10px;text-transform:uppercase;color:var(--text-muted)">#  Description</th>
+            <th style="padding:8px 12px;text-align:center;font-size:10px;text-transform:uppercase;color:var(--text-muted);width:70px">Unit</th>
+            <th style="padding:8px 12px;text-align:right;font-size:10px;text-transform:uppercase;color:var(--text-muted);width:80px">Qty</th>
+            <th style="padding:8px 12px;text-align:right;font-size:10px;text-transform:uppercase;color:var(--text-muted);width:100px">Rate</th>
+            <th style="padding:8px 12px;text-align:right;font-size:10px;text-transform:uppercase;color:var(--amber);width:100px">Amount</th>
+          </tr></thead>
+          <tbody>${rows}</tbody>
+          <tfoot><tr style="background:var(--charcoal-surface)">
+            <td colspan="4" style="padding:10px 12px;font-weight:700;font-size:12px">BOQ Total</td>
+            <td style="padding:10px 12px;text-align:right;font-family:var(--font-mono);font-weight:800;font-size:15px;color:var(--amber)">${Financial.fmt(total)}</td>
+          </tr></tfoot>
+        </table>
+      </div>`;
+  }
+
   return {
     renderRaBillsHub,
     showNewRaBillModal, calcRaAmount, saveRaBill,
     showRaBillDetail, generateRaBillPDF,
-    updateBillStatus, deleteRaBill
+    updateBillStatus, deleteRaBill,
+    _boqRowHtml, addBOQRow, recalcBOQ, recalcBOQRow, renderBOQSection
   };
 })();

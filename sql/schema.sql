@@ -373,6 +373,8 @@ CREATE TABLE IF NOT EXISTS public.ra_bills (
   updated_at          TIMESTAMPTZ DEFAULT NOW()
 );
 
+ALTER TABLE public.ra_bills ADD COLUMN IF NOT EXISTS boq_items JSONB DEFAULT '[]'::JSONB;
+
 CREATE INDEX IF NOT EXISTS idx_ra_bills_project_id ON public.ra_bills(project_id);
 
 ALTER TABLE public.ra_bills ENABLE ROW LEVEL SECURITY;
@@ -384,4 +386,60 @@ CREATE POLICY "ra_bills_all" ON public.ra_bills FOR ALL USING (
 
 DROP TRIGGER IF EXISTS set_updated_at ON public.ra_bills;
 CREATE TRIGGER set_updated_at BEFORE UPDATE ON public.ra_bills
+  FOR EACH ROW EXECUTE FUNCTION public.update_updated_at();
+
+
+-- ── 11. LEADS (Quick Leads — potential customer contacts) ──────────────────
+CREATE TABLE IF NOT EXISTS public.leads (
+  id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  project_id  UUID NOT NULL REFERENCES public.projects(id) ON DELETE CASCADE,
+  name        TEXT NOT NULL DEFAULT '',
+  phone       TEXT DEFAULT '',
+  address     TEXT DEFAULT '',
+  source      TEXT DEFAULT '',
+  status      TEXT DEFAULT 'new',
+  notes       TEXT DEFAULT '',
+  created_at  TIMESTAMPTZ DEFAULT NOW(),
+  updated_at  TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_leads_project_id ON public.leads(project_id);
+
+ALTER TABLE public.leads ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS "leads_all" ON public.leads;
+CREATE POLICY "leads_all" ON public.leads FOR ALL USING (
+  EXISTS (SELECT 1 FROM public.projects WHERE projects.id = leads.project_id AND projects.user_id = auth.uid())
+);
+
+DROP TRIGGER IF EXISTS set_updated_at ON public.leads;
+CREATE TRIGGER set_updated_at BEFORE UPDATE ON public.leads
+  FOR EACH ROW EXECUTE FUNCTION public.update_updated_at();
+
+
+-- ── 12. SITE PHOTOS (Construction site photo log) ──────────────────
+CREATE TABLE IF NOT EXISTS public.site_photos (
+  id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  project_id  UUID NOT NULL REFERENCES public.projects(id) ON DELETE CASCADE,
+  name        TEXT NOT NULL DEFAULT '',
+  description TEXT DEFAULT '',
+  category    TEXT DEFAULT '',
+  image_url   TEXT DEFAULT '',
+  thumbnail   TEXT DEFAULT '',
+  taken_at    TIMESTAMPTZ DEFAULT NOW(),
+  created_at  TIMESTAMPTZ DEFAULT NOW(),
+  updated_at  TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_site_photos_project_id ON public.site_photos(project_id);
+
+ALTER TABLE public.site_photos ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS "site_photos_all" ON public.site_photos;
+CREATE POLICY "site_photos_all" ON public.site_photos FOR ALL USING (
+  EXISTS (SELECT 1 FROM public.projects WHERE projects.id = site_photos.project_id AND projects.user_id = auth.uid())
+);
+
+DROP TRIGGER IF EXISTS set_updated_at ON public.site_photos;
+CREATE TRIGGER set_updated_at BEFORE UPDATE ON public.site_photos
   FOR EACH ROW EXECUTE FUNCTION public.update_updated_at();

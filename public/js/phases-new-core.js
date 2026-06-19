@@ -34,6 +34,12 @@
       return setTimeout(() => patchPhases(retries + 1), RETRY_DELAY);
     }
     console.error('[PhasesCore] Missing dependency after ' + MAX_RETRIES + ' retries — check script load order. Phases:', typeof Phases, 'Financial:', typeof Financial, 'State:', typeof State, 'BillScanner:', typeof BillScanner, 'App:', typeof App);
+    try {
+      window.dispatchEvent(new CustomEvent('app:module-error', { detail: { module: 'PhasesCore', missing: { Phases: typeof Phases, Financial: typeof Financial, State: typeof State, BillScanner: typeof BillScanner, App: typeof App } } }));
+      if (typeof App !== 'undefined' && App.toast) {
+        App.toast('Some features failed to load. Please refresh the app.', 'error');
+      }
+    } catch (e) {}
     return;
   }
 
@@ -68,7 +74,7 @@
     const idx = ph.data.entries[cardId].findIndex(e => e.id === entry.id);
     if (idx >= 0) ph.data.entries[cardId][idx] = entry;
     else ph.data.entries[cardId].push(entry);
-    State.save();
+    State.markDirty('phase', phaseId); State.save();
   }
 
   function deleteEntry(phaseId, cardId, entryId) {
@@ -82,7 +88,7 @@
       State.deleteLocalImage(entryId + '_bill');
       State.deleteLocalImage(entryId + '_proof');
     }
-    State.save();
+    State.markDirty('phase', phaseId); State.save();
     Financial.scheduleUpdate();
   }
 
@@ -107,6 +113,66 @@
   // ── uid ────────────────────────────────────────────────────
   const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 5);
 
+  // ── Material Rate Memory ────────────────────────────────────
+  // Remembers the last used rate per material card per project.
+  // Keys are stored in localStorage under: recon_rate_memory_<projectId>
+  // Shape: { [cardId]: { [rateFieldKey]: lastValue } }
+
+  function getRateMemory() {
+    const proj = State.getCurrentProject();
+    if (!proj) return {};
+    try {
+      return JSON.parse(localStorage.getItem('recon_rate_memory_' + proj.id) || '{}');
+    } catch { return {}; }
+  }
+
+  function saveRateMemory(cardId, fieldKey, value) {
+    const proj = State.getCurrentProject();
+    if (!proj) return;
+    const mem = getRateMemory();
+    if (!mem[cardId]) mem[cardId] = {};
+    mem[cardId][fieldKey] = value;
+    try {
+      localStorage.setItem('recon_rate_memory_' + proj.id, JSON.stringify(mem));
+    } catch {}
+  }
+
+  // Called on each field input to persist rate fields
+  Phases._persistRateField = function(cardId, fieldKey, value) {
+    saveRateMemory(cardId, fieldKey, value);
+    Phases._entryAutoCalc(
+      document.querySelector('[data-phase-id]')?.dataset?.phaseId || '',
+      cardId
+    );
+  };
+
+  // Make saveRateMemory accessible to inline onclick handlers
+  window.saveRateMemory = saveRateMemory;
+
+  // ── GST Display Updater ─────────────────────────────────────
+  Phases._updateGSTDisplay = function() {
+    const toggleEl = document.getElementById('ef-gst-toggle');
+    const rateWrap = document.getElementById('ef-gst-rate-wrap');
+    const breakdownEl = document.getElementById('ef-gst-breakdown');
+    if (!toggleEl) return;
+    const isOn = toggleEl.checked;
+    if (rateWrap) rateWrap.style.display = isOn ? 'flex' : 'none';
+    if (breakdownEl) breakdownEl.style.display = isOn ? 'grid' : 'none';
+    if (!isOn) return;
+    const totalEl = document.getElementById('ef-total');
+    const rateEl = document.getElementById('ef-gst-rate');
+    const base = parseFloat(totalEl?.value) || 0;
+    const gstPct = parseFloat(rateEl?.value) || 18;
+    const gstAmt = base * gstPct / 100;
+    const total = base + gstAmt;
+    const baseEl = document.getElementById('ef-gst-base');
+    const gstAmtEl = document.getElementById('ef-gst-amount');
+    const gstTotalEl = document.getElementById('ef-gst-total');
+    if (baseEl) baseEl.textContent = '₹' + base.toLocaleString('en-IN', {maximumFractionDigits:0});
+    if (gstAmtEl) gstAmtEl.textContent = '₹' + gstAmt.toLocaleString('en-IN', {maximumFractionDigits:0});
+    if (gstTotalEl) gstTotalEl.textContent = '₹' + total.toLocaleString('en-IN', {maximumFractionDigits:0});
+  };
+
   // ── 3-Card Hub for every trade phase ──────────────────────
   // replaces renderTradeHub
   function renderTradeHubNew(phase, materialCards, laborCards) {
@@ -122,10 +188,10 @@
     <div class="breadcrumb" style="margin-bottom:12px">
       <a onclick="App.showOverview()" style="cursor:pointer">Overview</a>
       <span class="breadcrumb-sep">›</span>
-      <span class="breadcrumb-current">${phase.name}</span>
+      <span class="breadcrumb-current">${escapeHtml(phase.name)}</span>
     </div>
     <div class="category-hub-header" style="margin-bottom:20px">
-      <div class="category-hub-title">${Phases.iconFor(phase.icon, 20)} <span style="margin-left:8px">${phase.name}</span></div>
+      <div class="category-hub-title">${Phases.iconFor(phase.icon, 20)} <span style="margin-left:8px">${escapeHtml(phase.name)}</span></div>
     </div>
     <div class="category-grid" style="grid-template-columns:repeat(auto-fit,minmax(240px,1fr))">
 
@@ -175,6 +241,9 @@
     const entries = getEntries(phase.id, card.id);
     const cardTotal = entries.reduce((s,e) => s + (parseFloat(e.total)||0), 0);
 
+    // Pre-fill rate fields from memory — MUST be declared before fieldRows map uses it
+    const rateMemory = getRateMemory()[card.id] || {};
+
     // Filter out 'date' field from card fields — the entry form already has ef-entry-date
     const cardFields = card.fields.filter(f => f.key !== 'date');
     const fieldRows = cardFields.map(f => {
@@ -222,7 +291,9 @@
       } else if (f.type === 'date') {
         ctrl = `<input type="date" id="ef-${f.key}" style="${bStyle}" oninput="Phases._entryAutoCalc('${phase.id}','${card.id}')">`;
       } else if (f.type === 'number') {
-        const isQty = f.key.toLowerCase().includes('qty') || f.key.toLowerCase().includes('quantity') || f.label.toLowerCase().includes('qty') || f.label.toLowerCase().includes('quantity') || f.key.toLowerCase().includes('area') || f.key.toLowerCase().includes('length');
+        const isRate = f.key.toLowerCase().includes('rate') || f.key.toLowerCase().includes('price') || f.key.toLowerCase().includes('cost');
+        const isQty = !isRate && (f.key.toLowerCase().includes('qty') || f.key.toLowerCase().includes('quantity') || f.label.toLowerCase().includes('qty') || f.label.toLowerCase().includes('quantity') || f.key.toLowerCase().includes('area') || f.key.toLowerCase().includes('length'));
+        const memVal = isRate ? (rateMemory[f.key] || '') : '';
         if (isQty) {
           const defaultUnit = (k => {
             const lk = k.toLowerCase();
@@ -245,7 +316,7 @@
             </div>
           `;
         } else {
-          ctrl = `<input type="number" id="ef-${f.key}" placeholder="${f.placeholder||'0'}" step="any" min="0" style="${bStyle};font-family:var(--font-mono)" oninput="Phases._entryAutoCalc('${phase.id}','${card.id}')">`;
+          ctrl = `<input type="number" id="ef-${f.key}" placeholder="${f.placeholder||'0'}" step="any" min="0" value="${memVal}" style="${bStyle};font-family:var(--font-mono)${memVal ? ';border-color:var(--amber-light)' : ''}" oninput="Phases._entryAutoCalc('${phase.id}','${card.id}');saveRateMemory('${card.id}','${f.key}',this.value)">${memVal ? `<div style="font-size:10px;color:var(--amber-light);margin-top:3px">↑ Last used rate — override if changed</div>` : ''}`;
         }
       } else {
         ctrl = `<input type="text" id="ef-${f.key}" placeholder="${f.placeholder||''}" style="${bStyle}" oninput="Phases._entryAutoCalc('${phase.id}','${card.id}')">`;
@@ -268,7 +339,7 @@
     if (hasOnlyOneLabor) {
       breadcrumbHtml = `
         <div class="breadcrumb" style="margin-bottom:12px">
-          <a onclick="App.showPhaseHub(${phase.id})" style="cursor:pointer">${phase.name}</a>
+          <a onclick="App.showPhaseHub(${phase.id})" style="cursor:pointer">${escapeHtml(phase.name)}</a>
           <span class="breadcrumb-sep">›</span>
           <span class="breadcrumb-current">${groupLabel}</span>
         </div>`;
@@ -277,21 +348,22 @@
         <div class="breadcrumb" style="margin-bottom:12px">
           <a onclick="${groupLabel === 'Labor Costing' ? `App.showLaborCards(${phase.id})` : `App.showMaterialCards(${phase.id})`};void 0" style="cursor:pointer">${groupLabel}</a>
           <span class="breadcrumb-sep">›</span>
-          <span class="breadcrumb-current">${card.name}</span>
+          <span class="breadcrumb-current">${escapeHtml(card.name)}</span>
         </div>`;
     }
 
     return `
+    <div data-phase-id="${phase.id}">
     ${breadcrumbHtml}
 
     <!-- Entry Form Card -->
     <div class="section-card" style="margin-bottom:20px">
       <div class="section-card-header" style="cursor:default">
-        <span class="section-card-title">${Phases.iconFor(card.icon,14)} <span style="margin-left:6px">New Entry — ${card.name}</span></span>
+        <span class="section-card-title">${Phases.iconFor(card.icon,14)} <span style="margin-left:6px">New Entry — ${escapeHtml(card.name)}</span></span>
         <span style="font-size:11px;color:var(--text-muted)">No required fields — fill what you have</span>
       </div>
       <div class="section-card-body">
-        <div style="font-size:11px;color:var(--amber-light);background:rgba(232,124,42,0.08);border-left:3px solid var(--amber);padding:8px 12px;border-radius:4px;margin-bottom:18px">${card.desc}</div>
+        <div style="font-size:11px;color:var(--amber-light);background:rgba(232,124,42,0.08);border-left:3px solid var(--amber);padding:8px 12px;border-radius:4px;margin-bottom:18px">${escapeHtml(card.desc)}</div>
 
         <!-- Date + Photo row -->
         <div class="field-row cols-2" style="margin-bottom:12px">
@@ -328,7 +400,40 @@
             <span style="color:var(--text-muted);font-size:16px">₹</span>
             <input type="number" id="ef-total" placeholder="0" min="0" step="any"
               style="background:var(--charcoal);border:2px solid var(--amber);color:var(--amber);padding:10px 14px;border-radius:8px;font-family:var(--font-mono);font-size:22px;font-weight:700;width:160px;box-sizing:border-box"
-              oninput="Phases._entryTotalOverride=true">
+              oninput="Phases._entryTotalOverride=true;Phases._updateGSTDisplay()">
+          </div>
+        </div>
+
+        <!-- GST Toggle -->
+        <div style="margin-top:12px;padding:12px 14px;background:var(--charcoal-mid);border:1px solid var(--charcoal-border);border-radius:8px">
+          <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap">
+            <label style="display:flex;align-items:center;gap:10px;cursor:pointer;user-select:none">
+              <input type="checkbox" id="ef-gst-toggle" onchange="Phases._updateGSTDisplay()" style="width:16px;height:16px;accent-color:var(--amber);cursor:pointer">
+              <span style="font-size:12px;font-weight:700;color:var(--text-secondary)">Add GST</span>
+            </label>
+            <div style="display:flex;align-items:center;gap:8px" id="ef-gst-rate-wrap" style="display:none">
+              <span style="font-size:11px;color:var(--text-muted)">Rate</span>
+              <select id="ef-gst-rate" onchange="Phases._updateGSTDisplay()" style="background:var(--charcoal);border:1px solid var(--charcoal-border);color:var(--text-primary);padding:5px 8px;border-radius:6px;font-size:12px;font-family:var(--font-body)">
+                <option value="5">5%</option>
+                <option value="12">12%</option>
+                <option value="18" selected>18%</option>
+                <option value="28">28%</option>
+              </select>
+            </div>
+          </div>
+          <div id="ef-gst-breakdown" style="display:none;margin-top:10px;font-size:12px;color:var(--text-muted);display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:8px">
+            <div style="text-align:center;padding:6px;background:var(--charcoal);border-radius:6px">
+              <div style="font-size:10px;text-transform:uppercase;color:var(--text-muted);margin-bottom:2px">Base</div>
+              <div id="ef-gst-base" style="font-family:var(--font-mono);font-weight:700;color:var(--text-primary)">₹0</div>
+            </div>
+            <div style="text-align:center;padding:6px;background:var(--charcoal);border-radius:6px">
+              <div style="font-size:10px;text-transform:uppercase;color:var(--text-muted);margin-bottom:2px">GST</div>
+              <div id="ef-gst-amount" style="font-family:var(--font-mono);font-weight:700;color:var(--steel-light)">₹0</div>
+            </div>
+            <div style="text-align:center;padding:6px;background:var(--charcoal);border-radius:6px">
+              <div style="font-size:10px;text-transform:uppercase;color:var(--text-muted);margin-bottom:2px">Total</div>
+              <div id="ef-gst-total" style="font-family:var(--font-mono);font-weight:700;color:var(--amber)">₹0</div>
+            </div>
           </div>
         </div>
 
@@ -351,7 +456,7 @@
     <!-- Previous Entries -->
     <div class="section-card">
       <div class="section-card-header" onclick="Phases.toggleSection('prev-entries-${card.id}')">
-        <span class="section-card-title">Previous Entries — ${card.name}</span>
+        <span class="section-card-title">Previous Entries — ${escapeHtml(card.name)}</span>
         <div class="section-card-meta">
           <span class="section-card-total">${F.fmtFull(cardTotal)}</span>
           <span class="section-toggle-icon">▼</span>
@@ -360,7 +465,7 @@
       <div class="section-card-body" id="prev-entries-${card.id}">
         ${renderPreviousEntries(phase.id, card.id)}
       </div>
-    </div>`;
+    </div></div>`;
   }
 
   // Extract representative vendor or label from entry fields
@@ -398,7 +503,7 @@
         <div style="display:flex; flex-direction:column; min-width:0; flex:1">
           <div style="font-family:var(--font-mono); font-size:11px; color:var(--text-muted); margin-bottom:2px">${escapeHtml(e.date || '—')}</div>
           <div style="font-size:13px; font-weight:600; color:var(--text-primary); white-space:nowrap; overflow:hidden; text-overflow:ellipsis">
-            ${escapeHtml(summary)}
+            ${escapeHtml(summary)}${e.gst ? ` <span style="font-size:10px;background:rgba(76,156,184,0.15);color:var(--steel-light);padding:2px 5px;border-radius:4px;font-weight:700">+GST ${e.gst.rate}%</span>` : ''}
           </div>
         </div>
         <div style="display:flex; align-items:center; gap:12px">
@@ -525,6 +630,16 @@
         <span style="font-family:var(--font-mono); font-weight:700; font-size:18px; color:var(--amber)">${F.fmtFull(e.total)}</span>
       </div>
 
+      ${e.gst ? `
+      <div style="margin-bottom:14px;padding:10px 12px;background:rgba(76,156,184,0.07);border:1px solid rgba(76,156,184,0.2);border-radius:8px">
+        <div style="font-size:10px;font-weight:700;text-transform:uppercase;color:var(--steel-light);margin-bottom:8px">GST Breakdown (${e.gst.rate}%)</div>
+        <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:8px;font-size:12px">
+          <div><div style="color:var(--text-muted)">Base Amount</div><div style="font-family:var(--font-mono);font-weight:700">${F.fmtFull(e.total)}</div></div>
+          <div><div style="color:var(--text-muted)">GST (${e.gst.rate}%)</div><div style="font-family:var(--font-mono);font-weight:700;color:var(--steel-light)">${F.fmtFull(e.gst.amount)}</div></div>
+          <div><div style="color:var(--text-muted)">Total + GST</div><div style="font-family:var(--font-mono);font-weight:700;color:var(--amber)">${F.fmtFull(e.gst.total)}</div></div>
+        </div>
+      </div>` : ''}
+
       <div style="display:flex; gap:12px">
         <button onclick="App.closeModal()" class="modal-btn-cancel" style="flex:1; padding:11px; border-radius:10px; cursor:pointer; font-size:13px; font-weight:700; font-family:inherit">Close</button>
         <button onclick="App.closeModal(); Phases._deleteEntryModal(${phaseId}, '${escapeAttr(cardId)}', '${escapeAttr(e.id)}')" 
@@ -582,6 +697,9 @@
       const el = document.getElementById('ef-' + f.key);
       if (el && el.value) {
         fieldVals[f.key] = el.value;
+        // Persist rate/price fields to memory
+        const isRate = f.key.toLowerCase().includes('rate') || f.key.toLowerCase().includes('price') || f.key.toLowerCase().includes('cost');
+        if (isRate && f.type === 'number') saveRateMemory(cardId, f.key, el.value);
         const unitEl = document.getElementById('ef-' + f.key + '-unit');
         if (unitEl && unitEl.value) {
           fieldVals[f.key + '_unit'] = unitEl.value;
@@ -611,6 +729,16 @@
 
     const entryId = uid();
     const photoStatus = document.getElementById('ef-photo-status');
+
+    // Capture GST data if toggled on
+    const gstToggle = document.getElementById('ef-gst-toggle');
+    const gstRateEl = document.getElementById('ef-gst-rate');
+    let gstData = null;
+    if (gstToggle && gstToggle.checked && total > 0) {
+      const gstPct = parseFloat(gstRateEl?.value) || 18;
+      const gstAmt = total * gstPct / 100;
+      gstData = { rate: gstPct, amount: Math.round(gstAmt), total: Math.round(total + gstAmt) };
+    }
     let rawBillPhoto = photoStatus?.dataset?.url || '';
     let billPhotoUrl = '';
     if (rawBillPhoto) {
@@ -645,6 +773,7 @@
       date,
       fields: fieldVals,
       total,
+      gst: gstData,
       notes,
       billPhotoUrl,
       paymentProofUrl,
@@ -652,6 +781,11 @@
     };
 
     saveEntry(parseInt(phaseId), cardId, entry);
+
+    // Recalculate phase completion instantly
+    if (typeof Financial !== 'undefined' && Financial.recalcAllCompletions) {
+      Financial.recalcAllCompletions();
+    }
 
     // Reset form
     if (dateEl) dateEl.value = new Date().toISOString().split('T')[0];
@@ -671,6 +805,9 @@
     const proofWrap = document.getElementById('ef-proof-wrap');
     if (proofWrap) proofWrap.style.display = 'none';
     if (proofStatus) { proofStatus.textContent = 'No proof'; delete proofStatus.dataset.url; }
+    // Reset GST
+    const gstToggleEl = document.getElementById('ef-gst-toggle');
+    if (gstToggleEl) { gstToggleEl.checked = false; Phases._updateGSTDisplay(); }
 
     (Array.isArray(fieldsSpec) ? fieldsSpec : []).forEach(f => {
       const el = document.getElementById('ef-' + f.key);
@@ -682,7 +819,11 @@
     const prevEl = document.getElementById(`prev-entries-${cardId}`);
     if (prevEl) prevEl.innerHTML = renderPreviousEntries(parseInt(phaseId), cardId);
 
+    // Update hub totals if visible
+    _updateHubCosts(parseInt(phaseId));
+
     Financial.scheduleUpdate();
+    if (typeof App !== 'undefined' && App.emit) App.emit('entry:saved', { phaseId, cardId });
     App.toast('Entry saved', 'success');
   };
 
@@ -690,7 +831,12 @@
     deleteEntry(parseInt(phaseId), cardId, entryId);
     const prevEl = document.getElementById(`prev-entries-${cardId}`);
     if (prevEl) prevEl.innerHTML = renderPreviousEntries(parseInt(phaseId), cardId);
+    // Recalculate phase completion instantly
+    if (typeof Financial !== 'undefined' && Financial.recalcAllCompletions) {
+      Financial.recalcAllCompletions();
+    }
     Financial.scheduleUpdate();
+    if (typeof App !== 'undefined' && App.emit) App.emit('entry:deleted', { phaseId, cardId });
   };
 
   Phases._handleEntryPhoto = async function(phaseId, cardId, input) {
@@ -761,8 +907,8 @@
         <button class="category-card" onclick="App.showEntryForm(${phaseId},'${c.id}')" style="text-align:left">
           <span class="category-card-arrow">${Phases.iconFor('arrowRight',14)}</span>
           <span class="category-card-icon">${Phases.iconFor(c.icon||'listChecks',26)}</span>
-          <div class="category-card-name">${c.name}</div>
-          <div class="category-card-desc">${c.desc}</div>
+          <div class="category-card-name">${escapeHtml(c.name)}</div>
+          <div class="category-card-desc">${escapeHtml(c.desc)}</div>
           <div class="category-card-meta">
             <div class="category-card-progress-label">${entries.length} entries</div>
             <div class="category-card-cost">${F.fmt(total)}</div>
@@ -777,7 +923,7 @@
         <div class="breadcrumb"><a onclick="${backFn}">← ${phase.name}</a> <span class="breadcrumb-sep">›</span> <span class="breadcrumb-current">Material Costs</span></div>
         <div class="phase-header">
           <div class="phase-title-block">
-            <div class="phase-title">${Phases.iconFor('blocks',22)} <span style="margin-left:8px">Material Costs — ${phase.name}</span></div>
+            <div class="phase-title">${Phases.iconFor('blocks',22)} <span style="margin-left:8px">Material Costs — ${escapeHtml(phase.name)}</span></div>
             <div class="phase-subtitle">Tap any material category to add entries</div>
           </div>
         </div>
@@ -805,8 +951,8 @@
         <button class="category-card" onclick="App.showEntryForm(${phaseId},'${c.id}')" style="text-align:left">
           <span class="category-card-arrow">${Phases.iconFor('arrowRight',14)}</span>
           <span class="category-card-icon">${Phases.iconFor(c.icon||'userCircle',26)}</span>
-          <div class="category-card-name">${c.name}</div>
-          <div class="category-card-desc">${c.desc}</div>
+          <div class="category-card-name">${escapeHtml(c.name)}</div>
+          <div class="category-card-desc">${escapeHtml(c.desc)}</div>
           <div class="category-card-meta">
             <div class="category-card-progress-label">${entries.length} entries</div>
             <div class="category-card-cost">${F.fmt(total)}</div>
@@ -821,7 +967,7 @@
         <div class="breadcrumb"><a onclick="${backFn}">← ${phase.name}</a> <span class="breadcrumb-sep">›</span> <span class="breadcrumb-current">Labor Costing</span></div>
         <div class="phase-header">
           <div class="phase-title-block">
-            <div class="phase-title">${Phases.iconFor('userCircle',22)} <span style="margin-left:8px">Labor Costing — ${phase.name}</span></div>
+            <div class="phase-title">${Phases.iconFor('userCircle',22)} <span style="margin-left:8px">Labor Costing — ${escapeHtml(phase.name)}</span></div>
             <div class="phase-subtitle">Tap any labor category to record payments</div>
           </div>
         </div>
@@ -852,14 +998,23 @@
     'fab_labor','plumber_labor','pop_labor','lift_install','floor-prep','paint-prep']; // misc_expenses removed — it's a general expense, not labor
 
   function getAllCardsForPhase(phaseId) {
-    const M = {
-      1: CIVIL_CARDS_REF,   2: TILES_CARDS_REF,   3: PAINT_CARDS_REF,
-      4: ELEC_CARDS_REF,    5: FAB_CARDS_REF,
-      6: [...PLUMB_EXT_REF, ...PLUMB_INT_REF],
-      7: POP_CARDS_REF,     8: LIFT_CARDS_REF,    9: MISC_CARDS_REF,
-      10: INTERIOR_CARDS_REF,
-    };
-    return M[phaseId] || [];
+    // NOTE: This function must NOT inline the card arrays as a static object literal
+    // here, because the const declarations (CIVIL_CARDS_REF etc.) live below this
+    // function in the file. Building M inline would hit a TDZ ReferenceError.
+    // Instead we use a getter that reads them at call-time, after initialization.
+    switch (Number(phaseId)) {
+      case 1:  return CIVIL_CARDS_REF;
+      case 2:  return TILES_CARDS_REF;
+      case 3:  return PAINT_CARDS_REF;
+      case 4:  return ELEC_CARDS_REF;
+      case 5:  return FAB_CARDS_REF;
+      case 6:  return [...PLUMB_EXT_REF, ...PLUMB_INT_REF];
+      case 7:  return POP_CARDS_REF;
+      case 8:  return LIFT_CARDS_REF;
+      case 9:  return MISC_CARDS_REF;
+      case 10: return INTERIOR_CARDS_REF;
+      default: return [];
+    }
   }
 
   function getMaterialCardsForPhase(phaseId) {
@@ -1457,7 +1612,7 @@
   // Previously it was declared AFTER, causing a TDZ ReferenceError when
   // Material Costs / Labor Costing cards were clicked.
   const ALL_CARDS_REF = PHASE_CARD_MAP
-    ? Object.fromEntries(Object.entries(PHASE_CARD_MAP).map(([k, [mat, lab]]) => [k, [...mat, ...lab].reduce((o,c)=>(o[c.id]=c,o),{})]))
+    ? Object.fromEntries(Object.entries(PHASE_CARD_MAP).map(([k, [mat, lab]]) => [Number(k), [...mat, ...lab].reduce((o,c)=>(o[c.id]=c,o),{})]))
     : {};
 
   // Also expose renderCardListView and renderEntryForm on Phases so
@@ -1478,8 +1633,8 @@
       return `<button class="category-card" onclick="App.showEntryForm(${phaseId},'${c.id}')" style="text-align:left">
         <span class="category-card-arrow">${Phases.iconFor('arrowRight',14)}</span>
         <span class="category-card-icon">${Phases.iconFor(c.icon||'listChecks',28)}</span>
-        <div class="category-card-name">${c.name}</div>
-        <div class="category-card-desc">${c.desc}</div>
+        <div class="category-card-name">${escapeHtml(c.name)}</div>
+        <div class="category-card-desc">${escapeHtml(c.desc)}</div>
         <div class="category-card-meta">
           <div class="category-card-progress-label">${entries.length} entr${entries.length!==1?'ies':'y'}</div>
           <div class="category-card-cost">${F.fmt(ct)}</div>
@@ -1490,10 +1645,10 @@
       <div class="breadcrumb" style="margin-bottom:12px">
         <a onclick="App.showOverview()" style="cursor:pointer">Overview</a>
         <span class="breadcrumb-sep">›</span>
-        <span class="breadcrumb-current">${phase.name}</span>
+        <span class="breadcrumb-current">${escapeHtml(phase.name)}</span>
       </div>
       <div class="category-hub-header" style="margin-bottom:20px">
-        <div class="category-hub-title">${Phases.iconFor(phase.icon, 20)} <span style="margin-left:8px">${phase.name}</span></div>
+        <div class="category-hub-title">${Phases.iconFor(phase.icon, 20)} <span style="margin-left:8px">${escapeHtml(phase.name)}</span></div>
       </div>
       <div class="category-grid">${cardHtml}</div>
       
@@ -1538,6 +1693,40 @@
   // fell back to the "module loading…" message during the init window.
   if (typeof window !== 'undefined') {
     window.__phasesCoreReady = true;
+
+  // ── Update hub cost displays without full re-render ─────
+  function _updateHubCosts(phaseId) {
+    const proj = State.getCurrentProject();
+    if (!proj) return;
+    const phase = proj.phases.find(p => Number(p.id) === Number(phaseId));
+    if (!phase) return;
+
+    const matCards = getMaterialCardsForPhase(phaseId);
+    const labCards = getLaborCardsForPhase(phaseId);
+
+    const materialTotal = matCards.reduce((s, c) => s + sumEntries(phaseId, c.id), 0);
+    const laborTotal = labCards.reduce((s, c) => s + sumEntries(phaseId, c.id), 0);
+    const billTotal = (State.getBills(phaseId)||[]).reduce((s,b) => s + (parseFloat(b.totalAmount)||0), 0);
+    const phaseTotal = materialTotal + laborTotal + billTotal;
+
+    const matCount = matCards.reduce((s,c) => s + getEntries(phaseId, c.id).length, 0);
+    const labCount = labCards.reduce((s,c) => s + getEntries(phaseId, c.id).length, 0);
+
+    // Update DOM elements
+    const hubTotal = document.getElementById('hub-running-total-' + phaseId);
+    if (hubTotal) hubTotal.textContent = F.fmtFull(phaseTotal);
+    const hubMatCost = document.getElementById('hub-material-cost-' + phaseId);
+    if (hubMatCost) hubMatCost.textContent = F.fmt(materialTotal);
+    const hubLabCost = document.getElementById('hub-labor-cost-' + phaseId);
+    if (hubLabCost) hubLabCost.textContent = F.fmt(laborTotal);
+    const hubMatCount = document.getElementById('hub-material-count-' + phaseId);
+    if (hubMatCount) hubMatCount.textContent = matCount + ' entries';
+    const hubLabCount = document.getElementById('hub-labor-count-' + phaseId);
+    if (hubLabCount) hubLabCount.textContent = labCount + ' entries';
+  }
+
+  Phases._updateHubCosts = _updateHubCosts;
+
     window.dispatchEvent(new CustomEvent('phasescoreready'));
   }
 })();

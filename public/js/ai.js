@@ -8,6 +8,48 @@ const AI = (() => {
   let isThinking = false;
   let conversationHistory = [];
 
+  // ── AI History Persistence ─────────────────────────────────
+  // Stores up to 20 messages (10 exchanges) per project in localStorage
+  const MAX_HISTORY = 20;
+
+  function getHistoryKey() {
+    const proj = State.getCurrentProject?.();
+    return proj ? `recon_ai_history_${proj.id}` : null;
+  }
+
+  function loadPersistedHistory() {
+    const key = getHistoryKey();
+    if (!key) return [];
+    try {
+      return JSON.parse(localStorage.getItem(key) || '[]');
+    } catch { return []; }
+  }
+
+  function persistHistory() {
+    const key = getHistoryKey();
+    if (!key) return;
+    try {
+      const toSave = conversationHistory.slice(-MAX_HISTORY);
+      localStorage.setItem(key, JSON.stringify(toSave));
+    } catch {}
+  }
+
+  function clearAIHistory() {
+    const key = getHistoryKey();
+    if (key) localStorage.removeItem(key);
+    conversationHistory = [];
+    const container = document.getElementById('ai-messages');
+    if (container) {
+      container.innerHTML = '<div style="padding:20px;text-align:center;font-size:12px;color:var(--text-muted)">AI history cleared for this project.</div>';
+    }
+    App.toast('AI conversation history cleared', 'info');
+  }
+
+  // Load history when module initialises (after a short delay for State to be ready)
+  setTimeout(() => {
+    conversationHistory = loadPersistedHistory();
+  }, 500);
+
   // ── Deterministic Rule Engine ─────────────────────────────
   function checkTriggers() {
     clearTimeout(aiCheckTimer);
@@ -21,7 +63,7 @@ const AI = (() => {
     const rules = [];
 
     // Phase 1 — Clay soil + steep slope
-    const ph1 = proj.phases[0].data;
+    const ph1 = proj.phases.find(p => p.id === 1)?.data || {};
     const survey = ph1.survey || {};
     if (survey.soil_class === 'Clay' && parseFloat(survey.site_slope || 0) > 8) {
       rules.push({
@@ -33,7 +75,7 @@ const AI = (() => {
     }
 
     // Phase 4 — Copper + high footage
-    const ph4 = proj.phases[3].data;
+    const ph4 = proj.phases.find(p => p.id === 4)?.data || {};
     const plumb = ph4.plumbing || {};
     if (plumb.supply_material === 'Copper' && parseFloat(plumb.supply_lf || 0) > 500) {
       rules.push({
@@ -45,7 +87,7 @@ const AI = (() => {
     }
 
     // Phase 5 — Level 5 finish + large area
-    const ph5 = proj.phases[4].data;
+    const ph5 = proj.phases.find(p => p.id === 5)?.data || {};
     const dw = ph5.drywall || {};
     if (dw.finish_level === 'Level 5' && parseFloat(dw.drywall_sqft || 0) > 5000) {
       rules.push({
@@ -69,7 +111,7 @@ const AI = (() => {
     }
 
     // Phase 2 — Pier & Beam suggestion
-    const ph2 = proj.phases[1].data;
+    const ph2 = proj.phases.find(p => p.id === 2)?.data || {};
     const concrete = ph2.concrete || {};
     if (concrete.foundation_type === 'Slab-on-Grade' && (ph1.survey?.soil_class === 'Clay')) {
       rules.push({
@@ -89,7 +131,10 @@ const AI = (() => {
     }
   }
 
-  function addMessage(type, icon, title, body, actions = []) {
+  function addMessage(type, icon, title, body, actions = [], isHtml = false) {
+    // SECURITY: `body` is escaped by default. Callers that have already
+    // produced sanitized HTML (e.g. AI reply with safe <br>/<strong>
+    // markdown formatting) must pass isHtml=true explicitly.
     const container = document.getElementById('ai-messages');
     if (!container) return;
 
@@ -102,13 +147,15 @@ const AI = (() => {
       `<button class="ai-action-btn" onclick="this.parentElement.parentElement.remove()">${escapeHtml(a)}</button>`
     ).join('');
 
+    const safeBody = isHtml ? String(body || '') : escapeHtml(String(body || '')).replace(/\n/g, '<br>');
+
     const msg = document.createElement('div');
     msg.className = `ai-message ${type}`;
     msg.innerHTML = `
       <div class="ai-msg-icon">${iconHtml}</div>
       <div class="ai-msg-body">
         <div class="ai-msg-type">${escapeHtml(title)}</div>
-        <p>${body}</p>
+        <p>${safeBody}</p>
         ${actionsHtml ? `<div class="ai-action-btns">${actionsHtml}</div>` : ''}
       </div>`;
     container.appendChild(msg);
@@ -305,6 +352,9 @@ const AI = (() => {
 
     setThinking(true);
 
+    // Push user turn to history (trimmed for context only — no project data blob)
+    conversationHistory.push({ role: 'user', parts: [{ text }] });
+
     // Thinking indicator
     const thinkId = 'think-' + Date.now() + '-' + Math.floor(Math.random() * 1e6);
     addMessage('info', 'bot', 'Build Assistant', `<span id="${thinkId}" class="ai-thinking-dots">Thinking<span>.</span><span>.</span><span>.</span></span>`, []);
@@ -315,7 +365,6 @@ const AI = (() => {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'X-User-Id': SupabaseClient?.getUser?.()?.id || 'anonymous',
         },
         body: JSON.stringify({
           systemInstruction: {
@@ -373,6 +422,7 @@ Guidelines:
       }
 
       conversationHistory.push({ role: 'model', parts: [{ text: replyText }] });
+      persistHistory();
 
       // Format markdown (escape HTML first to prevent XSS injection from AI)
       replyText = escapeHtml(replyText)
@@ -383,7 +433,7 @@ Guidelines:
       const thinkEl = document.getElementById(thinkId);
       if (thinkEl) thinkEl.closest('.ai-message').remove();
 
-      addMessage('info', 'bot', 'Build Assistant', replyText, ['Got it']);
+      addMessage('info', 'bot', 'Build Assistant', replyText, ['Got it'], true);
 
     } catch (err) {
       const thinkEl = document.getElementById(thinkId);
@@ -396,7 +446,7 @@ Guidelines:
       } else {
         console.warn('AI error:', err.message);
         const fallbackReply = getRuleBasedReply(text);
-        addMessage('info', 'bot', 'Build Assistant (Offline)', fallbackReply + '<br><br><span style="font-size:10px;color:var(--text-muted)">AI is offline — using built-in knowledge.</span>', ['OK']);
+        addMessage('info', 'bot', 'Build Assistant (Offline)', escapeHtml(fallbackReply).replace(/\n/g,'<br>') + '<br><br><span style="font-size:10px;color:var(--text-muted)">AI is offline — using built-in knowledge.</span>', ['OK'], true);
       }
 
       conversationHistory.pop();
@@ -440,5 +490,7 @@ Guidelines:
     setWatching,
     setThinking,
     clearPulse,
+    clearAIHistory,
+    loadPersistedHistory,
   };
 })();

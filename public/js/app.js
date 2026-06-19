@@ -161,9 +161,12 @@
     }
   });
 
-  // Start observing on DOMContentLoaded
+  // Start observing on DOMContentLoaded. Scope to the dynamic content
+  // container instead of document.body so the observer doesn't fire on
+  // every header/footer/nav repaint (PERF-03 / GAP-06).
   document.addEventListener('DOMContentLoaded', () => {
-    observer.observe(document.body, { childList: true, subtree: true });
+    const target = document.getElementById('content-area') || document.querySelector('main') || document.body;
+    observer.observe(target, { childList: true, subtree: true });
     document.querySelectorAll('select').forEach(ensureSelectEnhanced);
   });
 })();
@@ -286,11 +289,13 @@ const App = (() => {
         const escClient = p.client ? ' · ' + escapeHtml(p.client) : '';
         const attrName = escapeAttr(p.name || '');
         const isLocal = !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(p.id);
+        const hasUnsynced = !isLocal && State.hasUnsyncedChanges();
         const syncBtnHtml = isLocal ? `<button class="existing-project-sync-btn" title="Sync to Cloud" onclick="App.syncProjectToCloud('${escapeAttr(p.id)}', event)">${Icons.render('cloudUpload', 14)}</button>` : '';
+        const unsyncedDot = hasUnsynced ? `<span style="display:inline-block;width:6px;height:6px;border-radius:50%;background:var(--warning);margin-left:4px" title="Unsynced changes"></span>` : '';
         return `<div class="existing-project-row">
           <button class="existing-project-btn" onclick="App.openProject('${escapeAttr(p.id)}')">
             <div style="min-width:0;flex:1">
-              <div style="font-weight:700;font-size:15px;color:var(--text)">${escName}</div>
+              <div style="font-weight:700;font-size:15px;color:var(--text)">${escName}${unsyncedDot}</div>
               <div style="font-size:12px;color:var(--text-muted);margin-top:3px">${escAddress}${escClient}</div>
             </div>
             <div style="text-align:right;flex-shrink:0">
@@ -357,6 +362,7 @@ const App = (() => {
           <select class="field-select" id="w-type">
             <option value="residential" ${wizardData.type==='residential'?'selected':''}>Residential — New Construction</option>
             <option value="commercial" ${wizardData.type==='commercial'?'selected':''}>Commercial Build</option>
+            <option value="combined" ${wizardData.type==='combined'?'selected':''}>Commercial / Residential (Combined)</option>
             <option value="renovation" ${wizardData.type==='renovation'?'selected':''}>Renovation / Remodel</option>
             <option value="addition" ${wizardData.type==='addition'?'selected':''}>Addition</option>
           </select>
@@ -509,7 +515,7 @@ const App = (() => {
     if (nameEl) {
       const isLocal = !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(proj.id);
       if (isLocal) {
-        nameEl.innerHTML = `${escapeHtml(proj.name)} <button class="m-appbar-sync-btn" onclick="App.syncProjectToCloud('${escapeAttr(proj.id)}')" title="Sync Project to Cloud" style="background:transparent; border:none; color:var(--amber); cursor:pointer; padding:0 4px; display:inline-flex; align-items:center; vertical-align:middle;">${Icons.render('cloudUpload', 16)}</button>`;
+        nameEl.innerHTML = `${escapeHtml(proj.name)}`;
       } else {
         nameEl.textContent = proj.name;
       }
@@ -534,7 +540,7 @@ const App = (() => {
         if (hubName === 'ledgers') {
           active = false;
         } else if (hubName === 'more') {
-          active = (viewName !== 'ra-bills' && viewName !== 'subcontractors' && viewName !== 'flat-sales' && viewName !== 'flat-sales-buyer');
+          active = (viewName !== 'ra-bills' && viewName !== 'subcontractors' && viewName !== 'flat-sales' && viewName !== 'flat-sales-buyer' && viewName !== 'quick-leads' && viewName !== 'lead-detail' && viewName !== 'site-photos' && viewName !== 'site-photo-detail');
         } else {
           active = true;
         }
@@ -545,6 +551,10 @@ const App = (() => {
       } else if (tab === 'subcontractors' && viewName === 'subcontractors') {
         active = true;
       } else if (tab === 'flatsales' && (viewName === 'flat-sales' || viewName === 'flat-sales-buyer')) {
+        active = true;
+      } else if (tab === 'quickleads' && (viewName === 'quick-leads' || viewName === 'lead-detail')) {
+        active = true;
+      } else if (tab === 'sitephotos' && (viewName === 'site-photos' || viewName === 'site-photo-detail')) {
         active = true;
       }
       t.classList.toggle('active', active);
@@ -602,7 +612,7 @@ const App = (() => {
       return `<button class="m-phase-card" onclick="App.showPhaseHub(${ph.id})">
         <span class="m-phase-card-icon">${Icons.render(ph.icon, 22)}</span>
         <div class="m-phase-card-body">
-          <div class="m-phase-card-name">${ph.name}</div>
+          <div class="m-phase-card-name">${escapeHtml(ph.name)}</div>
           <div class="m-phase-card-meta">
             <span>${comp}% complete</span>
             <span>·</span>
@@ -968,7 +978,17 @@ const App = (() => {
           </button>
           <button class="m-list-row" onclick="App.showFlatSales()">
             <span class="icon">${Icons.render('building', 18)}</span>
-            <div class="body"><div class="label">Flat Sales</div><div class="desc">Buyers and payments received</div></div>
+            <div class="body"><div class="label">Flat Sales / Purchaser</div><div class="desc">Buyers and payments received</div></div>
+            <span class="chev">›</span>
+          </button>
+          <button class="m-list-row" onclick="App.showQuickLeads()">
+            <span class="icon">${Icons.render('contact', 18)}</span>
+            <div class="body"><div class="label">Quick Leads</div><div class="desc">Save potential customer contact details</div></div>
+            <span class="chev">›</span>
+          </button>
+          <button class="m-list-row" onclick="App.showSitePhotos()">
+            <span class="icon">${Icons.render('camera', 18)}</span>
+            <div class="body"><div class="label">Site Photos</div><div class="desc">Document your construction site visually</div></div>
             <span class="chev">›</span>
           </button>
         </div>
@@ -1083,6 +1103,58 @@ const App = (() => {
     content.scrollTop = 0;
     syncSidebarActiveState(currentHub, currentView, currentLedgerTab);
   }
+
+  function showQuickLeads() {
+    if (!_isNavigatingBack) _pushNav({ type: 'more-back' });
+    currentHub = 'more'; currentView = 'quick-leads';
+    const content = document.getElementById('content-area'); if (!content) return;
+    if (typeof QuickLeads !== 'undefined' && QuickLeads.renderHub) {
+      content.innerHTML = `<div class="phase-workspace active">
+        <button class="back-to-hub" onclick="App.showHub('more')">← More</button>
+        ${QuickLeads.renderHub()}</div>`;
+    }
+    content.scrollTop = 0;
+    syncSidebarActiveState(currentHub, currentView, currentLedgerTab);
+  }
+
+  function showLeadDetail(leadId) {
+    if (!_isNavigatingBack) _pushNav({ type: 'quick-leads' });
+    currentHub = 'more'; currentView = 'lead-detail';
+    const content = document.getElementById('content-area'); if (!content) return;
+    if (typeof QuickLeads !== 'undefined' && QuickLeads.renderLeadDetail) {
+      content.innerHTML = `<div class="phase-workspace active">
+        <button class="back-to-hub" onclick="App.showQuickLeads()">← Leads</button>
+        ${QuickLeads.renderLeadDetail(leadId)}</div>`;
+    }
+    content.scrollTop = 0;
+    syncSidebarActiveState(currentHub, currentView, currentLedgerTab);
+  }
+
+  function showSitePhotos() {
+    if (!_isNavigatingBack) _pushNav({ type: 'more-back' });
+    currentHub = 'more'; currentView = 'site-photos';
+    const content = document.getElementById('content-area'); if (!content) return;
+    if (typeof SitePhotos !== 'undefined' && SitePhotos.renderHub) {
+      content.innerHTML = `<div class="phase-workspace active">
+        <button class="back-to-hub" onclick="App.showHub('more')">← More</button>
+        ${SitePhotos.renderHub()}</div>`;
+    }
+    content.scrollTop = 0;
+    syncSidebarActiveState(currentHub, currentView, currentLedgerTab);
+  }
+
+  function showSitePhotoDetail(photoId) {
+    if (!_isNavigatingBack) _pushNav({ type: 'site-photos' });
+    currentHub = 'more'; currentView = 'site-photo-detail';
+    const content = document.getElementById('content-area'); if (!content) return;
+    if (typeof SitePhotos !== 'undefined' && SitePhotos.renderPhotoDetail) {
+      content.innerHTML = `<div class="phase-workspace active">
+        <button class="back-to-hub" onclick="App.showSitePhotos()">← Photos</button>
+        ${SitePhotos.renderPhotoDetail(photoId)}</div>`;
+    }
+    content.scrollTop = 0;
+    syncSidebarActiveState(currentHub, currentView, currentLedgerTab);
+  }
   function showSubLedger() {
     if (!_isNavigatingBack) _pushNav({ type: 'more-back' });
     currentHub = 'more'; currentView = 'subcontractors'; currentPhase = 0;
@@ -1139,6 +1211,28 @@ const App = (() => {
     document.getElementById('ai-drawer')?.classList.add('open');
     document.getElementById('ai-scrim')?.classList.add('open');
     AI.clearPulse?.();
+    // Render persisted history messages if container is still at intro state
+    const container = document.getElementById('ai-messages');
+    const history = AI.loadPersistedHistory?.() || [];
+    if (container && history.length && container.querySelector('.ai-intro')) {
+      // Append persisted messages after the intro bubble
+      history.forEach(msg => {
+        const isUser = msg.role === 'user';
+        const text = msg.parts?.[0]?.text || '';
+        if (!text) return;
+        const div = document.createElement('div');
+        div.className = isUser ? 'ai-message ai-user' : 'ai-message ai-bot';
+        div.innerHTML = `<div class="ai-msg-body" style="font-size:12px">${text.replace(/</g,'&lt;').replace(/>/g,'&gt;')}</div>`;
+        container.appendChild(div);
+      });
+      if (history.length) {
+        const note = document.createElement('div');
+        note.style.cssText = 'padding:6px 14px;font-size:10px;color:var(--text-muted);text-align:center;border-top:1px solid var(--charcoal-border)';
+        note.textContent = `↑ ${history.length} messages from previous session`;
+        container.insertBefore(note, container.firstChild.nextSibling);
+        container.scrollTop = container.scrollHeight;
+      }
+    }
   }
   function closeAI() {
     aiOpen = false;
@@ -1152,6 +1246,246 @@ const App = (() => {
     if (!inp || !inp.value.trim()) return;
     const msg = inp.value.trim(); inp.value = '';
     AI.sendUserMessage?.(msg);
+  }
+
+  // ── Global Search ────────────────────────────────────────────
+  function openSearch() {
+    const overlay = document.getElementById('global-search-overlay');
+    if (!overlay) return;
+    overlay.style.display = 'block';
+    setTimeout(() => document.getElementById('global-search-input')?.focus(), 80);
+  }
+
+  function closeSearch(e) {
+    if (e && e.target !== document.getElementById('global-search-overlay')) return;
+    const overlay = document.getElementById('global-search-overlay');
+    if (overlay) overlay.style.display = 'none';
+    const inp = document.getElementById('global-search-input');
+    if (inp) inp.value = '';
+  }
+
+  function escH(s) {
+    return String(s || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+  }
+
+  function highlight(text, q) {
+    if (!q) return escH(text);
+    const idx = text.toLowerCase().indexOf(q.toLowerCase());
+    if (idx < 0) return escH(text);
+    return escH(text.slice(0,idx)) + `<mark style="background:rgba(180,122,60,0.35);color:var(--amber);border-radius:2px">${escH(text.slice(idx,idx+q.length))}</mark>` + escH(text.slice(idx+q.length));
+  }
+
+  function runSearch(q) {
+    const resultsEl = document.getElementById('global-search-results');
+    if (!resultsEl) return;
+    q = (q || '').trim();
+    if (q.length < 2) {
+      resultsEl.innerHTML = '<div style="padding:24px;text-align:center;color:var(--text-muted);font-size:13px">Start typing to search across all project data</div>';
+      return;
+    }
+    const proj = State.getCurrentProject();
+    if (!proj) { resultsEl.innerHTML = '<div style="padding:24px;text-align:center;color:var(--text-muted);font-size:13px">No project loaded</div>'; return; }
+    const ql = q.toLowerCase();
+    const results = [];
+
+    function matches(...vals) {
+      return vals.some(v => v && String(v).toLowerCase().includes(ql));
+    }
+
+    // 1. Phase entries (material/labour costs stored in phase.data.entries)
+    (proj.phases || []).forEach(ph => {
+      const entries = (ph.data && ph.data.entries) ? ph.data.entries : {};
+      Object.entries(entries).forEach(([cardId, arr]) => {
+        (arr || []).forEach(e => {
+          const flds = Object.values(e.fields || {});
+          if (matches(e.notes, e.date, ...flds)) {
+            const vendor = e.fields?.vendor || e.fields?.payee || e.fields?.supplier || e.fields?.dealer || e.fields?.contractor || '';
+            const label = vendor || cardId.replace(/_/g, ' ');
+            results.push({
+              type: 'entry', icon: '📋',
+              title: label,
+              sub: `${ph.name} · ${e.date || '—'}${e.notes ? ' · ' + e.notes : ''}`,
+              amount: e.total,
+              onclick: `App.showEntryForm(${ph.id},'${cardId}')`
+            });
+          }
+        });
+      });
+    });
+
+    // 2. Vendors (proj.vendors[] — name/phone/shopName)
+    (proj.vendors || []).forEach(v => {
+      if (matches(v.name, v.shopName, v.phone, v.notes)) {
+        results.push({
+          type: 'vendor', icon: '🏪',
+          title: v.name || v.shopName || '—',
+          sub: `Vendor${v.shopName ? ' · ' + v.shopName : ''}${v.phone ? ' · ' + v.phone : ''}`,
+          amount: v.balance,
+          onclick: `App.showHub('ledgers');App.setLedgerTab('vendor')`
+        });
+      }
+    });
+
+    // 3. Vendor transactions (proj.vendorTransactions[] — flat array with vendorId)
+    (proj.vendorTransactions || []).forEach(tx => {
+      if (matches(tx.description, tx.notes, tx.txnDate)) {
+        const vendor = (proj.vendors || []).find(v => String(v.id) === String(tx.vendorId));
+        results.push({
+          type: 'vendor-tx', icon: '💳',
+          title: vendor ? vendor.name : 'Vendor Transaction',
+          sub: `${tx.txnDate || '—'} · ${tx.description || ''} · ${tx.type === 'debit' ? 'Bill' : 'Payment'}`,
+          amount: tx.amount,
+          onclick: `App.showHub('ledgers');App.setLedgerTab('vendor')`
+        });
+      }
+    });
+
+    // 4. Labour workers (proj.labour[] — name/role/phone)
+    (proj.labour || []).forEach(w => {
+      if (matches(w.name, w.role, w.phone)) {
+        results.push({
+          type: 'worker', icon: '👷',
+          title: w.name || '—',
+          sub: `Worker · ${w.role || ''}${w.phone ? ' · ' + w.phone : ''}`,
+          amount: null,
+          onclick: `App.showHub('ledgers');App.setLedgerTab('labour')`
+        });
+      }
+    });
+
+    // 5. Labour logs (proj.labourLogs[] — notes, kharchi)
+    (proj.labourLogs || []).forEach(log => {
+      if (matches(log.notes, log.logDate)) {
+        const worker = (proj.labour || []).find(w => String(w.id) === String(log.labourId));
+        results.push({
+          type: 'labour-log', icon: '📅',
+          title: worker ? worker.name : 'Labour Log',
+          sub: `${log.logDate || '—'} · ${log.status || ''} · ${log.notes || ''}`,
+          amount: log.kharchi || null,
+          onclick: `App.showHub('ledgers');App.setLedgerTab('labour')`
+        });
+      }
+    });
+
+    // 6. Phase bills (phase.bills[] — scanned bills)
+    (proj.phases || []).forEach(ph => {
+      (ph.bills || []).forEach(b => {
+        if (matches(b.vendor, b.description, b.notes, b.billNumber, b.amount)) {
+          results.push({
+            type: 'bill', icon: '🧾',
+            title: b.vendor || b.description || 'Bill',
+            sub: `${ph.name} · ${b.date || b.scannedAt?.slice(0,10) || '—'}${b.description ? ' · ' + b.description : ''}`,
+            amount: b.totalAmount || b.amount,
+            onclick: `App.showPhaseBills(${ph.id})`
+          });
+        }
+      });
+    });
+
+    // 7. RA Bills (proj.raBills[])
+    (proj.raBills || []).forEach(b => {
+      if (matches(b.billNumber, b.workDescription)) {
+        results.push({
+          type: 'rabill', icon: '📄',
+          title: b.billNumber || 'RA Bill',
+          sub: `RA Bill · ${b.workDescription || ''} · ${b.issueDate || ''}`,
+          amount: b.amountDue,
+          onclick: `App.showRaBillsHub()`
+        });
+      }
+    });
+
+    // 8. Flat sales buyers (proj.buyers[])
+    (proj.buyers || []).forEach(b => {
+      if (matches(b.name, b.phone, b.flatNo, b.notes)) {
+        results.push({
+          type: 'buyer', icon: '🏠',
+          title: b.name || 'Buyer',
+          sub: `Flat ${b.flatNo || '—'}${b.phone ? ' · ' + b.phone : ''}`,
+          amount: null,
+          onclick: `App.showFlatSalesBuyer('${b.id}')`
+        });
+      }
+    });
+
+    // 9. Buyer payments
+    (proj.buyers || []).forEach(b => {
+      (b.payments || []).forEach(p => {
+        if (matches(p.notes, p.mode, p.date)) {
+          results.push({
+            type: 'payment', icon: '💰',
+            title: (b.name || 'Buyer') + ' — Payment',
+            sub: `${p.date || '—'} · ${p.mode || ''} · ${p.notes || ''}`,
+            amount: p.amount,
+            onclick: `App.showFlatSalesBuyer('${b.id}')`
+          });
+        }
+      });
+    });
+
+    // 10. Site inventory materials (proj.materials[])
+    (proj.materials || []).forEach(m => {
+      if (matches(m.name, m.unit, m.notes)) {
+        results.push({
+          type: 'material', icon: '📦',
+          title: m.name || '—',
+          sub: `Inventory · Stock: ${m.currentStock || 0} ${m.unit || ''}`,
+          amount: null,
+          onclick: `App.showInventoryHub()`
+        });
+      }
+    });
+
+    // 11. Quick Leads (proj.leads[])
+    (proj.leads || []).forEach(l => {
+      if (matches(l.name, l.phone, l.address, l.source, l.status, l.notes)) {
+        results.push({
+          type: 'lead', icon: '👤',
+          title: l.name || 'Lead',
+          sub: `Lead · ${l.phone || '—'}${l.status ? ' · ' + l.status : ''}`,
+          amount: null,
+          onclick: `App.showLeadDetail('${l.id}')`
+        });
+      }
+    });
+
+    // 12. Site Photos (proj.sitePhotos[])
+    (proj.sitePhotos || []).forEach(p => {
+      if (matches(p.name, p.description, p.category)) {
+        results.push({
+          type: 'site-photo', icon: '📸',
+          title: p.name || 'Untitled Photo',
+          sub: `Photo${p.category ? ' · ' + p.category : ''}`,
+          amount: null,
+          onclick: `App.showSitePhotoDetail('${p.id}')`
+        });
+      }
+    });
+
+    if (!results.length) {
+      resultsEl.innerHTML = `<div style="padding:32px;text-align:center;color:var(--text-muted);font-size:13px">No results found for "<strong>${escH(q)}</strong>"<br><span style="font-size:11px;margin-top:8px;display:block">Try searching vendor name, worker name, bill description, or material name</span></div>`;
+      return;
+    }
+
+    const F = Financial;
+    const typeOrder = { 'entry':0,'vendor':1,'vendor-tx':2,'bill':3,'rabill':4,'worker':5,'labour-log':6,'buyer':7,'payment':8,'material':9,'lead':10,'site-photo':11 };
+    results.sort((a,b) => (typeOrder[a.type]||9) - (typeOrder[b.type]||9));
+
+    const rows = results.slice(0, 60).map(r => `
+      <button onclick="${escH(r.onclick)};App.closeSearch()" style="width:100%;text-align:left;background:none;border:none;padding:11px 18px;cursor:pointer;display:flex;align-items:center;gap:12px;border-bottom:1px solid var(--charcoal-border);font-family:var(--font-body)" onmouseenter="this.style.background='var(--charcoal-mid)'" onmouseleave="this.style.background='none'">
+        <span style="font-size:18px;flex-shrink:0;width:24px;text-align:center">${r.icon}</span>
+        <div style="flex:1;min-width:0">
+          <div style="font-size:13px;font-weight:600;color:var(--text-primary);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${highlight(r.title, q)}</div>
+          <div style="font-size:11px;color:var(--text-muted);margin-top:2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${highlight(r.sub, q)}</div>
+        </div>
+        ${r.amount != null ? `<span style="font-family:var(--font-mono);font-size:13px;font-weight:700;color:var(--amber);flex-shrink:0;white-space:nowrap">${F.fmt(r.amount)}</span>` : ''}
+      </button>`).join('');
+
+    resultsEl.innerHTML = `
+      <div style="padding:8px 16px 6px;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.1em;color:var(--text-muted)">${results.length} result${results.length !== 1 ? 's' : ''} for "${escH(q)}"</div>
+      ${rows}
+      ${results.length > 60 ? `<div style="padding:10px 18px;font-size:11px;color:var(--text-muted)">Showing first 60 of ${results.length}. Refine your search.</div>` : ''}
+    `;
   }
 
   // ── Data restoration / listeners (kept identical to legacy) ──
@@ -1403,6 +1737,7 @@ const App = (() => {
           <select class="field-select" id="ep-type">
             <option value="residential" ${proj.type==='residential'?'selected':''}>Residential — New Construction</option>
             <option value="commercial" ${proj.type==='commercial'?'selected':''}>Commercial Build</option>
+            <option value="combined" ${proj.type==='combined'?'selected':''}>Commercial / Residential (Combined)</option>
             <option value="renovation" ${proj.type==='renovation'?'selected':''}>Renovation / Remodel</option>
             <option value="addition" ${proj.type==='addition'?'selected':''}>Addition</option>
           </select>
@@ -1557,6 +1892,10 @@ const App = (() => {
         showHub('more');
       } else if (prev.type === 'flat-sales') {
         showFlatSales();
+      } else if (prev.type === 'quick-leads') {
+        showQuickLeads();
+      } else if (prev.type === 'site-photos') {
+        showSitePhotos();
       }
       _isNavigatingBack = false;
       return;
@@ -1625,6 +1964,20 @@ const App = (() => {
       handleBack();
     });
 
+    // Global keyboard shortcuts
+    document.addEventListener('keydown', (e) => {
+      // Ctrl/Cmd + K → open search
+      if ((e.ctrlKey || e.metaKey) && e.key === 'k') {
+        e.preventDefault();
+        openSearch();
+      }
+      // Escape → close search overlay if open
+      if (e.key === 'Escape') {
+        const overlay = document.getElementById('global-search-overlay');
+        if (overlay && overlay.style.display !== 'none') { overlay.style.display = 'none'; }
+      }
+    });
+
     // ── Browser fallback via popstate ───────────────────────────
     // Used when running outside Capacitor (dev in browser, etc.)
     window.addEventListener('popstate', (e) => {
@@ -1645,6 +1998,17 @@ const App = (() => {
   }
 
   let _isSyncing = false;
+  let _syncToastShown = false; // Track if we already showed a toast for this sync cycle
+
+  // Cloud SVG icon used in the badge — small cloud (14px)
+  function _cloudIconSVG(size = 14, extra = '') {
+    return `<svg viewBox="0 0 24 24" width="${size}" height="${size}" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" ${extra}><path d="M17.5 19A3.5 3.5 0 0 0 21 15.5c0-2.79-2.54-4.5-5-4.5-.42-1.89-1.99-3.5-4-3.5A4.5 4.5 0 0 0 7.5 12c0 .28.02.55.06.82-1.58.33-2.56 1.76-2.56 3.43A3.75 3.75 0 0 0 8.75 20H17"/></svg>`;
+  }
+
+  // Spinning sync icon (two curved arrows)
+  function _syncSpinnerSVG(size = 12) {
+    return `<svg viewBox="0 0 24 24" width="${size}" height="${size}" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" class="sync-spin-icon"><path d="M21 12a9 9 0 0 0-9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/><path d="M3 12a9 9 0 0 0 9 9 9.75 9.75 0 0 0 6.74-2.74L21 16"/><path d="M16 16h5v5"/></svg>`;
+  }
 
   function updateSyncStatus() {
     const badge = document.getElementById('sync-status-badge');
@@ -1657,35 +2021,76 @@ const App = (() => {
     }
 
     const isLocalProject = !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(proj.id);
+    badge.style.display = 'inline-flex';
+    badge.style.border = '';
+    badge.style.color = '';
+
     if (isLocalProject) {
-      badge.style.display = 'inline-flex';
       badge.className = 'sync-badge offline-local';
-      badge.innerHTML = 'Local Only';
+      badge.innerHTML = _cloudIconSVG(13) + '<span>Local</span>';
+      badge.onclick = () => syncProjectToCloud(proj.id);
+      badge.title = 'Tap to sync this project to cloud';
       return;
     }
 
-    badge.style.display = 'inline-flex';
     const isOnline = navigator.onLine;
 
     if (!isOnline) {
       badge.className = 'sync-badge offline-local';
-      badge.innerHTML = '⚠ Offline';
+      badge.innerHTML = _cloudIconSVG(13) + '<span>Offline</span>';
+      badge.onclick = null;
+      badge.title = 'No internet connection';
     } else if (_isSyncing) {
       badge.className = 'sync-badge syncing';
-      badge.innerHTML = 'Syncing…';
+      badge.innerHTML = _syncSpinnerSVG(13) + '<span>Syncing</span>';
+      badge.onclick = null;
+      badge.title = 'Syncing changes to cloud…';
     } else {
       const unsynced = State.hasUnsyncedChanges();
       if (unsynced) {
-        badge.className = 'sync-badge offline-local';
+        badge.className = 'sync-badge unsynced';
         badge.style.border = '1px dashed var(--warning)';
         badge.style.color = 'var(--warning)';
-        badge.innerHTML = 'Unsynced';
+        badge.innerHTML = _cloudIconSVG(13) + '<span>Unsynced</span>';
+        badge.onclick = () => forceSyncNow();
+        badge.title = 'Some changes not synced — tap to retry';
       } else {
         badge.className = 'sync-badge online-synced';
-        badge.style.border = '';
-        badge.style.color = '';
-        badge.innerHTML = '✓ Synced';
+        badge.innerHTML = _cloudIconSVG(13) + '<span>Synced</span>';
+        badge.onclick = () => forceSyncNow();
+        badge.title = 'All changes saved to cloud — tap to force sync';
       }
+    }
+  }
+
+  // Force sync: manually trigger a full cloud sync
+  async function forceSyncNow() {
+    if (!navigator.onLine) {
+      toast('Cannot sync: You are currently offline.', 'warning');
+      return;
+    }
+    const proj = State.getCurrentProject();
+    if (!proj) return;
+
+    // If project is local (not yet synced to cloud), use the migration path
+    const isLocalProject = !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(proj.id);
+    if (isLocalProject) {
+      return syncProjectToCloud(proj.id);
+    }
+
+    toast('Syncing with cloud...', 'info');
+    // Mark that we want a toast for this sync cycle — the syncend handler
+    // will consume this flag and show the appropriate completion toast.
+    _syncToastShown = true;
+    try {
+      await State.forceSync();
+      // NOTE: Do NOT show a second toast here — the syncend event handler
+      // will show "Cloud sync complete!" or "Sync paused..." based on the result.
+      // (Previously this showed a duplicate "Sync complete!" toast.)
+    } catch (err) {
+      _syncToastShown = false; // Consume flag so syncend doesn't also toast
+      console.error('[App] Force sync failed:', err);
+      toast('Sync failed: ' + (err.message || 'Unknown error'), 'error');
     }
   }
 
@@ -1709,13 +2114,25 @@ const App = (() => {
     window.addEventListener('online', () => {
       updateSyncStatus();
       toast('Connection restored. Syncing changes to cloud...', 'info');
-      State.replaySyncQueue();
+      _syncToastShown = true;
+      State.forceSync().then(() => {
+        // Refresh dashboard after auto-sync to update the sync banner
+        if (currentView === 'overview') {
+          refreshDashboard();
+        }
+      });
     });
     window.addEventListener('offline', () => {
       updateSyncStatus();
       toast('Connection lost. Operating offline.', 'warning');
     });
+    // dirtychanged: dispatched when dirty state changes (user made/unsaved changes)
+    // This is the PRIMARY event for badge updates — replaces the old
+    // syncstart/syncend-driven badge updates that caused flickering.
+    window.addEventListener('dirtychanged', updateSyncStatus);
     window.addEventListener('syncqueuechanged', updateSyncStatus);
+    // syncstart/syncend: ONLY dispatched by forceSync() (user-triggered resync).
+    // Auto-save no longer dispatches these events, preventing the sync loop.
     window.addEventListener('syncstart', () => {
       _isSyncing = true;
       updateSyncStatus();
@@ -1723,10 +2140,18 @@ const App = (() => {
     window.addEventListener('syncend', (e) => {
       _isSyncing = false;
       updateSyncStatus();
-      if (e.detail && e.detail.success) {
-        toast('Cloud sync complete!', 'success');
-      } else {
-        toast('Sync paused: some mutations are pending connection.', 'warning');
+      // Refresh dashboard to update/remove the "Re-sync" banner
+      if (currentView === 'overview') {
+        refreshDashboard();
+      }
+      // Show toast for user-triggered syncs
+      if (_syncToastShown) {
+        _syncToastShown = false;
+        if (e.detail && e.detail.success) {
+          toast('Cloud sync complete!', 'success');
+        } else if (e.detail && !e.detail.success) {
+          toast('Sync paused: some changes are pending.', 'warning');
+        }
       }
     });
 
@@ -1736,14 +2161,13 @@ const App = (() => {
       if (proj) {
         const nameEl = document.getElementById('current-project-name');
         if (nameEl) {
-          const isLocal = !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(proj.id);
-          if (isLocal) {
-            nameEl.innerHTML = `${escapeHtml(proj.name)} <button class="m-appbar-sync-btn" onclick="App.syncProjectToCloud('${escapeAttr(proj.id)}')" title="Sync Project to Cloud" style="background:transparent; border:none; color:var(--amber); cursor:pointer; padding:0 4px; display:inline-flex; align-items:center; vertical-align:middle;">${Icons.render('cloudUpload', 16)}</button>`;
-          } else {
-            nameEl.textContent = proj.name;
-          }
+          nameEl.textContent = proj.name;
         }
         showHub(currentHub);
+        // IMPORTANT: Financial.updateAllTotals() may call State.save() internally,
+        // which would trigger saveToSupabase(). Since we just loaded from cloud,
+        // there are no user changes to sync. The dirty flags were cleared by
+        // _notifySynced(), so saveToSupabase() will skip (nothing dirty).
         Financial.updateAllTotals?.();
       } else {
         const ps = State.getProjects();
@@ -1759,8 +2183,11 @@ const App = (() => {
 
     // Initial sync status check and auto-replay
     updateSyncStatus();
-    if (navigator.onLine) {
-      State.replaySyncQueue();
+    if (navigator.onLine && State.hasUnsyncedChanges()) {
+      _syncToastShown = true;
+      State.forceSync().then(() => {
+        if (currentView === 'overview') refreshDashboard();
+      });
     }
   }
 
@@ -1824,19 +2251,83 @@ const App = (() => {
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', boot);
   else boot();
 
+  // ── Global Event Bus for Cross-Module Reactivity ────────
+  // Allows any module to emit events and others to listen,
+  // so changes propagate instantly without page reload.
+  const _listeners = {};
+
+  function emit(event, detail) {
+    const handlers = _listeners[event];
+    if (!handlers) return;
+    handlers.forEach(fn => {
+      try { fn(detail); } catch(e) { console.warn('[App.emit] Error in listener for', event, e); }
+    });
+  }
+
+  function on(event, fn) {
+    if (!_listeners[event]) _listeners[event] = [];
+    _listeners[event].push(fn);
+    // Return unsubscribe function
+    return () => {
+      _listeners[event] = _listeners[event].filter(f => f !== fn);
+    };
+  }
+
+  function off(event, fn) {
+    if (!_listeners[event]) return;
+    _listeners[event] = _listeners[event].filter(f => f !== fn);
+  }
+
+  // ── Lightweight dashboard refresh (no full re-render) ────
+  function refreshDashboard() {
+    // Only re-render if dashboard is the current view
+    if (currentView !== 'overview') return;
+    const content = document.getElementById('content-area');
+    if (!content) return;
+    content.innerHTML = Dashboard.render();
+  }
+
+  // ── Core Reactivity Listeners ───────────────────────────
+  // When data changes, refresh visible UI sections instantly
+
+  // data:changed — fired by Financial.scheduleUpdate after totals recalc
+  on('data:changed', () => {
+    // Refresh dashboard stats if visible (lightweight DOM updates)
+    if (currentView === 'overview') {
+      refreshDashboard();
+    }
+    // If a phase hub is open, update its running total
+    if (currentPhase > 0) {
+      if (typeof Phases !== 'undefined' && typeof Phases.updateHubTotals === 'function') {
+        try { Phases.updateHubTotals(currentPhase); } catch(e) {}
+      }
+    }
+  });
+
+  // completions:updated — fired after recalcAllCompletions
+  on('completions:updated', () => {
+    // Refresh dashboard to show new completion percentages
+    if (currentView === 'overview') {
+      refreshDashboard();
+    }
+  });
+
   return {
-    init, startNewProject, openProject, showProjectPicker, syncProjectToCloud,
+    init, startNewProject, openProject, showProjectPicker, syncProjectToCloud, forceSyncNow,
     wizardNext, wizardBack, wizardSkip,
     showHub, setLedgerTab,
     // phase routes
     showPhase, showPhaseHub, showInteriorHub, showPhaseCategory, showInputCard,
     showMaterialCards, showLaborCards, showEntryForm, showPhaseBills, showConstructionBills,
     // more routes
-    showRaBillsHub, showSubLedger, showFlatSales, showFlatSalesBuyer, showTools,
+    showRaBillsHub, showSubLedger, showFlatSales, showFlatSalesBuyer, showQuickLeads, showLeadDetail, showSitePhotos, showSitePhotoDetail, showTools,
     // legacy aliases
     showLabourHub, showVendorHub, showInventoryHub, showOverview, showDashboard,
+    refreshDashboard,
+    emit, on, off,
     // AI / FAB
     toggleAI, openAI, closeAI, minimizeAI, sendAIMessage, _toggleFab, _fabAction,
+    openSearch, closeSearch, runSearch,
     // export
     exportPDF, exportExcel,
     // user / modals
@@ -1849,4 +2340,5 @@ const App = (() => {
     // legacy no-ops
     toggleSidebar() {}, toggleSidebarGroup() {},
   };
+
 })();

@@ -47,7 +47,7 @@
 <div id="splash-screen">
   <div class="splash-core">
     <span class="splash-logo">
-      <img src="img/logo.png" alt="RECON" width="64" height="64">
+      <img src="icons/icon.svg" alt="RECON" width="64" height="64">
     </span>
     <h1 class="splash-title">RECON</h1>
     <p class="splash-tag">Site · Scope · Spend</p>
@@ -65,7 +65,7 @@
 
   <header class="onb-topbar">
     <span class="onb-brand">
-      <img src="img/logo.png" alt="" width="22" height="22">
+      <img src="icons/icon.svg" alt="" width="22" height="22">
       <span>RECON</span>
     </span>
     <button class="onb-skip" id="onb-skip" type="button">Skip</button>
@@ -128,7 +128,7 @@
 <!-- ─────────────── WELCOME / PROJECT PICKER ─────────────── -->
 <div id="welcome-screen" class="m-welcome">
   <div class="m-welcome-hero">
-    <span class="m-welcome-logo" id="welcome-logo-icon"><img src="img/logo.png" alt="RECON" width="42" height="42"></span>
+    <span class="m-welcome-logo" id="welcome-logo-icon"><img src="icons/icon.svg" alt="RECON" width="42" height="42"></span>
     <h1 class="m-welcome-title">RECON</h1>
     <p class="m-welcome-tag">Site. Scope. Spend.</p>
     <p class="m-welcome-sub">Track every rupee. Every phase. Every trade — from your pocket.</p>
@@ -168,7 +168,7 @@
   <nav class="m-desktop-sidebar" id="desktop-sidebar" aria-label="Main navigation">
     <div style="padding: 12px 14px 20px; border-bottom: 1px solid var(--border); margin-bottom: 8px;">
       <div style="display: flex; align-items: center; gap: 10px;">
-        <img src="img/logo.png" width="28" height="28" alt="">
+        <img src="icons/icon.svg" width="28" height="28" alt="">
         <span style="font-weight: 700; font-size: 18px; letter-spacing: -0.01em; color: var(--text); font-family: var(--font-display);">RECON</span>
       </div>
     </div>
@@ -212,7 +212,15 @@
     </button>
     <button class="ds-nav-item" data-tab="flatsales" onclick="App.showFlatSales()">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>
-      <span>Flat Sales</span>
+      <span>Flat Sales / Purchaser</span>
+    </button>
+    <button class="ds-nav-item" data-tab="quickleads" onclick="App.showQuickLeads()">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><line x1="19" y1="8" x2="19" y2="14"/><line x1="22" y1="11" x2="16" y2="11"/></svg>
+      <span>Quick Leads</span>
+    </button>
+    <button class="ds-nav-item" data-tab="sitephotos" onclick="App.showSitePhotos()">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg>
+      <span>Site Photos</span>
     </button>
 
     <div class="ds-nav-section">Tools</div>
@@ -237,6 +245,9 @@
     <button class="m-iconbtn m-iconbtn--accent" onclick="App.toggleAI()" title="AI Build Assistant" aria-label="AI Assistant" id="ai-toggle-btn">
       <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="7" width="18" height="13" rx="3"/><path d="M12 2v5"/><circle cx="9" cy="13" r="1.2"/><circle cx="15" cy="13" r="1.2"/><path d="M9 17h6"/></svg>
       <span class="m-ai-pulse" id="ai-pulse"></span>
+    </button>
+    <button class="m-iconbtn" onclick="App.openSearch()" title="Global Search" aria-label="Search">
+      <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
     </button>
     <button class="m-iconbtn" onclick="App.toggleUserMenu()" title="Account" aria-label="Account" id="user-menu-btn">
       <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="4"/><path d="M4 21c1.5-4 5-6 8-6s6.5 2 8 6"/></svg>
@@ -291,7 +302,10 @@
         <span>Build Assistant</span>
         <span class="m-status-dot" id="ai-status-dot"></span>
       </div>
-      <button class="m-iconbtn" onclick="App.closeAI()" aria-label="Close">✕</button>
+      <div style="display:flex;gap:6px;align-items:center">
+        <button class="m-iconbtn" title="Clear AI history" onclick="AI.clearAIHistory()" aria-label="Clear history" style="font-size:11px;padding:4px 8px;opacity:0.6;border-radius:6px;border:1px solid var(--charcoal-border);background:none;color:var(--text-muted);cursor:pointer;font-family:inherit">Clear</button>
+        <button class="m-iconbtn" onclick="App.closeAI()" aria-label="Close">✕</button>
+      </div>
     </header>
     <div class="m-drawer-watching" id="ai-watching">Watching: Dashboard</div>
     <div class="m-drawer-messages" id="ai-messages">
@@ -308,9 +322,25 @@
     </div>
   </aside>
 
-</div>
+  <!-- GLOBAL SEARCH OVERLAY -->
+  <div id="global-search-overlay" style="display:none;position:fixed;inset:0;z-index:3000;background:rgba(0,0,0,0.7);backdrop-filter:blur(4px)" onclick="App.closeSearch(event)">
+    <div style="position:absolute;top:10%;left:50%;transform:translateX(-50%);width:min(94vw,640px);background:var(--charcoal-surface);border:1.5px solid var(--charcoal-border);border-radius:var(--r-xl);overflow:hidden;box-shadow:0 24px 80px rgba(0,0,0,0.5)">
+      <!-- Search input -->
+      <div style="display:flex;align-items:center;gap:10px;padding:14px 16px;border-bottom:1px solid var(--charcoal-border)">
+        <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="var(--text-muted)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
+        <input id="global-search-input" type="text" placeholder="Search vendors, workers, bills, materials, notes…"
+          style="flex:1;background:none;border:none;outline:none;font-size:15px;color:var(--text-primary);font-family:var(--font-body)"
+          oninput="App.runSearch(this.value)">
+        <button onclick="App.closeSearch()" style="background:none;border:none;color:var(--text-muted);font-size:18px;cursor:pointer;padding:0 4px;line-height:1">✕</button>
+      </div>
+      <!-- Results -->
+      <div id="global-search-results" style="max-height:60vh;overflow-y:auto;padding:8px 0">
+        <div style="padding:24px;text-align:center;color:var(--text-muted);font-size:13px">Start typing to search across all project data</div>
+      </div>
+    </div>
+  </div>
 
-<!-- TOAST -->
+</div>
 <div id="toast-container"></div>
 
 <!-- CONFIRM MODAL -->
@@ -346,22 +376,32 @@
 <script src="js/onboarding.js?v=20"></script>
 <script src="js/icons.js?v=20"></script>
 <script src="js/state.js?v=20"></script>
-<script src="js/financial.js?v=20"></script>
+<script src="js/financial.js?v=21"></script>
 <script src="js/dashboard.js?v=20"></script>
 <script src="js/estimation.js?v=3"></script>
-<script src="js/phases.js?v=20"></script>
+<script src="js/phases.js?v=21"></script>
 <script src="js/ai.js?v=20"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
 <script src="js/export.js?v=20"></script>
-<script src="js/labour-vendors.js?v=20"></script>
-<script src="js/vendor-khata.js?v=20"></script>
+<script src="js/labour-vendors.js?v=21"></script>
+<script src="js/vendor-khata.js?v=21"></script>
 <script src="js/site-inventory.js?v=20"></script>
 <script src="js/ra-bills.js?v=20"></script>
-<script src="js/bill-scanner.js?v=20"></script>
+<script src="js/bill-scanner.js?v=21"></script>
 <script src="js/phases-new-core.js?v=20"></script>
 <script src="js/flat-sales.js?v=20"></script>
+<script src="js/quick-leads.js?v=1"></script>
+<script src="js/site-photos.js?v=1"></script>
 <script src="js/app.js?v=20"></script>
 <script>
+  // D-04: Global unhandled promise rejection handler — prevents silent failures
+  // from fire-and-forget async calls across all modules.
+  window.addEventListener('unhandledrejection', function(event) {
+    console.error('[RECON] Unhandled promise rejection:', event.reason);
+    // Prevent the default console error (we already logged it above)
+    event.preventDefault();
+  });
+
   // Sign-in email display
   if (typeof SupabaseClient !== 'undefined') {
     SupabaseClient.onReady && SupabaseClient.onReady(() => {

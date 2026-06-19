@@ -321,26 +321,130 @@ Schema:
 
     const statusEl = document.getElementById('scanner-status');
     const reviewEl = document.getElementById('review-container');
-    if (statusEl) statusEl.style.display = 'block';
+    if (statusEl) {
+      statusEl.innerHTML = `<span class="spinner" style="width:12px;height:12px;border-top-color:var(--amber);border-width:2px;margin-right:8px;display:inline-block"></span> Analyzing bill with AI…`;
+      statusEl.style.display = 'block';
+    }
     if (reviewEl) reviewEl.style.display = 'none';
 
     try {
-      // 1. Compress Image
       const base64Image = await compressImage(file);
       
-      // 2. Scan with AI
-      const aiResult = await scanBillWithAI(base64Image);
-      
-      // 3. Show Review Form
-      showReviewForm(phaseId, aiResult, base64Image);
+      let aiResult = null;
+      let aiError = null;
+      try {
+        aiResult = await scanBillWithAI(base64Image);
+      } catch (err) {
+        aiError = err;
+        console.warn('[BillScanner] AI scan failed:', err.message);
+      }
+
+      if (aiResult && (aiResult.totalAmount > 0 || (aiResult.items && aiResult.items.length > 0) || aiResult.vendor)) {
+        showReviewForm(phaseId, aiResult, base64Image);
+      } else {
+        showManualFallbackForm(phaseId, base64Image, aiError);
+      }
       
     } catch (err) {
-      console.error('[BillScanner]', err);
-      App.toast('Failed to scan bill: ' + err.message, 'error');
+      console.error('[BillScanner] Unexpected error:', err);
+      showManualFallbackForm(phaseId, null, err);
     } finally {
       if (statusEl) statusEl.style.display = 'none';
-      // Reset input so the same file can be selected again if needed
       e.target.value = '';
+    }
+  }
+
+  // ── Fallback manual entry when AI fails ───────────────────────
+  function showManualFallbackForm(phaseId, base64Image, error) {
+    const reviewEl = document.getElementById('review-container');
+    if (!reviewEl) return;
+
+    const proj = State.getCurrentProject();
+    const isConstruction = (phaseId === 'construction');
+    const phaseSelectHtml = isConstruction ? `
+      <div class="field-group" style="margin-top:12px">
+        <label class="field-label" style="font-weight:700">Assign to Trade Phase *</label>
+        <select id="review-phase-id" class="field-input" style="background:var(--charcoal);border:1px solid var(--charcoal-border);color:var(--text-primary);padding:8px 10px;border-radius:6px;width:100%;box-sizing:border-box">
+          ${(proj?.phases || []).filter(p => p.id >= 1 && p.id <= 9).map(p => `
+            <option value="${escapeAttr(p.id)}">${escapeHtml(p.name)}</option>
+          `).join('')}
+        </select>
+      </div>
+    ` : `<input type="hidden" id="review-phase-id" value="${escapeAttr(phaseId)}">`;
+
+    const today = new Date().toISOString().split('T')[0];
+
+    reviewEl.innerHTML = `
+      <div class="card" style="border:1.5px solid var(--amber-border);box-shadow:0 4px 16px rgba(0,0,0,0.12)">
+        <div style="display:flex;align-items:center;gap:10px;margin-bottom:14px;padding-bottom:12px;border-bottom:1px solid var(--charcoal-border)">
+          <div style="background:var(--amber-light-bg);border-radius:8px;padding:8px;flex-shrink:0">
+            ${Icons.render('camera', 18)}
+          </div>
+          <div>
+            <div style="font-weight:700;font-size:14px;color:var(--amber)">AI Unavailable — Enter Manually</div>
+            <div style="font-size:11px;color:var(--text-muted);margin-top:2px">${error ? 'Error: ' + escapeHtml(error.message || 'Network or API issue') : 'Could not extract details from image'}</div>
+          </div>
+          <button class="btn-ghost-sm" style="margin-left:auto;padding:4px 10px;font-size:11px" onclick="document.getElementById('review-container').style.display='none'">✕</button>
+        </div>
+        ${base64Image ? `<div style="margin-bottom:14px"><img src="${escapeAttr(base64Image)}" style="width:100%;max-height:160px;object-fit:cover;border-radius:8px;border:1px solid var(--charcoal-border)"></div>` : ''}
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px">
+          <div class="field-group">
+            <label class="field-label">Vendor / Shop Name</label>
+            <input class="field-input" id="review-vendor" placeholder="e.g. Ramesh Hardware">
+          </div>
+          <div class="field-group">
+            <label class="field-label">Date</label>
+            <input class="field-input" id="review-date" type="date" value="${today}" style="font-family:var(--font-mono)">
+          </div>
+        </div>
+        <div class="field-group" style="margin-bottom:12px">
+          <label class="field-label" style="font-weight:700">Total Amount (₹) *</label>
+          <div style="display:flex;align-items:center;gap:6px">
+            <span style="color:var(--amber);font-weight:700;font-size:15px">₹</span>
+            <input class="field-input mono" type="number" id="review-total" placeholder="0" style="flex:1">
+          </div>
+        </div>
+        <div class="field-group" style="margin-bottom:4px">
+          <label class="field-label">Description (Optional)</label>
+          <input class="field-input" id="manual-desc" placeholder="e.g. Cement 50 bags, Sand 5 trolley">
+        </div>
+        ${phaseSelectHtml}
+        <div style="display:flex;gap:10px;margin-top:16px">
+          <label class="btn-primary" style="cursor:pointer;flex:1;text-align:center;padding:9px;border-radius:8px;font-size:12px;font-weight:700">
+            ${Icons.render('camera', 13)} Re-scan
+            <input type="file" accept="image/*" ${/Android|webOS|iPhone|iPad|iPod/i.test(navigator.userAgent) ? 'capture="environment"' : ''} style="display:none" onchange="BillScanner.handleUpload(event, '${escapeAttr(phaseId)}')">
+          </label>
+          <button id="save-bill-btn" class="btn-primary" style="flex:2;padding:9px;border-radius:8px;font-size:12px;font-weight:700" onclick="BillScanner.saveManualBill('${escapeAttr(phaseId)}')">
+            ${Icons.render('plus', 13)} Save Bill Manually
+          </button>
+        </div>
+      </div>
+    `;
+    reviewEl.style.display = 'block';
+    reviewEl.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+  }
+
+  async function saveManualBill(phaseId) {
+    const btn = document.getElementById('save-bill-btn');
+    const vendor = (document.getElementById('review-vendor')?.value || '').trim();
+    const date = (document.getElementById('review-date')?.value || '').trim();
+    const totalAmount = Number(document.getElementById('review-total')?.value) || 0;
+    const desc = (document.getElementById('manual-desc')?.value || '').trim();
+    const targetPhaseId = parseInt(document.getElementById('review-phase-id')?.value) || parseInt(phaseId);
+
+    if (!totalAmount || totalAmount <= 0) return App.toast('Enter a valid amount', 'error');
+
+    if (btn) { btn.disabled = true; btn.textContent = 'Saving…'; }
+
+    const items = desc ? [{ desc, qty: 1, rate: totalAmount, amount: totalAmount }] : [];
+    const billObj = { vendor: vendor || 'Manual Entry', date, totalAmount, items };
+    await State.addBill(targetPhaseId, billObj);
+
+    App.toast('Bill saved!', 'success');
+    if (phaseId === 'construction') {
+      App.showConstructionBills();
+    } else {
+      App.showPhaseBills(phaseId);
     }
   }
 
@@ -516,6 +620,7 @@ Schema:
     renderBillsHub,
     handleUpload,
     saveReviewedBill,
+    saveManualBill,
     deleteBillUI,
     recalcRow,
     recalcTotal,

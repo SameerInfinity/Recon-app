@@ -121,6 +121,21 @@
   .auth-btn:active { transform: scale(0.98); }
   .auth-btn:disabled { opacity: 0.5; cursor: not-allowed; transform: none; box-shadow: none; }
 
+  .auth-btn-google {
+    width: 100%; min-height: 50px; padding: 12px 16px;
+    display: flex; align-items: center; justify-content: center; gap: 10px;
+    background: #fff; color: #1f1f1f;
+    border: 1.5px solid var(--border); border-radius: 14px;
+    font-family: inherit; font-size: 14px; font-weight: 500; letter-spacing: 0.01em;
+    cursor: pointer; transition: all 0.2s var(--ease);
+    box-shadow: 0 4px 14px rgba(30,35,42,0.08);
+    margin-bottom: 14px;
+  }
+  .auth-btn-google:hover { transform: translateY(-1px); border-color: rgba(67,73,80,0.28); box-shadow: 0 8px 20px rgba(30,35,42,0.12); }
+  .auth-btn-google:active { transform: scale(0.98); }
+  .auth-btn-google:disabled { opacity: 0.55; cursor: not-allowed; transform: none; box-shadow: none; }
+  .auth-btn-google svg { flex-shrink: 0; }
+
   .auth-link { text-align: center; margin-top: 2px; }
   .auth-link a { font-size: 12px; color: var(--amber); text-decoration: none; font-weight: 500; }
   .auth-link a:hover { text-decoration: underline; }
@@ -175,7 +190,7 @@
   <a href="/" class="auth-back">← Back to home</a>
   <div class="auth-logo">
     <div class="auth-logo-icon" id="auth-logo-icon">
-      <img src="img/logo.png" alt="RECON" width="40" height="40">
+      <img src="icons/icon.svg" alt="RECON" width="40" height="40">
     </div>
     <h1>RECON</h1>
     <p>Site · Scope · Spend</p>
@@ -191,6 +206,21 @@
     <!-- Error/Success Messages -->
     <div class="auth-error" id="auth-error"></div>
     <div class="auth-success" id="auth-success"></div>
+
+    <!-- Google Sign-In -->
+    <button type="button" class="auth-btn-google" id="google-btn" onclick="AuthUI.handleGoogle()">
+      <svg width="18" height="18" viewBox="0 0 18 18" aria-hidden="true">
+        <path fill="#4285F4" d="M17.64 9.2c0-.637-.057-1.251-.164-1.84H9v3.481h4.844a4.14 4.14 0 0 1-1.796 2.716v2.258h2.908c1.702-1.567 2.684-3.874 2.684-6.615z"/>
+        <path fill="#34A853" d="M9 18c2.43 0 4.467-.806 5.956-2.185l-2.908-2.258c-.806.54-1.837.86-3.048.86-2.344 0-4.328-1.584-5.036-3.711H.957v2.332A8.997 8.997 0 0 0 9 18z"/>
+        <path fill="#FBBC05" d="M3.964 10.706A5.41 5.41 0 0 1 3.682 9c0-.593.102-1.17.282-1.706V4.962H.957A8.996 8.996 0 0 0 0 9c0 1.452.348 2.827.957 4.038l3.007-2.332z"/>
+        <path fill="#EA4335" d="M9 3.58c1.321 0 2.508.454 3.44 1.345l2.582-2.58C13.463.891 11.426 0 9 0A8.997 8.997 0 0 0 .957 4.962L3.964 7.294C4.672 5.167 6.656 3.58 9 3.58z"/>
+      </svg>
+      <span>Continue with Google</span>
+    </button>
+
+    <div class="auth-divider">or with email</div>
+
+
 
     <!-- Login Form -->
     <form class="auth-form" id="login-form" onsubmit="AuthUI.handleLogin(event)">
@@ -249,8 +279,21 @@
 <script src="js/icons.js"></script>
 <script>
 const AuthUI = (() => {
-  let loginAttempts = 0;
-  let lockoutUntil = 0;
+  function _getLockout() {
+    try {
+      const s = sessionStorage.getItem('recon_lockout');
+      const v = s ? JSON.parse(s) : null;
+      return v && typeof v === 'object' ? v : { attempts: 0, until: 0 };
+    } catch { return { attempts: 0, until: 0 }; }
+  }
+  function _setLockout(attempts, until) {
+    try { sessionStorage.setItem('recon_lockout', JSON.stringify({ attempts, until })); } catch {}
+  }
+  let _lk = _getLockout();
+  let loginAttempts = _lk.attempts;
+  let lockoutUntil = _lk.until;
+  // Keep sessionStorage in sync whenever these change
+  Object.defineProperty(window, '__reconLockoutPersist', { value: () => _setLockout(loginAttempts, lockoutUntil) });
 
   function switchTab(tab) {
     hideMessages();
@@ -326,14 +369,14 @@ const AuthUI = (() => {
     setLoading('login-btn', true);
     try {
       await SupabaseClient.signIn(email, password);
-      loginAttempts = 0;
+      loginAttempts = 0; window.__reconLockoutPersist && window.__reconLockoutPersist();
       showSuccess('Signed in! Redirecting...');
       setTimeout(() => { window.location.href = '/'; }, 500);
     } catch (err) {
-      loginAttempts++;
+      loginAttempts++; window.__reconLockoutPersist && window.__reconLockoutPersist();
       if (loginAttempts >= 5) {
-        lockoutUntil = Date.now() + 60000; // 60 seconds lockout
-        loginAttempts = 0;
+        lockoutUntil = Date.now() + 60000; window.__reconLockoutPersist && window.__reconLockoutPersist(); // 60 seconds lockout
+        loginAttempts = 0; window.__reconLockoutPersist && window.__reconLockoutPersist();
         showError('Too many failed login attempts. Please wait 60 seconds.');
       } else {
         showError(err.message || 'Sign in failed. Check your credentials.');
@@ -393,7 +436,34 @@ const AuthUI = (() => {
     }
   });
 
-  return { switchTab, showForgotPassword, handleLogin, handleRegister, handleForgotPassword };
+  async function handleGoogle() {
+    hideMessages();
+    const btn = document.getElementById('google-btn');
+    if (!btn || btn.disabled) return;
+    const originalHTML = btn.innerHTML;
+    btn.disabled = true;
+    btn.innerHTML = '<span class="spinner"></span> Connecting to Google...';
+    try {
+      await SupabaseClient.signInWithGoogle();
+      // Web: signInWithOAuth triggers a full-page redirect to Google; the
+      // spinner stays visible until the redirect happens, no further code
+      // runs here.
+      // Native (Capacitor): the native Google picker resolves in-app and
+      // SupabaseClient's onAuthStateChange listener (SIGNED_IN) already
+      // redirects to '/' — but redirect explicitly too in case that
+      // listener fires before this page attached it.
+      const isCapacitor = !!(window.Capacitor && window.Capacitor.isNativePlatform && window.Capacitor.isNativePlatform());
+      if (isCapacitor) {
+        window.location.href = '/';
+      }
+    } catch (err) {
+      btn.disabled = false;
+      btn.innerHTML = originalHTML;
+      showError(err.message || 'Google sign-in failed. Please try again.');
+    }
+  }
+
+  return { switchTab, showForgotPassword, handleLogin, handleRegister, handleForgotPassword, handleGoogle };
 })();
 </script>
 

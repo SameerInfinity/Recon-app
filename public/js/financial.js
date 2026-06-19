@@ -14,15 +14,18 @@ const Financial = (() => {
     const n = parseFloat(amount) || 0;
     const sym = currency === 'INR' ? '₹' : '$';
     const locale = currency === 'INR' ? 'en-IN' : 'en-US';
-    if (n >= 10000000) {
-      const v = n / 10000000;
-      return sym + (v % 1 === 0 ? v.toFixed(0) : parseFloat(v.toFixed(2))) + ' Cr';
+    // M-03: Handle negative numbers — show "-₹1,23,456" not "₹-1,23,456"
+    const abs = Math.abs(n);
+    const sign = n < 0 ? '-' : '';
+    if (abs >= 10000000) {
+      const v = abs / 10000000;
+      return sign + sym + (v % 1 === 0 ? v.toFixed(0) : parseFloat(v.toFixed(2))) + ' Cr';
     }
-    if (n >= 100000) {
-      const v = n / 100000;
-      return sym + (v % 1 === 0 ? v.toFixed(0) : parseFloat(v.toFixed(2))) + ' L';
+    if (abs >= 100000) {
+      const v = abs / 100000;
+      return sign + sym + (v % 1 === 0 ? v.toFixed(0) : parseFloat(v.toFixed(2))) + ' L';
     }
-    return sym + n.toLocaleString(locale, { maximumFractionDigits: 0 });
+    return sign + sym + abs.toLocaleString(locale, { maximumFractionDigits: 0 });
   }
 
   function fmtFull(amount) {
@@ -30,7 +33,10 @@ const Financial = (() => {
     const n = parseFloat(amount) || 0;
     const sym = currency === 'INR' ? '₹' : '$';
     const locale = currency === 'INR' ? 'en-IN' : 'en-US';
-    return sym + n.toLocaleString(locale, { maximumFractionDigits: 0 });
+    // M-03: Handle negative numbers — show "-₹1,23,456" not "₹-1,23,456"
+    const abs = Math.abs(n);
+    const sign = n < 0 ? '-' : '';
+    return sign + sym + abs.toLocaleString(locale, { maximumFractionDigits: 0 });
   }
 
   function parseNum(val) {
@@ -86,8 +92,10 @@ const Financial = (() => {
       qr(d.kitchen_dado,    'area_sqft',  'rate_per_sqft'),
       qr(d.staircase_tiles, 'step_count', 'rate_per_step'),
       mul(d.tile_chemical?.qty,  d.tile_chemical?.rate),
-      mul(d.tile_sand_cement?.sand_qty_brass, d.tile_sand_cement?.sand_rate)
-        + mul(d.tile_sand_cement?.cement_bags, d.tile_sand_cement?.cement_rate),
+      add(
+        mul(d.tile_sand_cement?.sand_qty_brass, d.tile_sand_cement?.sand_rate),
+        mul(d.tile_sand_cement?.cement_bags,    d.tile_sand_cement?.cement_rate)
+      ),
       mul(d.tile_labor?.rate_per_sqft, d.tile_labor?.area_sqft),
     );
   }
@@ -134,8 +142,10 @@ const Financial = (() => {
     return add(
       qr(d.ext_pipes,    'qty_mtr', 'rate_per_mtr'),
       qr(d.ext_fittings, 'qty',     'rate'),
-      mul(d.drainage_lines?.length_mtr, d.drainage_lines?.rate_per_mtr)
-        + mul(d.drainage_lines?.manholes, d.drainage_lines?.manhole_rate),
+      add(
+        mul(d.drainage_lines?.length_mtr, d.drainage_lines?.rate_per_mtr),
+        mul(d.drainage_lines?.manholes, d.drainage_lines?.manhole_rate)
+      ),
       qr(d.int_pipes,    'qty_mtr', 'rate_per_mtr'),
       qr(d.int_fittings, 'qty',     'rate'),
       qr(d.taps,         'qty',     'rate'),
@@ -353,7 +363,7 @@ const Financial = (() => {
             }
           });
         }
-        const bills = (typeof State !== 'undefined' && State.getBills) ? (State.getBills(pid) || []) : (phase.bills || []);
+        const bills = (typeof State !== 'undefined' && State.getBills) ? (State.getBills(pid) || []) : (Array.isArray(phase.bills) ? phase.bills : []);
         const billTotal = bills.reduce((s, b) => s + (parseFloat(b.totalAmount) || 0), 0);
         return entryTotal + billTotal;
       }
@@ -433,6 +443,17 @@ const Financial = (() => {
 
       updateEl(`phase-cost-${phase.id}`, fmt(phTotal));
 
+      // Update auto-suggest completion button if visible
+      if (typeof Phases !== 'undefined' && typeof Phases.updateAutoSuggestButton === 'function' && proj.totalBudget > 0) {
+        let phaseBudget = phase.budget || 0;
+        if (phaseBudget <= 0 && typeof Estimation !== 'undefined' && Estimation.getTradeBudget) {
+          const tb = Estimation.getTradeBudget(phase.id);
+          if (tb) phaseBudget = tb.total;
+        }
+        if (phaseBudget <= 0) phaseBudget = (proj.totalBudget || 0) / Math.max(1, proj.phases.length);
+        Phases.updateAutoSuggestButton(phase.id, phTotal, phaseBudget);
+      }
+
       const ptEl = document.getElementById(`phase-total-${phase.id}`);
       if (ptEl) {
         const oldVal = ptEl.textContent;
@@ -467,7 +488,13 @@ const Financial = (() => {
       }
 
       if (proj.totalBudget > 0) {
-        const phaseBudget = proj.totalBudget / proj.phases.length;
+        // Use per-phase budget from estimation if available, else equal split
+        let phaseBudget = phase.budget || 0;
+        if (phaseBudget <= 0 && typeof Estimation !== 'undefined' && Estimation.getTradeBudget) {
+          const tb = Estimation.getTradeBudget(phase.id);
+          if (tb) phaseBudget = tb.total;
+        }
+        if (phaseBudget <= 0) phaseBudget = proj.totalBudget / Math.max(1, proj.phases.length);
         const pct = Math.min(150, (phTotal / phaseBudget) * 100);
         const barEl = document.getElementById(`budget-bar-${phase.id}`);
         if (barEl) {
@@ -505,11 +532,14 @@ const Financial = (() => {
       if (pctEl) pctEl.textContent = Math.round(healthPct) + '%';
     }
 
-    // Only save to localStorage if the total meaningfully changed
+    // Only save to localStorage if the total meaningfully changed.
+    // Use saveLocalOnly() because this is a system recalculation,
+    // not a user action. State.save() would trigger Supabase writes.
     const totalRounded = Math.round(projectTotal);
     if (totalRounded !== _lastSavedTotal) {
       _lastSavedTotal = totalRounded;
-      State.save();
+      if (State.saveLocalOnly) State.saveLocalOnly();
+      else State.save();
     }
     return projectTotal;
   }
@@ -522,7 +552,12 @@ const Financial = (() => {
 
   function scheduleUpdate() {
     clearTimeout(updateTimer);
-    updateTimer = setTimeout(updateAllTotals, 300);
+    updateTimer = setTimeout(() => {
+      updateAllTotals();
+      recalcAllCompletions();
+      // Emit cross-module reactivity event
+      if (typeof App !== 'undefined' && App.emit) App.emit('data:changed');
+    }, 300);
   }
 
   function attachLiveInput(el, callback) {
@@ -540,11 +575,184 @@ const Financial = (() => {
     });
   }
 
+
+
+  // ── Phase Completion Algorithm ───────────────────────────
+  // Multi-factor completion that considers:
+  //   1. Budget utilization (material + labor separately)
+  //   2. Number of entries vs a reasonable activity threshold
+  //   3. Variety — how many different card categories have entries
+  //
+  // For phases WITHOUT estimation budget: uses equal-share of
+  // totalBudget as fallback, with simpler entry-based logic.
+  // ══════════════════════════════════════════════════════════
+
+  function computePhaseCompletion(phase) {
+    if (!phase) return 0;
+    const pid = Number(phase.id);
+    const proj = State.getCurrentProject();
+    if (!proj) return 0;
+
+    // Get actual spend for this phase
+    const phTotal = computePhaseTotal(phase);
+
+    // Get per-phase budget from estimation (preferred) or fallback
+    let budgetMaterial = phase.budgetMaterial || 0;
+    let budgetLabor = phase.budgetLabor || 0;
+    let budgetTotal = phase.budget || 0;
+
+    // Try estimation if no explicit per-phase budget
+    if (budgetTotal <= 0 && typeof Estimation !== 'undefined' && Estimation.getTradeBudget) {
+      const tb = Estimation.getTradeBudget(pid);
+      if (tb) {
+        budgetMaterial = tb.material;
+        budgetLabor = tb.labor;
+        budgetTotal = tb.total;
+        // Cache on the phase object for faster access
+        phase.budget = budgetTotal;
+        phase.budgetMaterial = budgetMaterial;
+        phase.budgetLabor = budgetLabor;
+      }
+    }
+
+    // Fallback: equal share of total project budget
+    if (budgetTotal <= 0 && proj.totalBudget > 0) {
+      budgetTotal = proj.totalBudget / Math.max(1, proj.phases.length);
+    }
+
+    // ── Factor 1: Budget Utilization ──
+    // How much of the estimated budget has been spent
+    let budgetPct = 0;
+    if (budgetTotal > 0) {
+      budgetPct = Math.min(100, (phTotal / budgetTotal) * 100);
+    }
+
+    // ── Factor 1b: Material vs Labor Budget Utilization ──
+    // Split actuals into material and labor for more accuracy
+    let matSpend = 0, labSpend = 0;
+    if (pid >= 1 && pid <= 9 && typeof Phases !== 'undefined' && Phases.getMaterialCardsForPhase) {
+      const entriesMap = phase.data?.entries || {};
+      const matCards = Phases.getMaterialCardsForPhase(pid);
+      const labCards = Phases.getLaborCardsForPhase(pid);
+      matCards.forEach(c => {
+        const arr = entriesMap[c.id];
+        if (Array.isArray(arr)) arr.forEach(e => { matSpend += parseFloat(e.total) || 0; });
+      });
+      labCards.forEach(c => {
+        const arr = entriesMap[c.id];
+        if (Array.isArray(arr)) arr.forEach(e => { labSpend += parseFloat(e.total) || 0; });
+      });
+      // Add bills to material spend
+      const bills = (typeof State !== 'undefined' && State.getBills) ? (State.getBills(pid) || []) : [];
+      bills.forEach(b => { matSpend += parseFloat(b.totalAmount) || 0; });
+    } else if (pid === 10) {
+      // Phase 10 — use total as material-like (interior materials dominate)
+      matSpend = phTotal * 0.70;
+      labSpend = phTotal * 0.30;
+    }
+
+    let matBudgetPct = 0, labBudgetPct = 0;
+    if (budgetMaterial > 0) matBudgetPct = Math.min(100, (matSpend / budgetMaterial) * 100);
+    if (budgetLabor > 0)   labBudgetPct = Math.min(100, (labSpend / budgetLabor) * 100);
+
+    // ── Factor 2: Entry Count ──
+    // More entries = more work done. We use a sigmoid-like curve
+    // that saturates: 1 entry → ~15%, 3 → ~35%, 5 → ~50%, 10+ → ~70%
+    let entryCount = 0;
+    if (phase.data && phase.data.entries) {
+      Object.values(phase.data.entries).forEach(arr => {
+        if (Array.isArray(arr)) entryCount += arr.length;
+      });
+    }
+    // Also count bills
+    const billCount = (typeof State !== 'undefined' && State.getBills) ? (State.getBills(pid) || []).length : 0;
+    entryCount += billCount;
+    // Sigmoid curve for entry factor: maxes around 70% because entries alone
+    // shouldn't push completion to 100% (budget matters more)
+    const entryFactor = entryCount > 0 ? Math.min(70, 70 * (1 - Math.exp(-entryCount / 4))) : 0;
+
+    // ── Factor 3: Variety ──
+    // How many different card categories have at least one entry
+    // out of the total available categories for this phase
+    let categoriesWithData = 0;
+    let totalCategories = 0;
+    if (pid >= 1 && pid <= 9 && typeof Phases !== 'undefined' && Phases.getAllCardsForPhase) {
+      const allCards = Phases.getAllCardsForPhase(pid);
+      totalCategories = allCards.length;
+      allCards.forEach(c => {
+        const arr = phase.data?.entries?.[c.id];
+        if (Array.isArray(arr) && arr.length > 0) categoriesWithData++;
+      });
+    } else if (pid === 10) {
+      // For phase 10, count filled sections
+      if (typeof Phases !== 'undefined' && Phases.CATEGORY_REGISTRY && Phases.CATEGORY_REGISTRY[10]) {
+        totalCategories = Phases.CATEGORY_REGISTRY[10].length;
+        Phases.CATEGORY_REGISTRY[10].forEach(cat => {
+          const stats = typeof Phases.categoryStats === 'function' ? Phases.categoryStats(phase, cat) : null;
+          if (stats && stats.cost > 0) categoriesWithData++;
+        });
+      }
+    }
+    const varietyPct = totalCategories > 0 ? (categoriesWithData / totalCategories) * 100 : 0;
+
+    // ── Weighted Blend ──
+    // If we have estimation budgets: budget utilization is the strongest signal
+    // If no budgets: rely more on entries and variety
+    let completion;
+    if (budgetTotal > 0 && (budgetMaterial > 0 || budgetLabor > 0)) {
+      // Budget-aware mode: use detailed material/labor split
+      // Weights: budget utilization 50%, entry count 20%, variety 30%
+      // Use the better of overall budget% or weighted material+labor%
+      const detailedBudgetPct = budgetMaterial > 0 && budgetLabor > 0
+        ? (matBudgetPct * 0.5 + labBudgetPct * 0.5)
+        : budgetPct;
+      const budgetSignal = Math.max(budgetPct, detailedBudgetPct);
+      completion = budgetSignal * 0.50 + entryFactor * 0.20 + varietyPct * 0.30;
+    } else if (budgetTotal > 0) {
+      // Only total budget known (no material/labor split)
+      completion = budgetPct * 0.50 + entryFactor * 0.20 + varietyPct * 0.30;
+    } else {
+      // No budget at all — rely on entries and variety
+      completion = entryFactor * 0.45 + varietyPct * 0.55;
+    }
+
+    return Math.min(100, Math.max(0, Math.round(completion)));
+  }
+
+  // ── Recalculate all phase completions and update DOM ─────
+  function recalcAllCompletions() {
+    const proj = State.getCurrentProject();
+    if (!proj || !Array.isArray(proj.phases)) return;
+    proj.phases.forEach(phase => {
+      const newPct = computePhaseCompletion(phase);
+      const oldPct = phase.completion || 0;
+      phase.completion = newPct;
+
+      // Update DOM elements for this phase's completion
+      const bar = document.getElementById('comp-bar-' + phase.id);
+      if (bar) bar.style.width = newPct + '%';
+      const inp = document.getElementById('comp-pct-' + phase.id);
+      if (inp && document.activeElement !== inp) inp.value = newPct;
+      const sideBar = document.getElementById('phase-prog-' + phase.id);
+      if (sideBar) sideBar.style.width = newPct + '%';
+      const sidePct = document.getElementById('phase-pct-' + phase.id);
+      if (sidePct) sidePct.textContent = newPct + '%';
+    });
+    // Save updated completions — use saveLocalOnly() because this is a
+    // system recalculation, not a user action. Calling State.save() would
+    // mark entities as dirty and trigger unnecessary Supabase writes.
+    if (typeof State !== 'undefined' && State.saveLocalOnly) State.saveLocalOnly();
+    // Dispatch event so dashboard etc. can refresh
+    if (typeof App !== 'undefined' && App.emit) App.emit('completions:updated');
+  }
+
   return {
     fmt, fmtFull, parseNum, mul, add, sumRows,
     computePhaseTotal, computeProjectTotal,
     updateAllTotals, scheduleUpdate, attachLiveInput,
+    computePhaseCompletion, recalcAllCompletions,
     get currency() { return currency; },
     set currency(v) { currency = v; },
   };
+
 })();

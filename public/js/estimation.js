@@ -46,12 +46,13 @@ const Estimation = (() => {
     const e = proj.estimation;
     if (!e.land) e.land = {
       landCost: '', devDN: '', devGovt: '', devOther: '',
-      archFees: '', landOther: ''
+      archFees: '', landOther: '', customItems: []
     };
     if (!e.constr) e.constr = {};
     TRADES.forEach(t => {
       if (!e.constr[t.key]) e.constr[t.key] = { material: '', labor: '' };
     });
+    if (!Array.isArray(e.land.customItems)) e.land.customItems = [];
     return e;
   }
 
@@ -60,8 +61,10 @@ const Estimation = (() => {
   /* ── Totals ─────────────────────────────────────────────── */
   function calcLandTotal(e) {
     const l = e.land;
-    return pn(l.landCost) + pn(l.devDN) + pn(l.devGovt) + pn(l.devOther)
+    const baseTotal = pn(l.landCost) + pn(l.devDN) + pn(l.devGovt) + pn(l.devOther)
          + pn(l.archFees) + pn(l.landOther);
+    const customTotal = (l.customItems || []).reduce((sum, item) => sum + pn(item.amount), 0);
+    return baseTotal + customTotal;
   }
   function calcConstrTotal(e) {
     return TRADES.reduce((s, t) => {
@@ -95,6 +98,40 @@ const Estimation = (() => {
   function iconSvg(name, size = 13) {
     if (typeof Icons !== 'undefined' && Icons.render) return Icons.render(name, size);
     return '';
+  }
+
+  /* ── Custom Items Render ──────────────────────────────────── */
+  function customItemRow(item, idx) {
+    return `
+      <div class="est-custom-item" data-idx="${idx}">
+        <div class="est-custom-item-main">
+          <input type="text" class="est-custom-item-title" value="${escapeAttr(item.title || '')}"
+            placeholder="Item title" oninput="Estimation._updateCustomItem(${idx}, 'title', this.value)">
+          <div class="est-amt-wrap est-custom-amt-wrap">
+            <span class="est-rupee">₹</span>
+            <input type="number" class="est-input est-custom-item-amt-input mono" value="${escapeAttr(item.amount || '')}"
+              placeholder="0" min="0" step="any" inputmode="decimal"
+              oninput="Estimation._updateCustomItem(${idx}, 'amount', this.value)">
+          </div>
+          <button class="est-custom-item-remove" onclick="Estimation._removeCustomItem(${idx})" type="button" aria-label="Remove">
+            <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
+          </button>
+        </div>
+      </div>
+    `;
+  }
+
+  function renderCustomItems(items) {
+    const itemRows = (items || []).map(customItemRow).join('');
+
+    return `
+      <div class="est-custom-items" id="est-custom-items">
+        <div class="est-custom-items-list">${itemRows}</div>
+        <button class="est-btn-add-custom" onclick="Estimation._addCustomItem()" type="button">
+          <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+          <span>Add New</span>
+        </button>
+      </div>`;
   }
 
   /* ── Main render ─────────────────────────────────────────── */
@@ -162,7 +199,7 @@ const Estimation = (() => {
     }
 
     return `
-    <div class="est-card" id="est-card">
+    <div class="est-card est-card--collapsed" id="est-card">
 
       <!-- ── Header ────────────────────────────────────────── -->
       <div class="est-card-header" onclick="Estimation._toggleCard()">
@@ -182,12 +219,12 @@ const Estimation = (() => {
         </div>
         <div class="est-card-header-right">
           ${grandTotal > 0 ? `<span class="est-card-badge mono">${F.fmt(grandTotal)}</span>` : '<span class="est-card-badge-empty">Enter values</span>'}
-          <svg class="est-collapse-icon" id="est-collapse-icon" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><polyline points="6 9 12 15 18 9"/></svg>
+          <svg class="est-collapse-icon" id="est-collapse-icon" style="transform:rotate(-90deg)" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><polyline points="6 9 12 15 18 9"/></svg>
         </div>
       </div>
 
       <!-- ── Body ──────────────────────────────────────────── -->
-      <div class="est-body" id="est-body">
+      <div class="est-body est-body--collapsed" id="est-body">
 
         <!-- ════ SECTION 1 : LAND / DEVELOPMENT ════ -->
         <div class="est-section">
@@ -220,8 +257,8 @@ const Estimation = (() => {
           <!-- Architecture Fees -->
           ${labelRow('Architecture Fees', amtInput('el-archFees', l.archFees))}
 
-          <!-- Other -->
-          ${labelRow('Other', amtInput('el-landOther', l.landOther))}
+          <!-- Custom Items (Add New) -->
+          ${renderCustomItems(l.customItems)}
 
           <div class="est-subtotal-row">
             <span class="est-subtotal-label">Section 1 Total</span>
@@ -393,6 +430,19 @@ const Estimation = (() => {
     const grand = calcGrandTotal(e);
     if (grand <= 0) { App.toast('Enter at least one value first', 'warning'); return; }
 
+    // Set total project budget + per-phase budgets from estimation
+    const proj = State.getCurrentProject();
+    if (proj && Array.isArray(proj.phases)) {
+      proj.phases.forEach(ph => {
+        const tb = getTradeBudget(ph.id);
+        if (tb && tb.total > 0) {
+          ph.budget = tb.total;
+          ph.budgetMaterial = tb.material;
+          ph.budgetLabor = tb.labor;
+        }
+      });
+    }
+
     State.updateProjectInfo({ totalBudget: grand, estimation: e });
     App.toast('✓ Budget set to ' + F.fmtFull(grand), 'success');
 
@@ -400,6 +450,11 @@ const Estimation = (() => {
     const diffWrap = document.getElementById('est-diff-wrap');
     if (diffWrap) {
       diffWrap.innerHTML = `<div class="est-grand-diff match">✓ Matches budget exactly</div>`;
+    }
+
+    /* Recalculate all completions now that budgets are set */
+    if (typeof Financial !== 'undefined' && Financial.recalcAllCompletions) {
+      Financial.recalcAllCompletions();
     }
 
     /* Refresh dashboard hero card */
@@ -424,5 +479,71 @@ const Estimation = (() => {
     App.toast('Estimation cleared', 'success');
   }
 
-  return { renderCard, _toggleCard, _toggleTrade, _onInput, applyToBudget, clearAll };
+  /* ── Custom Item Handlers ────────────────────────────────── */
+  function _addCustomItem() {
+    const e = getEst();
+    if (!e) return;
+    if (!e.land.customItems) e.land.customItems = [];
+    e.land.customItems.push({ title: '', amount: '' });
+    State.updateProjectInfo({ estimation: e });
+    _rerenderCustomItems();
+  }
+
+  function _removeCustomItem(idx) {
+    const e = getEst();
+    if (!e || !e.land.customItems) return;
+    e.land.customItems.splice(idx, 1);
+    State.updateProjectInfo({ estimation: e });
+    _rerenderCustomItems();
+  }
+
+  function _updateCustomItem(idx, field, value) {
+    const e = getEst();
+    if (!e || !e.land.customItems || !e.land.customItems[idx]) return;
+    e.land.customItems[idx][field] = value;
+    State.updateProjectInfo({ estimation: e });
+    _onInput();
+  }
+
+  function _rerenderCustomItems() {
+    const e = getEst();
+    if (!e) return;
+    const listContainer = document.querySelector('#est-custom-items .est-custom-items-list');
+    if (!listContainer) return;
+    if (e.land.customItems && e.land.customItems.length > 0) {
+      listContainer.innerHTML = e.land.customItems.map(customItemRow).join('');
+    } else {
+      listContainer.innerHTML = '';
+    }
+    _onInput();
+  }
+
+
+
+  /* ── Map Estimation trades to Phase IDs ─────────────────── */
+  const TRADE_PHASE_MAP = {
+    civil: 1, tiles: 2, painting: 3, electrical: 4,
+    fabrication: 5, plumbing: 6, pop: 7, lift: 8, other: 9
+  };
+
+  /**
+   * Get the per-trade budget from estimation for a given phase ID.
+   * Returns { material: number, labor: number, total: number }
+   * or null if no estimation data exists for that trade.
+   */
+  function getTradeBudget(phaseId) {
+    const proj = State.getCurrentProject();
+    if (!proj || !proj.estimation || !proj.estimation.constr) return null;
+    // Find which trade key maps to this phase ID
+    const tradeKey = Object.keys(TRADE_PHASE_MAP).find(k => TRADE_PHASE_MAP[k] === Number(phaseId));
+    if (!tradeKey) return null;
+    const tr = proj.estimation.constr[tradeKey];
+    if (!tr) return null;
+    const material = pn(tr.material);
+    const labor = pn(tr.labor);
+    return { material, labor, total: material + labor };
+  }
+
+  return { renderCard, _toggleCard, _toggleTrade, _onInput, applyToBudget, clearAll, _addCustomItem, _removeCustomItem, _updateCustomItem, getTradeBudget, TRADE_PHASE_MAP };
+
 })();

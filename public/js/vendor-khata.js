@@ -163,6 +163,7 @@ const VendorKhata = (() => {
             <th style="padding:10px 12px; color:var(--text-muted); font-size:11px; text-transform:uppercase; text-align:left">Description</th>
             <th style="padding:10px 12px; color:var(--text-muted); font-size:11px; text-transform:uppercase; text-align:right">Debit (Udhaar)</th>
             <th style="padding:10px 12px; color:var(--text-muted); font-size:11px; text-transform:uppercase; text-align:right">Payment Made</th>
+            <th style="padding:10px 12px; color:var(--text-muted); font-size:11px; text-transform:uppercase; text-align:center">Proof</th>
             <th style="padding:10px 12px; color:var(--text-muted); font-size:11px; text-transform:uppercase; text-align:right">Balance</th>
           </tr>
         </thead>
@@ -170,7 +171,7 @@ const VendorKhata = (() => {
     `;
 
     if (txns.length === 0) {
-      html += `<tr><td colspan="5" style="padding:32px; text-align:center; color:var(--text-muted); font-size:13px">No transactions yet. Use the buttons above to add purchases or payments.</td></tr>`;
+      html += `<tr><td colspan="6" style="padding:32px; text-align:center; color:var(--text-muted); font-size:13px">No transactions yet. Use the buttons above to add purchases or payments.</td></tr>`;
     } else {
       // Sort oldest-first to compute running balance chronologically
       const sortedAsc = [...txns].sort((a, b) => new Date(a.date) - new Date(b.date));
@@ -186,6 +187,29 @@ const VendorKhata = (() => {
         const balColor = t.runningBal > 0 ? '#C77966' : t.runningBal < 0 ? '#A8B89C' : 'var(--text-muted)';
         const balText = t.runningBal > 0 ? Financial.fmt(t.runningBal) + ' owed'
                       : t.runningBal < 0 ? Financial.fmt(Math.abs(t.runningBal)) + ' cr' : '—';
+        
+        // Proof cell
+        let proofCell = '<td style="padding:12px; text-align:center; color:var(--text-muted)">—</td>';
+        if (!isDebit && t.proofDataUrl) {
+          const isImg = t.proofFileType && t.proofFileType.startsWith('image/');
+          const attrIdx = escapeAttr(t.id);
+          if (isImg) {
+            proofCell = `<td style="padding:8px; text-align:center">
+              <img src="${escapeAttr(t.proofDataUrl)}" 
+                style="height:36px;width:48px;object-fit:cover;border-radius:4px;border:1px solid var(--charcoal-border);cursor:pointer"
+                onclick="VendorKhata.viewProof('${attrIdx}')"
+                title="View payment proof">
+            </td>`;
+          } else {
+            proofCell = `<td style="padding:12px; text-align:center">
+              <button onclick="VendorKhata.viewProof('${attrIdx}')" 
+                style="padding:4px 8px;border-radius:6px;border:1px solid var(--amber-border);background:var(--amber-light-bg);color:var(--amber);font-size:10px;font-weight:700;cursor:pointer">
+                📄 PDF
+              </button>
+            </td>`;
+          }
+        }
+
         html += `
           <tr style="border-bottom:1px solid var(--charcoal-border)">
             <td style="padding:12px; font-family:var(--font-mono); font-size:12px; color:var(--text-muted)">${new Date(t.date).toLocaleDateString('en-IN')}</td>
@@ -196,6 +220,7 @@ const VendorKhata = (() => {
             <td style="padding:12px; text-align:right; font-family:var(--font-mono); font-weight:700; color:${!isDebit ? '#A8B89C' : 'var(--text-muted)'}">
               ${!isDebit ? Financial.fmt(t.amount) : '—'}
             </td>
+            ${proofCell}
             <td style="padding:12px; text-align:right; font-family:var(--font-mono); font-weight:700; color:${balColor}">
               ${balText}
             </td>
@@ -222,6 +247,25 @@ const VendorKhata = (() => {
     const title = isDebit ? '+ Record Purchase (Udhaar)' : '✓ Record Payment to Vendor';
     const btnText = isDebit ? 'Add Purchase' : 'Record Payment';
 
+    // Payment proof upload — only for credit (payment) transactions
+    const proofUploadHtml = !isDebit ? `
+      <div style="margin-bottom:14px">
+        <label class="modal-label">UPI / Payment Proof (Photo or PDF)</label>
+        <div id="proof-preview-wrap" style="margin-bottom:8px;display:none">
+          <img id="proof-preview-img" style="max-height:100px;border-radius:8px;border:1px solid var(--border);display:none">
+          <span id="proof-preview-label" style="font-size:11px;color:var(--text-muted)"></span>
+          <button onclick="VendorKhata._clearProof()" style="margin-left:8px;padding:2px 6px;background:none;border:1px solid var(--border);border-radius:4px;font-size:11px;cursor:pointer;color:var(--text-muted)">Remove</button>
+        </div>
+        <label style="display:flex;align-items:center;gap:8px;padding:10px 12px;border:1.5px dashed var(--border);border-radius:8px;cursor:pointer;background:var(--bg-elev-2)">
+          <span style="font-size:13px">📎</span>
+          <span style="font-size:12px;color:var(--text-muted)">Attach UPI screenshot / receipt</span>
+          <input type="file" id="proof-file-input" accept="image/*,application/pdf" style="display:none" onchange="VendorKhata._handleProofUpload(event)">
+        </label>
+        <input type="hidden" id="proof-data-url" value="">
+        <input type="hidden" id="proof-file-type" value="">
+      </div>
+    ` : '';
+
     App.showModal(`
       <h3 class="modal-title">${title}</h3>
       <input type="hidden" id="txn-vendor-id" value="${vendorId}">
@@ -236,11 +280,12 @@ const VendorKhata = (() => {
           <input class="modal-input" type="number" id="txn-amount" placeholder="0" style="font-family:var(--font-mono)">
         </div>
       </div>
-      <div style="margin-bottom:20px">
+      <div style="margin-bottom:${isDebit ? '20px' : '14px'}">
         <label class="modal-label">Description</label>
         <input class="modal-input" type="text" id="txn-description"
-          placeholder="${isDebit ? 'e.g. 50 bags OPC cement @ 350/bag' : 'e.g. Cash payment settlement'}">
+          placeholder="${isDebit ? 'e.g. 50 bags OPC cement @ 350/bag' : 'e.g. Cash payment settlement, UPI transfer'}">
       </div>
+      ${proofUploadHtml}
       <div style="display:flex; gap:12px">
         <button onclick="App.closeModal()" class="modal-btn-cancel" style="flex:1; padding:11px; border-radius:10px; cursor:pointer; font-size:13px; font-weight:700; font-family:inherit">Cancel</button>
         <button onclick="VendorKhata.saveVendorTransaction()"
@@ -250,20 +295,91 @@ const VendorKhata = (() => {
     `);
   }
 
+  // Handle proof image upload preview
+  function _handleProofUpload(e) {
+    const file = e.target.files[0];
+    if (!file) return;
+    const isPdf = file.type === 'application/pdf';
+    const wrapEl = document.getElementById('proof-preview-wrap');
+    const imgEl = document.getElementById('proof-preview-img');
+    const labelEl = document.getElementById('proof-preview-label');
+
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      document.getElementById('proof-data-url').value = ev.target.result;
+      document.getElementById('proof-file-type').value = file.type;
+      if (wrapEl) wrapEl.style.display = 'flex';
+      if (wrapEl) wrapEl.style.alignItems = 'center';
+      if (wrapEl) wrapEl.style.gap = '8px';
+      if (isPdf) {
+        if (imgEl) imgEl.style.display = 'none';
+        if (labelEl) labelEl.textContent = '📄 ' + file.name;
+      } else {
+        if (imgEl) { imgEl.src = ev.target.result; imgEl.style.display = 'block'; }
+        if (labelEl) labelEl.textContent = file.name;
+      }
+    };
+    reader.readAsDataURL(file);
+  }
+
+  function _clearProof() {
+    document.getElementById('proof-data-url').value = '';
+    document.getElementById('proof-file-type').value = '';
+    const wrapEl = document.getElementById('proof-preview-wrap');
+    if (wrapEl) wrapEl.style.display = 'none';
+    const fileInput = document.getElementById('proof-file-input');
+    if (fileInput) fileInput.value = '';
+  }
+
   async function saveVendorTransaction() {
     const vendorId = document.getElementById('txn-vendor-id').value;
     const type = document.getElementById('txn-type').value;
     const date = document.getElementById('txn-date').value;
     const amount = parseFloat(document.getElementById('txn-amount').value);
     const description = document.getElementById('txn-description').value.trim();
+    const proofDataUrl = document.getElementById('proof-data-url')?.value || '';
+    const proofFileType = document.getElementById('proof-file-type')?.value || '';
 
     if (!date) { App.toast('Date is required', 'error'); return; }
     if (!amount || amount <= 0) { App.toast('Enter a valid amount', 'error'); return; }
 
-    await State.addVendorTransaction({ vendorId, type, date, amount, description });
+    const txnData = { vendorId, type, date, amount, description };
+    if (proofDataUrl) {
+      txnData.proofDataUrl = proofDataUrl;
+      txnData.proofFileType = proofFileType;
+    }
+
+    await State.addVendorTransaction(txnData);
     App.closeModal();
-    App.toast(type === 'debit' ? 'Purchase added' : 'Payment recorded', 'success');
+    App.toast(type === 'debit' ? 'Purchase added' : 'Payment recorded' + (proofDataUrl ? ' with proof' : ''), 'success');
     showVendorLedger(vendorId);
+  }
+
+  // View payment proof in lightbox
+  function viewProof(txnId) {
+    const proj = State.getCurrentProject();
+    if (!proj) return;
+    const txn = (proj.vendorTransactions || []).find(t => t.id === txnId);
+    if (!txn || !txn.proofDataUrl) return App.toast('Proof not found', 'error');
+
+    const isPdf = txn.proofFileType === 'application/pdf';
+    App.showModal(`
+      <h3 class="modal-title">📎 Payment Proof</h3>
+      <div style="text-align:center;margin-bottom:12px">
+        <div style="font-size:12px;color:var(--text-muted);margin-bottom:8px">${new Date(txn.date).toLocaleDateString('en-IN')} · ${Financial.fmt(txn.amount)}</div>
+        ${isPdf
+          ? `<a href="${escapeAttr(txn.proofDataUrl)}" target="_blank" style="display:inline-block;padding:12px 24px;background:var(--amber);color:#fff;border-radius:8px;font-weight:700;text-decoration:none">📄 Open PDF</a>`
+          : `<img src="${escapeAttr(txn.proofDataUrl)}" style="max-width:100%;max-height:60vh;border-radius:8px;border:1px solid var(--border)">`
+        }
+      </div>
+      <div style="display:flex;gap:12px">
+        <button onclick="App.closeModal()" class="modal-btn-cancel" style="flex:1;padding:10px;border-radius:8px;cursor:pointer;font-size:13px;font-weight:700;font-family:inherit">Close</button>
+        <a href="${escapeAttr(txn.proofDataUrl)}" download="payment-proof-${escapeAttr(txnId)}.${isPdf?'pdf':'jpg'}"
+          class="modal-btn-primary" style="flex:1;padding:10px;border-radius:8px;cursor:pointer;font-size:13px;font-weight:700;font-family:inherit;text-align:center;text-decoration:none;display:block">
+          Download
+        </a>
+      </div>
+    `);
   }
 
   async function deleteVendor(id) {
@@ -285,6 +401,8 @@ const VendorKhata = (() => {
     showAddVendorModal, saveNewVendor,
     showVendorLedger,
     showVendorTransactionModal, saveVendorTransaction,
+    viewProof,
+    _handleProofUpload, _clearProof,
     deleteVendor
   };
 })();

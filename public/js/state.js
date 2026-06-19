@@ -144,6 +144,43 @@ const State = (() => {
   let _loadInProgress = false;
   let _loadComplete = false;
   let _loadResolvers = [];
+  let _syncInProgress = false;  // D-01: mutex to prevent overlapping saveToSupabase calls
+
+  // ── Delta-Sync: Explicit Dirty Tracking ──────────
+  // Only entities marked dirty by user actions get synced to Supabase.
+  // System recalculations (Financial.updateAllTotals, recalcAllCompletions)
+  // do NOT mark entities dirty — they only call saveLocal().
+  let _dirty = {
+    project: false,       // project metadata changed
+    phases: new Set(),    // set of phase IDs whose data changed
+  };
+  let _lastDirtyState = false;  // cached dirty state for event dedup
+
+  function markDirty(type, id) {
+    if (type === 'project') _dirty.project = true;
+    else if (type === 'phase' && id != null) _dirty.phases.add(id);
+    _notifyDirtyChanged();
+  }
+
+  function clearDirty() {
+    _dirty.project = false;
+    _dirty.phases.clear();
+    _notifyDirtyChanged();
+  }
+
+  function isDirty() {
+    return _dirty.project || _dirty.phases.size > 0;
+  }
+
+  function _notifyDirtyChanged() {
+    const nowDirty = isDirty() || getSyncQueue().length > 0;
+    if (nowDirty !== _lastDirtyState) {
+      _lastDirtyState = nowDirty;
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(new CustomEvent('dirtychanged', { detail: { dirty: nowDirty } }));
+      }
+    }
+  }
 
   // ── IndexedDB Local Image Storage ────────────────
   const LocalImages = (() => {
@@ -309,6 +346,18 @@ const State = (() => {
       });
     }
 
+    // 3. Scan site photos
+    if (Array.isArray(proj.sitePhotos)) {
+      proj.sitePhotos.forEach(p => {
+        if (p.imageUrl && p.imageUrl.startsWith('local-image://')) {
+          keysToLoad.add(p.imageUrl.replace('local-image://', ''));
+        }
+        if (p.thumbnail && p.thumbnail.startsWith('local-image://')) {
+          keysToLoad.add(p.thumbnail.replace('local-image://', ''));
+        }
+      });
+    }
+
     // Load from IndexedDB into memory
     for (const key of keysToLoad) {
       if (!InMemoryImages[key]) {
@@ -349,6 +398,8 @@ const State = (() => {
       if (existing) {
         Object.assign(existing.payload, payload);
         saveSyncQueue(queue);
+        window.dispatchEvent(new CustomEvent('syncqueuechanged'));
+        _notifyDirtyChanged();
         return;
       }
     }
@@ -356,11 +407,14 @@ const State = (() => {
       const filtered = queue.filter(q => !(q.table === table && q.id === id));
       filtered.push({ action, table, id, payload, timestamp: Date.now() });
       saveSyncQueue(filtered);
+      window.dispatchEvent(new CustomEvent('syncqueuechanged'));
+      _notifyDirtyChanged();
       return;
     }
     queue.push({ action, table, id, payload, timestamp: Date.now() });
     saveSyncQueue(queue);
     window.dispatchEvent(new CustomEvent('syncqueuechanged'));
+    _notifyDirtyChanged();
   }
 
   let _isReplaying = false;
@@ -378,54 +432,325 @@ const State = (() => {
     console.log('[Sync] Replaying', queue.length, 'queued mutations...');
     window.dispatchEvent(new CustomEvent('syncstart'));
 
-    let failed = false;
+    let anyFailed = false;
+    let anySucceeded = false;
+    let networkError = false;
 
-    for (let i = 0; i < queue.length; i++) {
-      const item = queue[i];
-      let success = false;
-      try {
-        if (item.action === 'insert') {
-          const { error } = await client.from(item.table).insert(item.payload);
-          if (!error) success = true;
-          else console.warn(`[Sync] Queue insert error for table ${item.table}:`, error.message);
-        } else if (item.action === 'update') {
-          const { error } = await client.from(item.table).update(item.payload).eq('id', item.id);
-          if (!error) success = true;
-          else console.warn(`[Sync] Queue update error for table ${item.table}:`, error.message);
-        } else if (item.action === 'delete') {
-          const { error } = await client.from(item.table).delete().eq('id', item.id);
-          if (!error) success = true;
-          else console.warn(`[Sync] Queue delete error for table ${item.table}:`, error.message);
+    try {
+      for (let i = 0; i < queue.length; i++) {
+        const item = queue[i];
+        // Skip items whose payload references a local (non-UUID) id — they can't be synced yet
+        if (item.action !== 'delete' && item.id && !isUUID(item.id) && item.table !== 'projects') {
+          console.warn(`[Sync] Skipping non-UUID item in queue: ${item.table}/${item.id}`);
+          continue;
         }
-      } catch (err) {
-        console.warn(`[Sync] Queue network exception for table ${item.table}:`, err.message);
-      }
 
-      if (success) {
-        const currentQueue = getSyncQueue();
-        const updated = currentQueue.filter(q => !(q.id === item.id && q.timestamp === item.timestamp));
-        saveSyncQueue(updated);
-        window.dispatchEvent(new CustomEvent('syncqueuechanged'));
-      } else {
-        failed = true;
-        break;
+        let success = false;
+        try {
+          if (item.action === 'insert') {
+            const { error } = await client.from(item.table).insert(item.payload);
+            if (!error) { success = true; } else {
+              // If row already exists, treat as success (idempotent)
+              if (error.code === '23505') { success = true; }
+              else console.warn(`[Sync] Queue insert error for table ${item.table}:`, error.message);
+            }
+          } else if (item.action === 'update') {
+            const { error } = await client.from(item.table).update(item.payload).eq('id', item.id);
+            if (!error) { success = true; }
+            else console.warn(`[Sync] Queue update error for table ${item.table}:`, error.message);
+          } else if (item.action === 'delete') {
+            const { error } = await client.from(item.table).delete().eq('id', item.id);
+            if (!error) { success = true; }
+            else console.warn(`[Sync] Queue delete error for table ${item.table}:`, error.message);
+          }
+        } catch (err) {
+          console.warn(`[Sync] Queue network exception for table ${item.table}:`, err.message);
+          networkError = true;
+          // Stop on network errors — we're likely offline again
+          break;
+        }
+
+        if (success) {
+          anySucceeded = true;
+          const currentQueue = getSyncQueue();
+          const updated = currentQueue.filter(q => !(q.id === item.id && q.timestamp === item.timestamp));
+          saveSyncQueue(updated);
+          window.dispatchEvent(new CustomEvent('syncqueuechanged'));
+        } else {
+          anyFailed = true;
+          // Don't break — skip and try the next item (resilient replay)
+          // Only stop on network errors, not on constraint/logic errors
+        }
       }
+    } finally {
+      _isReplaying = false;
+      const allSucceeded = !anyFailed && !networkError;
+      window.dispatchEvent(new CustomEvent('syncend', { detail: { success: allSucceeded } }));
+      console.log('[Sync] Replay completed.', allSucceeded ? 'All items synced.' : 'Some items failed or were skipped.');
     }
 
-    _isReplaying = false;
-    window.dispatchEvent(new CustomEvent('syncend', { detail: { success: !failed } }));
-    console.log('[Sync] Replay completed.', failed ? 'Some items failed.' : 'All items synced.');
-
-    if (!failed) {
-      try {
-        await loadFromSupabase();
-        _notifySynced();
-      } catch(e) {}
+    if (anySucceeded || (!anyFailed && !networkError)) {
+      // NOTE: Do NOT call loadFromSupabase() or _notifySynced() here!
+      // Those caused the sync loop (247 requests/min):
+      //   _notifySynced → statesynced → showHub → Financial.updateAllTotals → State.save → saveToSupabase → loop
+      // The local state is already correct — we just pushed it to the cloud.
+      // Set post-sync suppress to prevent re-render triggered saves.
+      _postSyncSuppressUntil = Date.now() + 5000;
+      _notifyDirtyChanged();
     }
   }
 
   function hasUnsyncedChanges() {
+    // Check explicit dirty flags (user-made changes) AND sync queue
+    if (_dirty.project || _dirty.phases.size > 0) return true;
     return getSyncQueue().length > 0;
+  }
+
+  // ── Post-Sync Suppress ───────────────────────────
+  // After a sync completes, re-renders (statesynced → showHub →
+  // Financial.updateAllTotals → State.save) would trigger another
+  // saveToSupabase, creating an infinite request loop.
+  // This timestamp suppresses saveToSupabase for 5 seconds after sync.
+  let _postSyncSuppressUntil = 0;
+
+  // ── Dirty Tracking ──────────────────────────────
+  // Hash-based tracking: only send changed data to Supabase.
+  // After each successful sync, we record a hash of what was synced.
+  // On the next saveToSupabase, we compare current state vs synced hash
+  // and only push the differences — dramatically reducing requests.
+  let _lastSyncedProjectHash = '';
+  let _lastSyncedPhaseHashes = {};  // phaseId -> hash
+
+  function _computeProjectMetaHash(proj) {
+    // Hash only the project metadata fields that get synced
+    return JSON.stringify({
+      n: proj.name, a: proj.address, c: proj.client,
+      t: proj.type, b: proj.totalBudget, g: proj.contingency,
+      cu: proj.currency, co: proj.contractor,
+      sd: proj.startDate, ed: proj.endDate, no: proj.notes,
+      ar: proj.archived
+    });
+  }
+
+  function _computePhaseHash(phase) {
+    return JSON.stringify({
+      id: phase.id, _db: phase._dbId || '',
+      n: phase.name, i: phase.icon,
+      comp: phase.completion, d: phase.data
+    });
+  }
+
+  // ── Delta Sync Core ──────────────────────────────
+  // _syncDirtyToSupabase(): the single function that writes dirty
+  // entities to Supabase. Used by both auto-save and forceSync.
+  // NEVER dispatches syncstart/syncend — callers manage events.
+  // Only sends entities marked dirty via markDirty().
+  async function _syncDirtyToSupabase() {
+    const client = sb();
+    const uid = userId();
+    if (!client || !uid) return;
+
+    const proj = getCurrentProject();
+    if (!proj || !isUUID(proj.id)) return;
+
+    let requestCount = 0;
+
+    try {
+      // Serialize buyers into Phase 10's JSON data (if buyers are dirty or phase 10 is dirty)
+      if (Array.isArray(proj.phases) && (_dirty.phases.has(10) || _dirty.project)) {
+        const phase10 = proj.phases.find(ph => ph.id === 10);
+        if (phase10) {
+          phase10.data = phase10.data || {};
+          phase10.data.buyers = proj.buyers || [];
+        }
+      }
+
+      // Only update project metadata if marked dirty
+      if (_dirty.project) {
+        const currentProjHash = _computeProjectMetaHash(proj);
+        const { error: projUpdateErr } = await client.from('projects').update({
+          name: proj.name,
+          address: proj.address || '',
+          client: proj.client || '',
+          type: proj.type || 'residential',
+          total_budget: proj.totalBudget || 0,
+          contingency: proj.contingency || 10,
+          currency: proj.currency || 'INR',
+          contractor: proj.contractor || '',
+          start_date: proj.startDate || null,
+          end_date: proj.endDate || null,
+          notes: proj.notes || '',
+          archived: proj.archived || false,
+        }).eq('id', proj.id);
+
+        requestCount++;
+        if (projUpdateErr) {
+          console.warn('[State] Project update failed:', projUpdateErr.message);
+          enqueueMutation('update', 'projects', proj.id, {
+            name: proj.name, address: proj.address || '', client: proj.client || '',
+            type: proj.type || 'residential', total_budget: proj.totalBudget || 0,
+            contingency: proj.contingency || 10, currency: proj.currency || 'INR',
+            contractor: proj.contractor || '', start_date: proj.startDate || null,
+            end_date: proj.endDate || null, notes: proj.notes || '', archived: proj.archived || false,
+          });
+        } else {
+          _lastSyncedProjectHash = currentProjHash;
+          _dirty.project = false;  // Clear dirty flag on success
+        }
+      }
+
+      // Only upsert phases that are marked dirty
+      if (_dirty.phases.size > 0) {
+        for (const phase of (proj.phases || [])) {
+          if (!_dirty.phases.has(phase.id)) continue;  // Skip — not dirty
+
+          const currentPhaseHash = _computePhaseHash(phase);
+          try {
+            const { data: upserted, error: phaseErr } = await client.from('phases').upsert({
+              id: phase._dbId || undefined,
+              project_id: proj.id,
+              phase_number: phase.id,
+              name: phase.name,
+              icon: phase.icon,
+              completion: phase.completion || 0,
+              data: phase.data || {},
+            }, { onConflict: 'project_id,phase_number' }).select('id').single();
+            requestCount++;
+            if (phaseErr) {
+              console.warn('[State] Phase upsert failed for phase', phase.id, phaseErr.message);
+            } else {
+              if (upserted?.id && !phase._dbId) phase._dbId = upserted.id;
+              _lastSyncedPhaseHashes[phase.id] = currentPhaseHash;
+              _dirty.phases.delete(phase.id);  // Clear dirty flag on success
+            }
+          } catch (phaseUpsertErr) {
+            console.warn('[State] Phase upsert exception for phase', phase.id, phaseUpsertErr.message);
+          }
+        }
+      }
+
+      if (requestCount > 0) {
+        console.log('[Sync] Delta sync: sent', requestCount, 'request(s)');
+      }
+      saveLocal();
+      _notifyDirtyChanged();
+
+    } catch (err) {
+      console.warn('[State] Delta sync error:', err.message);
+    }
+  }
+
+  // Force a full sync: flush dirty entities + replay queue.
+  // Single atomic operation from the UI's perspective — one syncstart,
+  // one syncend. Also sets post-sync suppress to prevent re-render
+  // triggered save loops.
+  async function forceSync() {
+    // Flush any debounced save timer
+    clearTimeout(_saveTimer);
+
+    // Wait for any in-flight save to finish
+    if (_syncInProgress) {
+      await new Promise(resolve => {
+        const check = () => { if (!_syncInProgress) resolve(); else setTimeout(check, 200); };
+        check();
+      });
+    }
+
+    // Dispatch a single syncstart for the entire forceSync operation
+    window.dispatchEvent(new CustomEvent('syncstart'));
+
+    try {
+      // Step 1: Sync only dirty entities (delta)
+      await _syncDirtyToSupabase();
+      // Step 2: Replay any queued mutations (quiet, no events, no reload)
+      await _replaySyncQueueQuiet();
+    } catch (err) {
+      console.warn('[Sync] forceSync error:', err.message);
+    }
+
+    // Set post-sync suppress: for 8 seconds after sync, automatic
+    // saveToSupabase() calls are skipped. This breaks the loop where
+    // statesynced → showHub → Financial.updateAllTotals → State.save
+    // would trigger another round of Supabase requests.
+    _postSyncSuppressUntil = Date.now() + 8000;
+
+    // Single syncend for the entire forceSync operation
+    const hasUnsynced = hasUnsyncedChanges();
+    window.dispatchEvent(new CustomEvent('syncend', { detail: { success: !hasUnsynced } }));
+  }
+
+  // Quiet version of replaySyncQueue — replays queued mutations
+  // but does NOT dispatch syncstart/syncend events, and does NOT
+  // call loadFromSupabase() or _notifySynced() (which was the main
+  // cause of the sync loop). Returns true if all items succeeded.
+  async function _replaySyncQueueQuiet() {
+    const client = sb();
+    const uid = userId();
+    if (!client || !uid) return true;
+    if (_isReplaying) return true;
+
+    const queue = getSyncQueue();
+    if (queue.length === 0) return true;
+
+    _isReplaying = true;
+    console.log('[Sync] Replaying', queue.length, 'queued mutations...');
+
+    let anyFailed = false;
+    let anySucceeded = false;
+    let networkError = false;
+
+    try {
+      for (let i = 0; i < queue.length; i++) {
+        const item = queue[i];
+        if (item.action !== 'delete' && item.id && !isUUID(item.id) && item.table !== 'projects') {
+          console.warn(`[Sync] Skipping non-UUID item in queue: ${item.table}/${item.id}`);
+          continue;
+        }
+
+        let success = false;
+        try {
+          if (item.action === 'insert') {
+            const { error } = await client.from(item.table).insert(item.payload);
+            if (!error) { success = true; } else {
+              if (error.code === '23505') { success = true; }
+              else console.warn(`[Sync] Queue insert error for table ${item.table}:`, error.message);
+            }
+          } else if (item.action === 'update') {
+            const { error } = await client.from(item.table).update(item.payload).eq('id', item.id);
+            if (!error) { success = true; }
+            else console.warn(`[Sync] Queue update error for table ${item.table}:`, error.message);
+          } else if (item.action === 'delete') {
+            const { error } = await client.from(item.table).delete().eq('id', item.id);
+            if (!error) { success = true; }
+            else console.warn(`[Sync] Queue delete error for table ${item.table}:`, error.message);
+          }
+        } catch (err) {
+          console.warn(`[Sync] Queue network exception for table ${item.table}:`, err.message);
+          networkError = true;
+          break;
+        }
+
+        if (success) {
+          anySucceeded = true;
+          const currentQueue = getSyncQueue();
+          const updated = currentQueue.filter(q => !(q.id === item.id && q.timestamp === item.timestamp));
+          saveSyncQueue(updated);
+          window.dispatchEvent(new CustomEvent('syncqueuechanged'));
+        } else {
+          anyFailed = true;
+        }
+      }
+    } finally {
+      _isReplaying = false;
+    }
+
+    const allSucceeded = !anyFailed && !networkError;
+    console.log('[Sync] Replay completed.', allSucceeded ? 'All items synced.' : 'Some items failed or were skipped.');
+
+    // Update dirty state notification (queue length affects hasUnsyncedChanges)
+    _notifyDirtyChanged();
+
+    return allSucceeded;
   }
 
   // ── Supabase Helpers ─────────────────────────────
@@ -488,6 +813,10 @@ const State = (() => {
     // Notify listeners waiting for initial load
     if (typeof window !== 'undefined') {
       window.dispatchEvent(new CustomEvent('stateloaded'));
+      // Recalculate all phase completions after loading state
+      if (typeof Financial !== 'undefined' && Financial.recalcAllCompletions) {
+        setTimeout(() => Financial.recalcAllCompletions(), 100);
+      }
     }
     return store;
   }
@@ -495,8 +824,28 @@ const State = (() => {
   // Called after Supabase sync completes — triggers a UI re-render
   // so fresh cloud data is shown even if localStorage rendered first
   function _notifySynced() {
+    // Update dirty tracking hashes so we know what's already synced
+    const proj = getCurrentProject();
+    if (proj) {
+      _lastSyncedProjectHash = _computeProjectMetaHash(proj);
+      _lastSyncedPhaseHashes = {};
+      if (proj.phases) {
+        proj.phases.forEach(phase => {
+          _lastSyncedPhaseHashes[phase.id] = _computePhaseHash(phase);
+        });
+      }
+    }
+    // Clear dirty flags — data was just loaded from cloud, so nothing is dirty
+    clearDirty();
     if (typeof window !== 'undefined') {
       window.dispatchEvent(new CustomEvent('statesynced'));
+      // Recalculate all phase completions after sync
+      // IMPORTANT: recalcAllCompletions may modify phase.completion,
+      // but since clearDirty() was just called, those changes won't
+      // trigger a Supabase write (they're system-calculated, not user edits).
+      if (typeof Financial !== 'undefined' && Financial.recalcAllCompletions) {
+        setTimeout(() => Financial.recalcAllCompletions(), 100);
+      }
     }
   }
 
@@ -533,6 +882,8 @@ const State = (() => {
             if (!p.materialLogs) p.materialLogs = [];
             if (!p.raBills) p.raBills = [];
             if (!p.buyers) p.buyers = [];
+            if (!p.leads) p.leads = [];
+            if (!p.sitePhotos) p.sitePhotos = [];
           });
         }
         const normalized = normalizePhaseIcons(store.projects);
@@ -569,7 +920,7 @@ const State = (() => {
     // Fetch phases, subs, punch items for each project
     const fullProjects = [];
     for (const proj of projects) {
-      const [phasesRes, subsRes, punchRes, labourRes, labourLogsRes, vendorsRes, vendorTxnsRes, materialsRes, materialLogsRes, raBillsRes] = await Promise.all([
+      const [phasesRes, subsRes, punchRes, labourRes, labourLogsRes, vendorsRes, vendorTxnsRes, materialsRes, materialLogsRes, raBillsRes, leadsRes, sitePhotosRes] = await Promise.all([
         client.from('phases').select('*').eq('project_id', proj.id).order('phase_number'),
         client.from('subcontractors').select('*').eq('project_id', proj.id).order('created_at'),
         client.from('punch_items').select('*').eq('project_id', proj.id).order('created_at'),
@@ -580,6 +931,8 @@ const State = (() => {
         client.from('materials').select('*').eq('project_id', proj.id).order('created_at'),
         client.from('material_logs').select('*').eq('project_id', proj.id).order('created_at'),
         client.from('ra_bills').select('*').eq('project_id', proj.id).order('created_at'),
+        client.from('leads').select('*').eq('project_id', proj.id).order('created_at', { ascending: false }),
+        client.from('site_photos').select('*').eq('project_id', proj.id).order('taken_at', { ascending: false }),
       ]);
 
       // Map Supabase format → app format
@@ -671,9 +1024,22 @@ const State = (() => {
           workDescription: b.work_description, contractValue: parseFloat(b.contract_value) || 0,
           percentageComplete: parseFloat(b.percentage_complete) || 0, previousPaid: parseFloat(b.previous_paid) || 0,
           deductions: parseFloat(b.deductions) || 0, amountDue: parseFloat(b.amount_due) || 0,
-          status: b.status, notes: b.notes, createdAt: b.created_at
+          status: b.status, notes: b.notes, createdAt: b.created_at,
+          boqItems: Array.isArray(b.boq_items) ? b.boq_items : []
         })),
         buyers,
+        leads: (leadsRes.data || []).map(l => ({
+          id: l.id,
+          name: l.name, phone: l.phone, address: l.address,
+          source: l.source, status: l.status, notes: l.notes,
+          createdAt: l.created_at,
+        })),
+        sitePhotos: (sitePhotosRes.data || []).map(p => ({
+          id: p.id,
+          name: p.name, description: p.description, category: p.category,
+          imageUrl: p.image_url, thumbnail: p.thumbnail,
+          takenAt: p.taken_at, createdAt: p.created_at,
+        })),
         invoices: [],
       });
     }
@@ -806,78 +1172,78 @@ const State = (() => {
   }
 
   // ── Save ─────────────────────────────────────────
+  // save() — saves locally + schedules a SILENT delta sync.
+  // The delta sync only sends dirty entities to Supabase.
+  // It does NOT fire syncstart/syncend events — those are reserved
+  // for user-triggered forceSync(). This prevents the sync loop
+  // where syncend → refreshDashboard → Financial.updateAllTotals → save → saveToSupabase → syncend.
   function save() {
     saveLocal();
     if (_useSupabase) {
       clearTimeout(_saveTimer);
-      _saveTimer = setTimeout(saveToSupabase, SAVE_DEBOUNCE);
+      _saveTimer = setTimeout(_autoSyncToSupabase, SAVE_DEBOUNCE);
     }
   }
 
+  // saveLocalOnly() — saves to localStorage only, does NOT trigger
+  // Supabase sync. Used by Financial recalculations and other system
+  // events that shouldn't mark entities as dirty or trigger cloud writes.
+  function saveLocalOnly() {
+    saveLocal();
+  }
+
+    let _saveLocalTimer = null;
   function saveLocal() {
+    if (_saveLocalTimer) return;
+    _saveLocalTimer = setTimeout(() => { _saveLocalTimer = null; try { _saveLocalNow(); } catch (e) { console.warn('[State] saveLocal failed:', e); } }, 120);
+  }
+  function saveLocalNow() { if (_saveLocalTimer) { clearTimeout(_saveLocalTimer); _saveLocalTimer = null; } _saveLocalNow(); }
+  // PERF-04: original synchronous writer renamed; saveLocal() is now a 120ms-debounced wrapper.
+  function _saveLocalNow() {
     try {
       localStorage.setItem(STORAGE_KEY, JSON.stringify(store));
     } catch (e) { console.warn('Local save error', e); }
   }
 
-  async function saveToSupabase() {
-    const client = sb();
-    const uid = userId();
-    if (!client || !uid) return;
-
+  // _autoSyncToSupabase() — silent delta sync triggered by save().
+  // Sends only dirty entities to Supabase. Does NOT dispatch
+  // syncstart/syncend events. Only updates the badge via dirtychanged.
+  // This prevents the sync loop that was causing 247 requests/min.
+  async function _autoSyncToSupabase() {
     const proj = getCurrentProject();
-    if (!proj) return;
+    if (!proj || !isUUID(proj.id)) return;
 
-    // Only save if this project lives in Supabase (UUID)
-    if (!isUUID(proj.id)) return;
+    // Post-sync suppress: if a sync just completed, re-renders may
+    // trigger State.save(). Skip the Supabase write to prevent loops.
+    if (Date.now() < _postSyncSuppressUntil) {
+      console.log('[Sync] Post-sync suppress active — skipping auto-sync');
+      return;
+    }
+
+    // Nothing dirty? Skip entirely — no Supabase requests at all.
+    if (!isDirty()) return;
+
+    // D-01: Prevent overlapping saves
+    if (_syncInProgress) {
+      clearTimeout(_saveTimer);
+      _saveTimer = setTimeout(_autoSyncToSupabase, 1500);
+      return;
+    }
+    _syncInProgress = true;
 
     try {
-      // Serialize buyers into Phase 10's JSON data
-      if (Array.isArray(proj.phases)) {
-        const phase10 = proj.phases.find(ph => ph.id === 10);
-        if (phase10) {
-          phase10.data = phase10.data || {};
-          phase10.data.buyers = proj.buyers || [];
-        }
-      }
-
-      // Update project metadata
-      await client.from('projects').update({
-        name: proj.name,
-        address: proj.address || '',
-        client: proj.client || '',
-        type: proj.type || 'residential',
-        total_budget: proj.totalBudget || 0,
-        contingency: proj.contingency || 10,
-        currency: proj.currency || 'INR',
-        contractor: proj.contractor || '',
-        start_date: proj.startDate || null,
-        end_date: proj.endDate || null,
-        notes: proj.notes || '',
-        archived: proj.archived || false,
-      }).eq('id', proj.id);
-
-      // Update phases — .select() captures the returned UUID into _dbId
-      // so subsequent saves UPSERT the same row instead of inserting duplicates
-      for (const phase of proj.phases) {
-        const { data: upserted } = await client.from('phases').upsert({
-          id: phase._dbId || undefined,
-          project_id: proj.id,
-          phase_number: phase.id,
-          name: phase.name,
-          icon: phase.icon,
-          completion: phase.completion || 0,
-          data: phase.data || {},
-        }, { onConflict: 'project_id,phase_number' }).select('id').single();
-        // Write UUID back so next save hits the same row
-        if (upserted?.id && !phase._dbId) phase._dbId = upserted.id;
-      }
-      // Persist _dbIds back to localStorage so they survive a page reload
-      saveLocal();
-
+      await _syncDirtyToSupabase();
     } catch (err) {
-      console.warn('[State] Supabase save error:', err.message);
+      console.warn('[Sync] Auto-sync error:', err.message);
+    } finally {
+      _syncInProgress = false;
     }
+  }
+
+  // saveToSupabase() — kept as an alias for _autoSyncToSupabase()
+  // for backward compatibility with any code that calls it directly.
+  async function saveToSupabase() {
+    await _autoSyncToSupabase();
   }
 
   // ── Utility ──────────────────────────────────────
@@ -969,6 +1335,8 @@ const State = (() => {
       materialLogs: [],
       raBills: [],
       buyers: [],
+      leads: [],
+      sitePhotos: [],
       archived: false,
       userId: uid,
     };
@@ -1093,6 +1461,24 @@ const State = (() => {
       proj.raBills.forEach(b => {
         if (!isUUID(b.id)) {
           b.id = generateUUID();
+        }
+      });
+    }
+
+    // Map leads
+    if (Array.isArray(proj.leads)) {
+      proj.leads.forEach(l => {
+        if (!isUUID(l.id)) {
+          l.id = generateUUID();
+        }
+      });
+    }
+
+    // Map site photos
+    if (Array.isArray(proj.sitePhotos)) {
+      proj.sitePhotos.forEach(p => {
+        if (!isUUID(p.id)) {
+          p.id = generateUUID();
         }
       });
     }
@@ -1296,7 +1682,41 @@ const State = (() => {
       if (billErr) throw billErr;
     }
 
-    // 13. Update store references
+    // 13. Insert Leads
+    if (proj.leads?.length) {
+      const leadInserts = proj.leads.map(l => ({
+        id: l.id,
+        project_id: newProjectId,
+        name: l.name || '',
+        phone: l.phone || '',
+        address: l.address || '',
+        source: l.source || '',
+        status: l.status || 'new',
+        notes: l.notes || '',
+        created_at: l.createdAt,
+      }));
+      const { error: leadErr } = await client.from('leads').insert(leadInserts);
+      if (leadErr) throw leadErr;
+    }
+
+    // 14. Insert Site Photos
+    if (proj.sitePhotos?.length) {
+      const photoInserts = proj.sitePhotos.map(p => ({
+        id: p.id,
+        project_id: newProjectId,
+        name: p.name || '',
+        description: p.description || '',
+        category: p.category || '',
+        image_url: p.imageUrl || '',
+        thumbnail: p.thumbnail || '',
+        taken_at: p.takenAt || p.createdAt,
+        created_at: p.createdAt,
+      }));
+      const { error: photoErr } = await client.from('site_photos').insert(photoInserts);
+      if (photoErr) console.warn('[State] Site photos insert warning:', photoErr.message);
+    }
+
+    // 15. Update store references
     const oldId = proj.id;
     proj.id = newProjectId;
     proj.userId = uid;
@@ -1355,6 +1775,7 @@ const State = (() => {
     if (!phase) return;
     if (!phase.data[sectionKey]) phase.data[sectionKey] = {};
     Object.assign(phase.data[sectionKey], data);
+    markDirty('phase', phaseId);
     save();
   }
 
@@ -1370,7 +1791,10 @@ const State = (() => {
     const proj = getCurrentProject();
     if (!proj) return;
     const phase = proj.phases.find(p => String(p.id) === String(phaseId));
-    if (phase) phase.completion = Math.min(100, Math.max(0, pct));
+    if (phase) {
+      phase.completion = Math.min(100, Math.max(0, pct));
+      markDirty('phase', phaseId);
+    }
     save();
   }
 
@@ -1433,6 +1857,7 @@ const State = (() => {
     if (updates.paid !== undefined) payload.paid = parseFloat(updates.paid) || 0;
     if (updates.retention !== undefined) payload.retention = parseFloat(updates.retention) || 0;
     if (updates.notes !== undefined) payload.notes = updates.notes;
+    if (updates.boqItems !== undefined) payload.boq_items = Array.isArray(updates.boqItems) ? updates.boqItems : [];
 
     if (_useSupabase && client && isUUID(id)) {
       try {
@@ -1694,6 +2119,7 @@ const State = (() => {
     if (updates.phone !== undefined) payload.phone = updates.phone;
     if (updates.balance !== undefined) payload.balance = parseFloat(updates.balance) || 0;
     if (updates.notes !== undefined) payload.notes = updates.notes;
+    if (updates.boqItems !== undefined) payload.boq_items = Array.isArray(updates.boqItems) ? updates.boqItems : [];
 
     if (_useSupabase && client && isUUID(id)) {
       try {
@@ -1735,7 +2161,7 @@ const State = (() => {
     
     const vendor = (proj.vendors || []).find(v => String(v.id) === String(txn.vendorId));
     if (vendor) {
-      const delta = txn.type === 'debit' ? parseFloat(txn.amount) : -parseFloat(txn.amount);
+      const delta = txn.type === 'debit' ? (parseFloat(txn.amount) || 0) : -(parseFloat(txn.amount) || 0);
       const newBalance = (parseFloat(vendor.balance) || 0) + delta;
       await updateVendor(vendor.id, { balance: newBalance });
     }
@@ -1822,6 +2248,7 @@ const State = (() => {
     if (updates.totalInward !== undefined) payload.total_inward = parseFloat(updates.totalInward) || 0;
     if (updates.totalOutward !== undefined) payload.total_outward = parseFloat(updates.totalOutward) || 0;
     if (updates.notes !== undefined) payload.notes = updates.notes;
+    if (updates.boqItems !== undefined) payload.boq_items = Array.isArray(updates.boqItems) ? updates.boqItems : [];
 
     if (_useSupabase && client && isUUID(id)) {
       try {
@@ -1955,6 +2382,7 @@ const State = (() => {
         amount_due: parseFloat(bill.amountDue) || 0,
         status: bill.status,
         notes: bill.notes || '',
+        boq_items: Array.isArray(bill.boqItems) ? bill.boqItems : [],
         created_at: bill.createdAt,
       };
       try {
@@ -1989,6 +2417,7 @@ const State = (() => {
     if (updates.amountDue !== undefined) payload.amount_due = parseFloat(updates.amountDue) || 0;
     if (updates.status !== undefined) payload.status = updates.status;
     if (updates.notes !== undefined) payload.notes = updates.notes;
+    if (updates.boqItems !== undefined) payload.boq_items = Array.isArray(updates.boqItems) ? updates.boqItems : [];
 
     if (_useSupabase && client && isUUID(id)) {
       try {
@@ -2038,14 +2467,21 @@ const State = (() => {
     const isProjectSynced = _useSupabase && client && isUUID(proj.id) && isUUID(log.labourId);
     log.id = isProjectSynced ? generateUUID() : generateId();
     log.createdAt = new Date().toISOString();
+    // Snapshot the daily rate at log time so subsequent rate changes do not
+    // retroactively alter historical balance math (BUG-05).
+    const _labourForRate = proj.labour ? proj.labour.find(l => String(l.id) === String(log.labourId)) : null;
+    if (_labourForRate && (log.rateAtLog === undefined || log.rateAtLog === null)) {
+      log.rateAtLog = Number(_labourForRate.dailyRate) || 0;
+    }
     proj.labourLogs.push(log);
     
     // Update balance
     const labour = proj.labour.find(l => l.id === log.labourId);
     if (labour) {
+       const _rate = Number(log.rateAtLog != null ? log.rateAtLog : labour.dailyRate) || 0;
        let addedValue = 0;
-       if (log.status === 'full') addedValue = Number(labour.dailyRate);
-       else if (log.status === 'half') addedValue = Number(labour.dailyRate) / 2;
+       if (log.status === 'full') addedValue = _rate;
+       else if (log.status === 'half') addedValue = _rate / 2;
        
        const newBalance = (Number(labour.balance || 0) + addedValue) - Number(log.kharchi || 0);
        await updateLabour(labour.id, { balance: newBalance });
@@ -2083,9 +2519,10 @@ const State = (() => {
     // Adjust labour balance
     const labour = proj.labour.find(l => String(l.id) === String(log.labourId));
     if (labour) {
+      const _rate = Number(log.rateAtLog != null ? log.rateAtLog : labour.dailyRate) || 0;
       let addedValue = 0;
-      if (log.status === 'full') addedValue = Number(labour.dailyRate);
-      else if (log.status === 'half') addedValue = Number(labour.dailyRate) / 2;
+      if (log.status === 'full') addedValue = _rate;
+      else if (log.status === 'half') addedValue = _rate / 2;
       
       const contribution = addedValue - Number(log.kharchi || 0);
       const newBalance = Number(labour.balance || 0) - contribution;
@@ -2128,14 +2565,18 @@ const State = (() => {
     // Adjust labour balance
     const labour = proj.labour.find(l => String(l.id) === String(labourId));
     if (labour) {
+      // Use the rate captured at log time so historical edits don't drift
+      // when the labour's current dailyRate changes (BUG-05).
+      const _oldRate = Number(oldLog.rateAtLog != null ? oldLog.rateAtLog : labour.dailyRate) || 0;
+      const _newRate = Number(newLog.rateAtLog != null ? newLog.rateAtLog : _oldRate) || 0;
       let oldAddedWages = 0;
-      if (oldStatus === 'full') oldAddedWages = Number(labour.dailyRate);
-      else if (oldStatus === 'half') oldAddedWages = Number(labour.dailyRate) / 2;
+      if (oldStatus === 'full') oldAddedWages = _oldRate;
+      else if (oldStatus === 'half') oldAddedWages = _oldRate / 2;
       const oldContribution = oldAddedWages - oldKharchi;
       
       let newAddedWages = 0;
-      if (newLog.status === 'full') newAddedWages = Number(labour.dailyRate);
-      else if (newLog.status === 'half') newAddedWages = Number(labour.dailyRate) / 2;
+      if (newLog.status === 'full') newAddedWages = _newRate;
+      else if (newLog.status === 'half') newAddedWages = _newRate / 2;
       const newContribution = newAddedWages - Number(newLog.kharchi || 0);
       
       const newBalance = Number(labour.balance || 0) - oldContribution + newContribution;
@@ -2183,6 +2624,7 @@ const State = (() => {
     billObj.timestamp = Date.now();
     phase.bills.push(billObj);
     
+    markDirty('phase', phaseId);
     saveLocal();
     return billObj;
   }
@@ -2194,6 +2636,7 @@ const State = (() => {
     if (!phase || !phase.bills) return;
     
     phase.bills = phase.bills.filter(b => String(b.id) !== String(billId));
+    markDirty('phase', phaseId);
     saveLocal();
   }
 
@@ -2201,6 +2644,7 @@ const State = (() => {
     const proj = getCurrentProject();
     if (!proj) return;
     Object.assign(proj, updates);
+    markDirty('project');
     save();
   }
 
@@ -2237,6 +2681,7 @@ const State = (() => {
     buyer.createdAt = new Date().toISOString();
     buyer.payments = buyer.payments || [];
     proj.buyers.push(buyer);
+    markDirty('phase', 10);  // Buyers are serialized into Phase 10
     save();
     return buyer;
   }
@@ -2246,6 +2691,7 @@ const State = (() => {
     if (!proj || !proj.buyers) return;
     const idx = proj.buyers.findIndex(b => String(b.id) === String(id));
     if (idx >= 0) Object.assign(proj.buyers[idx], updates);
+    markDirty('phase', 10);  // Buyers are serialized into Phase 10
     save();
   }
 
@@ -2253,6 +2699,7 @@ const State = (() => {
     const proj = getCurrentProject();
     if (!proj || !proj.buyers) return;
     proj.buyers = proj.buyers.filter(b => String(b.id) !== String(id));
+    markDirty('phase', 10);  // Buyers are serialized into Phase 10
     save();
   }
 
@@ -2265,6 +2712,7 @@ const State = (() => {
     payment.id = payment.id || generateId();
     payment.createdAt = new Date().toISOString();
     buyer.payments.push(payment);
+    markDirty('phase', 10);  // Buyers are serialized into Phase 10
     save();
     return payment;
   }
@@ -2275,6 +2723,7 @@ const State = (() => {
     const buyer = proj.buyers.find(b => String(b.id) === String(buyerId));
     if (!buyer || !buyer.payments) return;
     buyer.payments = buyer.payments.filter(p => String(p.id) !== String(paymentId));
+    markDirty('phase', 10);  // Buyers are serialized into Phase 10
     save();
   }
 
@@ -2283,6 +2732,204 @@ const State = (() => {
     if (!proj) return [];
     if (!proj.buyers) proj.buyers = [];
     return proj.buyers;
+  }
+
+  // ── Quick Leads ────────────────────────────────────
+  async function addLead(lead) {
+    const proj = getCurrentProject();
+    if (!proj) return null;
+    if (!proj.leads) proj.leads = [];
+
+    const client = sb();
+    const isProjectSynced = _useSupabase && client && isUUID(proj.id);
+    lead.id = isProjectSynced ? generateUUID() : generateId();
+    lead.createdAt = new Date().toISOString();
+    proj.leads.push(lead);
+    saveLocal();
+
+    if (isProjectSynced) {
+      const payload = {
+        id: lead.id,
+        project_id: proj.id,
+        name: lead.name || '',
+        phone: lead.phone || '',
+        address: lead.address || '',
+        source: lead.source || '',
+        status: lead.status || 'new',
+        notes: lead.notes || '',
+      };
+      try {
+        const { error } = await client.from('leads').insert(payload);
+        if (error) {
+          console.warn('[State] Lead insert failed, queuing:', error.message);
+          enqueueMutation('insert', 'leads', lead.id, payload);
+        }
+      } catch (err) {
+        console.warn('[State] Lead insert network failed, queuing:', err.message);
+        enqueueMutation('insert', 'leads', lead.id, payload);
+      }
+    }
+    return lead;
+  }
+
+  async function updateLead(id, updates) {
+    const proj = getCurrentProject();
+    if (!proj || !proj.leads) return;
+    const idx = proj.leads.findIndex(l => String(l.id) === String(id));
+    if (idx >= 0) Object.assign(proj.leads[idx], updates);
+
+    const client = sb();
+    const payload = {};
+    if (updates.name !== undefined) payload.name = updates.name;
+    if (updates.phone !== undefined) payload.phone = updates.phone;
+    if (updates.address !== undefined) payload.address = updates.address;
+    if (updates.source !== undefined) payload.source = updates.source;
+    if (updates.status !== undefined) payload.status = updates.status;
+    if (updates.notes !== undefined) payload.notes = updates.notes;
+
+    if (_useSupabase && client && isUUID(id)) {
+      try {
+        const { error } = await client.from('leads').update(payload).eq('id', id);
+        if (error) enqueueMutation('update', 'leads', id, payload);
+      } catch (err) {
+        enqueueMutation('update', 'leads', id, payload);
+      }
+    } else if (_useSupabase && client) {
+      enqueueMutation('update', 'leads', id, payload);
+    }
+    saveLocal();
+  }
+
+  async function deleteLead(id) {
+    const proj = getCurrentProject();
+    if (!proj || !proj.leads) return;
+    proj.leads = proj.leads.filter(l => String(l.id) !== String(id));
+
+    const client = sb();
+    if (_useSupabase && client && isUUID(id)) {
+      try {
+        const { error } = await client.from('leads').delete().eq('id', id);
+        if (error) enqueueMutation('delete', 'leads', id, null);
+      } catch (err) {
+        enqueueMutation('delete', 'leads', id, null);
+      }
+    } else if (_useSupabase && client) {
+      enqueueMutation('delete', 'leads', id, null);
+    }
+    saveLocal();
+  }
+
+  function getLeads() {
+    const proj = getCurrentProject();
+    if (!proj) return [];
+    if (!proj.leads) proj.leads = [];
+    return proj.leads;
+  }
+
+  // ── Site Photos ────────────────────────────────────
+  async function addSitePhoto(photo) {
+    const proj = getCurrentProject();
+    if (!proj) return null;
+    if (!proj.sitePhotos) proj.sitePhotos = [];
+
+    const client = sb();
+    const isProjectSynced = _useSupabase && client && isUUID(proj.id);
+    photo.id = isProjectSynced ? generateUUID() : generateId();
+    photo.createdAt = new Date().toISOString();
+    if (!photo.takenAt) photo.takenAt = photo.createdAt;
+    proj.sitePhotos.unshift(photo);  // Newest first
+    saveLocal();
+
+    if (isProjectSynced) {
+      const payload = {
+        id: photo.id,
+        project_id: proj.id,
+        name: photo.name || '',
+        description: photo.description || '',
+        category: photo.category || '',
+        image_url: photo.imageUrl || '',
+        thumbnail: photo.thumbnail || '',
+        taken_at: photo.takenAt,
+      };
+      try {
+        const { error } = await client.from('site_photos').insert(payload);
+        if (error) {
+          console.warn('[State] Site photo insert failed, queuing:', error.message);
+          enqueueMutation('insert', 'site_photos', photo.id, payload);
+        }
+      } catch (err) {
+        console.warn('[State] Site photo insert network failed, queuing:', err.message);
+        enqueueMutation('insert', 'site_photos', photo.id, payload);
+      }
+    }
+    return photo;
+  }
+
+  async function updateSitePhoto(id, updates) {
+    const proj = getCurrentProject();
+    if (!proj || !proj.sitePhotos) return;
+    const idx = proj.sitePhotos.findIndex(p => String(p.id) === String(id));
+    if (idx >= 0) Object.assign(proj.sitePhotos[idx], updates);
+
+    const client = sb();
+    const payload = {};
+    if (updates.name !== undefined) payload.name = updates.name;
+    if (updates.description !== undefined) payload.description = updates.description;
+    if (updates.category !== undefined) payload.category = updates.category;
+    if (updates.imageUrl !== undefined) payload.image_url = updates.imageUrl;
+    if (updates.thumbnail !== undefined) payload.thumbnail = updates.thumbnail;
+
+    if (_useSupabase && client && isUUID(id)) {
+      try {
+        const { error } = await client.from('site_photos').update(payload).eq('id', id);
+        if (error) enqueueMutation('update', 'site_photos', id, payload);
+      } catch (err) {
+        enqueueMutation('update', 'site_photos', id, payload);
+      }
+    } else if (_useSupabase && client) {
+      enqueueMutation('update', 'site_photos', id, payload);
+    }
+    saveLocal();
+  }
+
+  async function deleteSitePhoto(id) {
+    const proj = getCurrentProject();
+    if (!proj || !proj.sitePhotos) return;
+
+    // Also clean up local image from IndexedDB
+    const photo = proj.sitePhotos.find(p => String(p.id) === String(id));
+    if (photo) {
+      if (photo.imageUrl && photo.imageUrl.startsWith('local-image://')) {
+        const key = photo.imageUrl.replace('local-image://', '');
+        await deleteLocalImage(key);
+      }
+      if (photo.thumbnail && photo.thumbnail.startsWith('local-image://')) {
+        const key = photo.thumbnail.replace('local-image://', '');
+        await deleteLocalImage(key);
+      }
+    }
+
+    proj.sitePhotos = proj.sitePhotos.filter(p => String(p.id) !== String(id));
+
+    const client = sb();
+    if (_useSupabase && client && isUUID(id)) {
+      try {
+        const { error } = await client.from('site_photos').delete().eq('id', id);
+        if (error) enqueueMutation('delete', 'site_photos', id, null);
+      } catch (err) {
+        enqueueMutation('delete', 'site_photos', id, null);
+      }
+    } else if (_useSupabase && client) {
+      enqueueMutation('delete', 'site_photos', id, null);
+    }
+    saveLocal();
+  }
+
+  function getSitePhotos() {
+    const proj = getCurrentProject();
+    if (!proj) return [];
+    if (!proj.sitePhotos) proj.sitePhotos = [];
+    return proj.sitePhotos;
   }
 
   return {
@@ -2298,9 +2945,13 @@ const State = (() => {
     addRaBill, updateRaBill, deleteRaBill,
     getBills, addBill, deleteBill,
     getBuyers, addBuyer, updateBuyer, deleteBuyer, addBuyerPayment, deleteBuyerPayment,
+    addLead, updateLead, deleteLead, getLeads,
+    addSitePhoto, updateSitePhoto, deleteSitePhoto, getSitePhotos,
     updateProjectInfo, deleteProject, archivedProject: archiveProject,
     getLocalImage, saveLocalImage, deleteLocalImage, preLoadProjectImages,
-    replaySyncQueue, hasUnsyncedChanges,
+    replaySyncQueue, hasUnsyncedChanges, forceSync,
+    markDirty, clearDirty, isDirty, saveLocalOnly,
+    getSyncQueue,
     get store() { return store; },
     get isCloud() { return _useSupabase; },
   };

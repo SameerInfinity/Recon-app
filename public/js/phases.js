@@ -80,7 +80,44 @@ const Phases = (() => {
       <input class="completion-pct-input" type="number" min="0" max="100" id="comp-pct-${phaseId}" placeholder="0" title="Completion %"
         onchange="Phases.setCompletion(${phaseId}, this.value)">
       <span style="font-size:12px;color:var(--text-muted)">%</span>
+      <button id="auto-suggest-${phaseId}" title="Auto-suggest based on spend" onclick="Phases.autoSuggestCompletion(${phaseId})"
+        style="margin-left:6px;padding:3px 7px;border-radius:6px;border:1px solid var(--border);background:var(--bg-elev-2);color:var(--text-muted);font-size:10px;font-weight:700;cursor:pointer;display:none;vertical-align:middle">
+        AUTO
+      </button>
     </div>`;
+  }
+
+  function autoSuggestCompletion(phaseId) {
+    const proj = State.getCurrentProject();
+    if (!proj) return;
+    const phase = proj.phases.find(p => Number(p.id) === Number(phaseId));
+    if (!phase) return;
+
+    // Compute phase spend
+    const phaseSpend = (typeof Financial !== 'undefined' && typeof Financial.computePhaseTotal === 'function')
+      ? Financial.computePhaseTotal(phase)
+      : 0;
+
+    // Phase budget = total project budget divided equally among phases (or a per-phase budget if set)
+    const phaseBudget = phase.budget || (proj.totalBudget > 0 ? proj.totalBudget / proj.phases.length : 0);
+
+    if (phaseBudget <= 0 || phaseSpend <= 0) {
+      App.toast('Set a project budget first, or add some entries to auto-suggest', 'info');
+      return;
+    }
+
+    const suggestedPct = Math.min(100, Math.round((phaseSpend / phaseBudget) * 100));
+    
+    App.showConfirmModal({
+      icon: Icons.render('listChecks', 24),
+      title: 'Auto-Suggest Completion?',
+      body: `Based on spend ratio (₹${phaseSpend.toLocaleString('en-IN')} of ₹${phaseBudget.toLocaleString('en-IN')} budget), suggested completion is <strong>${suggestedPct}%</strong>. Apply this value?`,
+      confirmLabel: `Apply ${suggestedPct}%`,
+      onConfirm: () => {
+        setCompletion(phaseId, suggestedPct);
+        App.toast(`Completion set to ${suggestedPct}% based on spend ratio`, 'success');
+      }
+    });
   }
 
   function addRowBtn(label, fn) {
@@ -91,7 +128,7 @@ const Phases = (() => {
     return `
     <div class="phase-header">
       <div class="phase-title-block">
-        <div class="phase-title">${iconFor(phase.icon, 26)} <span style="margin-left:10px">${phase.name}</span></div>
+        <div class="phase-title">${iconFor(phase.icon, 26)} <span style="margin-left:10px">${escapeHtml(phase.name)}</span></div>
         <div class="phase-subtitle">Phase ${phase.id} of ${phase.totalPhases || (State.getCurrentProject()?.phases.length || 9)} · Construction Financial Ledger</div>
       </div>
       <div style="display:none"><div id="phase-total-${phase.id}"></div><div id="budget-bar-${phase.id}"></div></div>
@@ -112,6 +149,19 @@ const Phases = (() => {
     if (sideBar) sideBar.style.width = pct + '%';
     const sidePct = document.getElementById(`phase-pct-${phaseId}`);
     if (sidePct) sidePct.textContent = pct + '%';
+    const inp = document.getElementById(`comp-pct-${phaseId}`);
+    if (inp && inp.value !== String(pct)) inp.value = pct;
+  }
+
+  // Show auto-suggest button after entries are added
+  function updateAutoSuggestButton(phaseId, phaseSpend, phaseBudget) {
+    const btn = document.getElementById(`auto-suggest-${phaseId}`);
+    if (!btn) return;
+    if (phaseSpend > 0 && phaseBudget > 0) {
+      const pct = Math.min(100, Math.round((phaseSpend / phaseBudget) * 100));
+      btn.style.display = 'inline-block';
+      btn.title = `Auto-suggest: ${pct}% (based on spend ÷ budget)`;
+    }
   }
 
   // ════════════════════════════════════════════════════════════
@@ -397,12 +447,12 @@ const Phases = (() => {
     return `
       <div class="section-card">
         <div class="section-card-header" style="cursor:default">
-          <span class="section-card-title">${iconFor(category.icon, 14)} <span style="margin-left:6px">${category.name}</span></span>
+          <span class="section-card-title">${iconFor(category.icon, 14)} <span style="margin-left:6px">${escapeHtml(category.name)}</span></span>
         </div>
         <div class="section-card-body">
           <div style="padding:20px;text-align:center;color:var(--text-secondary)">
             <div style="margin-bottom:12px;color:var(--amber-light);display:inline-flex;width:48px;height:48px;align-items:center;justify-content:center">${iconFor(category.icon, 40)}</div>
-            <p style="margin-bottom:14px">${category.desc}</p>
+            <p style="margin-bottom:14px">${escapeHtml(category.desc)}</p>
             <p style="font-size:11px;color:var(--text-muted);margin-bottom:18px">Project-level settings like name, client, budget and dates are managed on the main project setup screen. To change them, go back to the dashboard and edit the project from the project list.</p>
             <button class="btn-primary" onclick="App.showOverview()">Open Project Overview</button>
           </div>
@@ -420,12 +470,12 @@ const Phases = (() => {
       <div class="breadcrumb">
         <a onclick="App.showOverview()">Overview</a>
         <span class="breadcrumb-sep">›</span>
-        <span class="breadcrumb-current">${iconFor(phase.icon, 12)} <span style="margin-left:6px">${phase.name}</span></span>
+        <span class="breadcrumb-current">${iconFor(phase.icon, 12)} <span style="margin-left:6px">${escapeHtml(phase.name)}</span></span>
       </div>
 
       <div class="category-hub-header">
         <div>
-          <div class="category-hub-title">${iconFor(phase.icon, 26)} <span style="margin-left:10px">${phase.name}</span></div>
+          <div class="category-hub-title">${iconFor(phase.icon, 26)} <span style="margin-left:10px">${escapeHtml(phase.name)}</span></div>
           <div class="category-hub-subtitle">Phase ${phase.id} of ${(State.getCurrentProject()?.phases.length) || 9} · ${categoriesWithData} categories · ${phase.completion || 0}% complete</div>
         </div>
         <div class="category-hub-stats">
@@ -550,8 +600,8 @@ const Phases = (() => {
     <button class="category-card ${complete ? 'is-complete' : ''}" onclick="App.showInputCard(${phase.id}, '${card.id}')">
       <span class="category-card-arrow">${iconFor('arrowRight', 14)}</span>
       <span class="category-card-icon">${iconFor(card.icon, 26)}</span>
-      <div class="category-card-name">${card.name}</div>
-      <div class="category-card-desc">${card.desc}</div>
+      <div class="category-card-name">${escapeHtml(card.name)}</div>
+      <div class="category-card-desc">${escapeHtml(card.desc)}</div>
       <div class="category-card-meta">
         <div class="category-card-progress">
           <div class="category-card-progress-label">${filled}/${total} fields · ${pct}%</div>
@@ -607,11 +657,11 @@ const Phases = (() => {
     ${phaseHeader(phase)}
     ${phaseSectionCard(`p${phase.id}-${card.id}`, card.name, `
       <div style="font-size:11px;color:var(--text-muted);margin-bottom:16px;padding:10px 12px;background:var(--charcoal-light);border-left:3px solid var(--amber-light);border-radius:4px">
-        ${card.desc}
+        ${escapeHtml(card.desc)}
       </div>
       ${layoutHtml}
       <div class="live-total" style="margin-top:18px;font-size:14px">
-        <span class="live-total-label" style="font-size:12px;color:var(--text-secondary)">${card.name} Total</span>
+        <span class="live-total-label" style="font-size:12px;color:var(--text-secondary)">${escapeHtml(card.name)} Total</span>
         <div class="currency-input-wrap" style="width:140px">
           <span class="currency-symbol">₹</span>
           <input class="field-input mono" type="number" id="card-total-${phase.id}-${card.id}" value="${cost > 0 ? F.fmtFull(cost).replace(/[^0-9.]/g,'') : ''}" style="font-size:18px;font-weight:700;color:var(--amber)" oninput="Phases.updateInputField(${phase.id},'${card.id}','_manual_total',this.value);Financial.scheduleUpdate()">
@@ -631,7 +681,7 @@ const Phases = (() => {
     if (fieldKey !== '_manual_total') {
       delete ph.data[cardId]._manual_total;
     }
-    State.save();
+    State.markDirty('phase', phaseId); State.save();
   }
 
   function updatePhase10ManualTotal(id, value) {
@@ -641,7 +691,7 @@ const Phases = (() => {
     if (!ph) return;
     if (!ph.data) ph.data = {};
     ph.data[`_manual_${id}`] = value;
-    State.save();
+    State.markDirty('phase', 10); State.save();
   }
 
   // ─────────────────────────────────────────────────────────
@@ -1275,7 +1325,7 @@ const Phases = (() => {
       ${cards.map(c => inputCard(phase, c)).join('')}
     </div>
     <div style="margin-top:24px;padding:14px 18px;background:var(--charcoal-mid);border:1px solid var(--charcoal-border);border-radius:10px;display:flex;justify-content:space-between;align-items:center">
-      <div style="font-size:11px;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.1em;font-weight:700">${phase.name} — Total Cost</div>
+      <div style="font-size:11px;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.1em;font-weight:700">${escapeHtml(phase.name)} — Total Cost</div>
       <div style="font-family:var(--font-mono);font-size:24px;font-weight:700;color:var(--amber-light)">${F.fmtFull(total)}</div>
     </div>`;
   }
@@ -1393,7 +1443,7 @@ const Phases = (() => {
     const phase = proj.phases.find(p => p.id === 1);
     if (!phase.data.permits) phase.data.permits = [{}];
     phase.data.permits.push({});
-    State.save();
+    State.markDirty('phase', 1); State.save();
     const tbody = document.getElementById('permit-rows');
     if (tbody) tbody.innerHTML = permRows(phase.data.permits);
   }
@@ -1403,7 +1453,7 @@ const Phases = (() => {
     if (!proj) return;
     const phase = proj.phases.find(p => p.id === 1);
     if (phase.data.permits) phase.data.permits.splice(i, 1);
-    State.save();
+    State.markDirty('phase', 1); State.save();
     const tbody = document.getElementById('permit-rows');
     if (tbody) tbody.innerHTML = permRows(phase.data.permits);
     Financial.scheduleUpdate();
@@ -1416,7 +1466,7 @@ const Phases = (() => {
     if (!phase.data.permits) phase.data.permits = [{}];
     if (!phase.data.permits[i]) phase.data.permits[i] = {};
     phase.data.permits[i][key] = val;
-    State.save();
+    State.markDirty('phase', 1); State.save();
   }
 
   function renderToggleCard(id, title, body) {
@@ -1531,7 +1581,7 @@ const Phases = (() => {
     const ph = proj.phases.find(p=>p.id===phaseId);
     if (!ph.data[key]) ph.data[key] = [{}];
     ph.data[key].push({});
-    State.save();
+    State.markDirty('phase', phaseId); State.save();
     const tb = document.getElementById(tbodyId);
     if (tb) tb.innerHTML = renderFn();
     Financial.scheduleUpdate();
@@ -1542,7 +1592,7 @@ const Phases = (() => {
     if (!proj) return;
     const ph = proj.phases.find(p=>Number(p.id)===Number(phaseId));
     if (ph.data[key]) ph.data[key].splice(i, 1);
-    State.save();
+    State.markDirty('phase', phaseId); State.save();
     const tb = document.getElementById(tbodyId);
     if (tb) tb.innerHTML = renderFn();
     Financial.scheduleUpdate();
@@ -1572,7 +1622,7 @@ const Phases = (() => {
       }
     }
     
-    State.save();
+    State.markDirty('phase', phaseId); State.save();
     updateDomRowTotal(phaseId, key, i, ph.data[key][i]);
   }
 
@@ -2048,13 +2098,12 @@ const Phases = (() => {
   function renderSubcontractorLedger() {
     const proj = State.getCurrentProject();
     const subs = proj ? (proj.subcontractors || []) : [];
-    
+
     const totalContract = subs.reduce((s, sub) => s + F.parseNum(sub.contract), 0);
-    const totalPaid = subs.reduce((s, sub) => s + F.parseNum(sub.paid), 0);
-    const totalOwed = totalContract - totalPaid;
-    
+    const totalPaid     = subs.reduce((s, sub) => s + F.parseNum(sub.paid), 0);
+    const totalOwed     = totalContract - totalPaid;
+
     return `
-    <!-- Summary Stats -->
     ${subs.length > 0 ? `
     <div class="dashboard-grid" style="margin-bottom:20px">
       <div class="stat-card">
@@ -2070,68 +2119,82 @@ const Phases = (() => {
       <div class="stat-card">
         <div class="stat-card-label">Outstanding Balance</div>
         <div class="stat-card-value" style="color:${totalOwed > 0 ? '#D9B68E' : 'var(--success)'}">${F.fmtFull(totalOwed)}</div>
-        <div class="stat-card-sub">${totalOwed > 0 ? 'Payments pending' : `All settled ${Icons.render('check', 11)}`}</div>
+        <div class="stat-card-sub">${totalOwed > 0 ? 'Payments pending' : 'All settled'}</div>
       </div>
     </div>` : ''}
 
     <div class="section-card">
       <div class="section-card-header" style="cursor:default">
         <span class="section-card-title">Subcontractor / Trade Ledger</span>
-        <div class="section-card-meta">
+        <div class="section-card-meta" style="display:flex;align-items:center;gap:10px">
           <span class="section-card-total" id="sub-total">${subs.length > 0 ? F.fmtFull(totalContract) : '—'}</span>
-          <button class="btn-primary btn-sm" onclick="Phases.showAddSubModal()" style="margin-left:12px">+ Add Trade</button>
+          <button class="btn-primary btn-sm" onclick="Phases.showAddSubModal()">+ Add Trade</button>
         </div>
       </div>
-      <div class="section-card-body" style="padding:0">
+
+      <div class="section-card-body" style="${subs.length === 0 ? 'padding:40px;text-align:center' : 'padding:12px;display:flex;flex-direction:column;gap:10px'}">
         ${subs.length === 0 ? `
-          <div style="padding:40px;text-align:center">
-            <div style="margin-bottom:12px;opacity:0.5;color:var(--text-muted)">${Icons.render('userCircle', 36)}</div>
-            <div style="font-size:14px;color:var(--text-muted);margin-bottom:6px">No subcontractors added yet</div>
-            <div style="font-size:12px;color:var(--text-muted)">Add trades to track contracts, payments, and balances</div>
-          </div>
-        ` : `
-        <table class="ledger-table">
-          <thead><tr>
-            <th>Trade / Company</th><th>Phase</th><th>Contract</th>
-            <th>Paid</th><th>Balance</th><th>Retention</th><th>Status</th><th></th>
-          </tr></thead>
-          <tbody id="sub-ledger-rows">
-            ${subs.map(s => {
-              const contract = F.parseNum(s.contract);
-              const paid = F.parseNum(s.paid);
-              const retention = F.parseNum(s.retention_pct || 0);
-              const retentionAmt = contract * (retention / 100);
-              const remaining = contract - paid;
-              const paidPct = contract > 0 ? Math.round((paid / contract) * 100) : 0;
-              
-              return `
-            <tr>
-              <td>
-                <div style="font-weight:600;font-size:13px">${s.name || '—'}</div>
-                <div style="font-size:11px;color:var(--text-muted);margin-top:2px">${s.trade || ''}</div>
-                ${s.phone || s.email ? `<div style="font-size:10px;color:var(--text-muted);margin-top:2px;display:flex;gap:8px;align-items:center;flex-wrap:wrap">${s.phone ? Icons.render('phone', 10) + ' ' + s.phone : ''}${s.email ? Icons.render('mail', 10) + ' ' + s.email : ''}</div>` : ''}
-              </td>
-              <td style="font-size:12px">${s.phase || '—'}</td>
-              <td class="mono" style="font-weight:600">${F.fmt(contract)}</td>
-              <td>
-                <div class="mono" style="color:var(--success);font-weight:600">${F.fmt(paid)}</div>
-                <div style="height:3px;background:var(--charcoal-border);border-radius:2px;margin-top:4px;width:60px">
-                  <div style="height:100%;background:var(--success);border-radius:2px;width:${paidPct}%;transition:width 0.4s"></div>
-                </div>
-              </td>
-              <td class="mono" style="color:${remaining > 0 ? '#D9B68E' : 'var(--success)'}; font-weight:600">${F.fmt(remaining)}</td>
-              <td style="font-size:11px">${retention > 0 ? `<span style="color:var(--text-muted)">${retention}%</span><br><span class="mono" style="font-size:10px;color:var(--steel-light)">${F.fmt(retentionAmt)}</span>` : '<span style="color:var(--text-muted)">—</span>'}</td>
-              <td><span class="pay-status-badge ${paid >= contract && contract > 0 ? 'pay-paid' : paid > 0 ? 'pay-partial' : 'pay-pending'}">${paid >= contract && contract > 0 ? 'Paid' : paid > 0 ? 'Partial' : 'Pending'}</span></td>
-              <td>
-                <div style="display:flex;gap:4px">
-                  <button class="btn-icon-sm" onclick="Phases.showEditSubModal('${s.id}')" title="Edit">${Icons.render('pencil', 12)}</button>
-                  <button class="delete-row-btn" onclick="Phases.deleteSub('${s.id}')" title="Delete">${Icons.render('trash', 12)}</button>
-                </div>
-              </td>
-            </tr>`;
-            }).join('')}
-          </tbody>
-        </table>`}
+          <div style="margin-bottom:12px;opacity:0.5;color:var(--text-muted)">${Icons.render('userCircle', 36)}</div>
+          <div style="font-size:14px;color:var(--text-muted);margin-bottom:6px">No subcontractors added yet</div>
+          <div style="font-size:12px;color:var(--text-muted)">Add trades to track contracts, payments, and balances</div>
+        ` : subs.map(s => {
+          const contract  = F.parseNum(s.contract);
+          const paid      = F.parseNum(s.paid);
+          const retention = F.parseNum(s.retention_pct || 0);
+          const retAmt    = contract * (retention / 100);
+          const remaining = contract - paid;
+          const paidPct   = contract > 0 ? Math.round((paid / contract) * 100) : 0;
+          const isPaid    = paid >= contract && contract > 0;
+          const isPartial = !isPaid && paid > 0;
+          const badgeCls  = isPaid ? 'pay-paid' : isPartial ? 'pay-partial' : 'pay-pending';
+          const badgeTxt  = isPaid ? 'Paid' : isPartial ? 'Partial' : 'Pending';
+          return `
+          <div class="sub-card">
+            <div class="sub-card-top">
+              <div class="sub-card-identity">
+                <div class="sub-card-name">${escapeHtml(s.name || '—')}</div>
+                ${s.trade ? `<div class="sub-card-trade">${escapeHtml(s.trade)}</div>` : ''}
+              </div>
+              <div style="display:flex;align-items:center;gap:8px;flex-shrink:0">
+                <span class="pay-status-badge ${badgeCls}">${badgeTxt}</span>
+                <button class="btn-icon-sm" onclick="Phases.showEditSubModal('${s.id}')" title="Edit">${Icons.render('pencil', 13)}</button>
+                <button class="delete-row-btn" onclick="Phases.deleteSub('${s.id}')" title="Delete">${Icons.render('trash', 13)}</button>
+              </div>
+            </div>
+            ${(s.phone || s.email || s.phase) ? `
+            <div class="sub-card-meta">
+              ${s.phase ? `<span class="sub-card-chip">${s.phase}</span>` : ''}
+              ${s.phone ? `<span class="sub-card-contact">${Icons.render('phone', 10)} ${escapeHtml(s.phone)}</span>` : ''}
+              ${s.email ? `<span class="sub-card-contact">${Icons.render('mail', 10)} ${escapeHtml(s.email)}</span>` : ''}
+            </div>` : ''}
+            <div class="sub-card-financials">
+              <div class="sub-card-fin-item">
+                <div class="sub-card-fin-label">Contract</div>
+                <div class="sub-card-fin-value">${F.fmt(contract)}</div>
+              </div>
+              <div class="sub-card-fin-item">
+                <div class="sub-card-fin-label">Paid</div>
+                <div class="sub-card-fin-value" style="color:var(--success)">${F.fmt(paid)}</div>
+              </div>
+              <div class="sub-card-fin-item">
+                <div class="sub-card-fin-label">Balance</div>
+                <div class="sub-card-fin-value" style="color:${remaining > 0 ? '#D9B68E' : 'var(--success)'}">${F.fmt(remaining)}</div>
+              </div>
+              ${retention > 0 ? `
+              <div class="sub-card-fin-item">
+                <div class="sub-card-fin-label">Retention ${retention}%</div>
+                <div class="sub-card-fin-value" style="color:var(--text-muted)">${F.fmt(retAmt)}</div>
+              </div>` : ''}
+            </div>
+            <div class="sub-card-progress">
+              <div class="sub-card-progress-bar">
+                <div style="height:100%;background:var(--success);border-radius:3px;width:${paidPct}%;transition:width 0.4s"></div>
+              </div>
+              <span class="sub-card-progress-label">${paidPct}% paid</span>
+            </div>
+            ${s.notes ? `<div class="sub-card-notes">${escapeHtml(s.notes)}</div>` : ''}
+          </div>`;
+        }).join('')}
       </div>
     </div>
 
@@ -2144,52 +2207,83 @@ const Phases = (() => {
       <div class="section-card-body" id="sc-sub-notes">
         ${subs.filter(s => s.notes).map(s => `
           <div style="display:flex;gap:12px;padding:8px 0;border-bottom:1px solid var(--charcoal-border)">
-            <strong style="min-width:120px;font-size:12px;color:var(--amber)">${s.name}</strong>
-            <span style="font-size:12px;color:var(--text-secondary)">${s.notes}</span>
+            <strong style="min-width:120px;font-size:12px;color:var(--amber)">${escapeHtml(s.name)}</strong>
+            <span style="font-size:12px;color:var(--text-secondary)">${escapeHtml(s.notes)}</span>
           </div>
         `).join('')}
       </div>
     </div>` : ''}`;
   }
-
   function showAddSubModal(editId) {
     const proj = State.getCurrentProject();
     const existing = editId && proj ? proj.subcontractors.find(s => s.id === editId) : null;
     const isEdit = !!existing;
-    
-    const modal = document.createElement('div');
-    modal.className = 'project-wizard';
-    modal.id = 'sub-modal';
-    modal.innerHTML = `
-    <div class="wizard-container" style="width:520px">
-      <div class="wizard-header"><h2>${isEdit ? 'Edit' : 'Add'} Subcontractor / Trade</h2></div>
-      <div style="padding:24px">
-        <div class="field-row cols-2">
-          <div class="field-group"><label class="field-label">Company / Name *</label><input class="field-input" id="sm-name" placeholder="ABC Electrical LLC" value="${existing?.name || ''}"></div>
-          <div class="field-group"><label class="field-label">Trade</label><input class="field-input" id="sm-trade" placeholder="Electrical" value="${existing?.trade || ''}"></div>
+
+    const phaseOptions = [
+      'Phase 1 - Pre-Construction','Phase 2 - Site & Foundation','Phase 3 - Framing',
+      'Phase 4 - MEP Rough-In','Phase 5 - Insulation & Drywall','Phase 6 - Finishes',
+      'Phase 7 - Final MEP','Phase 8 - Punch List','Phase 9 - Interior'
+    ].map(p => `<option${existing?.phase === p ? ' selected' : ''}>${p}</option>`).join('');
+
+    App.showModal(`
+      <h3 class="modal-title" style="margin:0 0 18px;font-size:16px;font-weight:700;display:flex;align-items:center;gap:8px">
+        ${Icons.render('users', 16)} ${isEdit ? 'Edit' : 'Add'} Subcontractor / Trade
+      </h3>
+
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px">
+        <div>
+          <label class="modal-label">Company / Name *</label>
+          <input class="modal-input" id="sm-name" placeholder="ABC Electrical" value="${existing?.name || ''}">
         </div>
-        <div class="field-row cols-2">
-          <div class="field-group"><label class="field-label">Phone</label><input class="field-input" id="sm-phone" placeholder="+91 9876543210" value="${existing?.phone || ''}"></div>
-          <div class="field-group"><label class="field-label">Email</label><input class="field-input" id="sm-email" placeholder="abc@email.com" value="${existing?.email || ''}"></div>
+        <div>
+          <label class="modal-label">Trade</label>
+          <input class="modal-input" id="sm-trade" placeholder="Electrical" value="${existing?.trade || ''}">
         </div>
-        <div class="field-row cols-2">
-          <div class="field-group"><label class="field-label">Phase</label><select class="field-select" id="sm-phase">
-            ${['Phase 1 - Pre-Construction','Phase 2 - Site & Foundation','Phase 3 - Framing','Phase 4 - MEP Rough-In','Phase 5 - Insulation & Drywall','Phase 6 - Finishes','Phase 7 - Final MEP','Phase 8 - Punch List','Phase 9 - Interior'].map(p => `<option ${existing?.phase === p ? 'selected' : ''}>${p}</option>`).join('')}
-          </select></div>
-          <div class="field-group"><label class="field-label">Contract Amount</label><div class="currency-input-wrap"><span class="currency-symbol">₹</span><input class="field-input mono" type="number" id="sm-contract" placeholder="0" value="${existing?.contract || ''}"></div></div>
-        </div>
-        <div class="field-row cols-2">
-          <div class="field-group"><label class="field-label">Amount Paid To Date</label><div class="currency-input-wrap"><span class="currency-symbol">₹</span><input class="field-input mono" type="number" id="sm-paid" placeholder="0" value="${existing?.paid || ''}"></div></div>
-          <div class="field-group"><label class="field-label">Retention %</label><input class="field-input mono" type="number" id="sm-retention" placeholder="0" min="0" max="100" value="${existing?.retention_pct || ''}"><div style="font-size:9px;color:var(--text-muted);margin-top:4px">Held back until completion</div></div>
-        </div>
-        <div class="field-group"><label class="field-label">Notes</label><input class="field-input" id="sm-notes" placeholder="Payment terms, contact details, scope notes…" value="${existing?.notes || ''}"></div>
       </div>
-      <div class="wizard-nav">
-        <button class="btn-ghost" onclick="document.getElementById('sub-modal').remove()">Cancel</button>
-        <button class="btn-primary" onclick="Phases.saveSub('${editId || ''}')">${isEdit ? 'Update' : 'Save'}</button>
+
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px">
+        <div>
+          <label class="modal-label">Phone</label>
+          <input class="modal-input" id="sm-phone" placeholder="+91 98765 43210" value="${existing?.phone || ''}">
+        </div>
+        <div>
+          <label class="modal-label">Email</label>
+          <input class="modal-input" id="sm-email" placeholder="abc@email.com" value="${existing?.email || ''}">
+        </div>
       </div>
-    </div>`;
-    document.body.appendChild(modal);
+
+      <div style="margin-bottom:12px">
+        <label class="modal-label">Phase</label>
+        <select class="modal-input" id="sm-phase" style="appearance:auto">${phaseOptions}</select>
+      </div>
+
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px">
+        <div>
+          <label class="modal-label">Contract Amount (₹)</label>
+          <input class="modal-input" id="sm-contract" type="number" placeholder="0" value="${existing?.contract || ''}" style="font-family:var(--font-mono)">
+        </div>
+        <div>
+          <label class="modal-label">Amount Paid (₹)</label>
+          <input class="modal-input" id="sm-paid" type="number" placeholder="0" value="${existing?.paid || ''}" style="font-family:var(--font-mono)">
+        </div>
+      </div>
+
+      <div style="margin-bottom:12px">
+        <label class="modal-label">Retention %</label>
+        <input class="modal-input" id="sm-retention" type="number" placeholder="0" min="0" max="100" value="${existing?.retention_pct || ''}" style="font-family:var(--font-mono)">
+        <div style="font-size:10px;color:var(--text-muted);margin-top:3px">% held back until project completion</div>
+      </div>
+
+      <div style="margin-bottom:20px">
+        <label class="modal-label">Notes</label>
+        <input class="modal-input" id="sm-notes" placeholder="Payment terms, scope, contact notes…" value="${existing?.notes || ''}">
+      </div>
+
+      <div style="display:flex;gap:10px;justify-content:flex-end">
+        <button class="btn-ghost" onclick="App.closeModal()">Cancel</button>
+        <button class="btn-primary" onclick="Phases.saveSub('${editId || ''}')">${isEdit ? 'Update Trade' : 'Save Trade'}</button>
+      </div>
+    `);
   }
 
   function showEditSubModal(id) {
@@ -2219,7 +2313,7 @@ const Phases = (() => {
     } else {
       State.addSubcontractor(sub);
     }
-    document.getElementById('sub-modal')?.remove();
+    App.closeModal();
     App.showSubLedger();
   }
 
@@ -2459,7 +2553,7 @@ const Phases = (() => {
               <option ${r.prep_type==='Vapor Barrier'?'selected':''}>Vapor Barrier</option>
             </select></div>
         </div>
-        <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;margin-bottom:10px">
+        <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:10px;margin-bottom:10px">
           <div><div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:var(--text-muted);margin-bottom:4px">Moisture %</div>
             <input type="number" value="${r.moisture_pct||''}" step="0.1" min="0" max="100" placeholder="0.0" oninput="Phases.updateGenRowData(10,'floor_prep_rows',${i},'moisture_pct',this.value)" style="${monoStyle}"></div>
           <div><div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:var(--text-muted);margin-bottom:4px">Labor (hrs)</div>
@@ -2510,7 +2604,7 @@ const Phases = (() => {
               <option ${r.material==='Carpet Tile'?'selected':''}>Carpet Tile</option>
             </select></div>
         </div>
-        <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;margin-bottom:10px">
+        <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:10px;margin-bottom:10px">
           <div><div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:var(--text-muted);margin-bottom:4px">Coverage (sqft)</div>
             <input type="number" value="${r.coverage_sqft||''}" min="0" step="any" placeholder="0" oninput="Phases.updateGenRowData(10,'flooring_int_rows',${i},'coverage_sqft',this.value);Financial.scheduleUpdate()" style="${monoStyle}"></div>
           <div><div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:var(--text-muted);margin-bottom:4px">Waste %</div>
@@ -2518,7 +2612,7 @@ const Phases = (() => {
           <div><div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:var(--text-muted);margin-bottom:4px">Plank W (in)</div>
             <input type="number" value="${r.plank_width||''}" min="0" step="0.125" placeholder="0" oninput="Phases.updateGenRowData(10,'flooring_int_rows',${i},'plank_width',this.value)" style="${monoStyle}"></div>
         </div>
-        <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;margin-bottom:10px">
+        <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:10px;margin-bottom:10px">
           <div><div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:var(--text-muted);margin-bottom:4px">Price/sqft</div>
             <input type="number" value="${r.price||''}" min="0" step="any" placeholder="0" oninput="Phases.updateGenRowData(10,'flooring_int_rows',${i},'price',this.value);Financial.scheduleUpdate()" style="${monoStyle}"></div>
           <div><div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:var(--text-muted);margin-bottom:4px">Labor/sqft</div>
@@ -2760,7 +2854,7 @@ const Phases = (() => {
           <div><div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:var(--text-muted);margin-bottom:4px">Color Code / Sheen</div>
             <input type="text" value="${r.color_code||''}" placeholder="SW 7015 / Eggshell" oninput="Phases.updateGenRowData(10,'paint_coat_rows',${i},'color_code',this.value)" style="${iStyle}"></div>
         </div>
-        <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;margin-bottom:10px">
+        <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:10px;margin-bottom:10px">
           <div><div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:var(--text-muted);margin-bottom:4px">Sq Ft</div>
             <input type="number" value="${r.sqft||''}" min="0" step="any" placeholder="0" oninput="Phases.updateGenRowData(10,'paint_coat_rows',${i},'sqft',this.value);Phases.recomputePrimerGallons();Financial.scheduleUpdate()" style="${monoStyle}"></div>
           <div><div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:var(--text-muted);margin-bottom:4px">Coats</div>
@@ -2822,7 +2916,7 @@ const Phases = (() => {
               <option ${r.type==='Backsplash Glass'?'selected':''}>Backsplash Glass</option>
             </select></div>
         </div>
-        <div style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:10px;margin-bottom:10px">
+        <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:10px;margin-bottom:10px">
           <div><div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:var(--text-muted);margin-bottom:4px">W (in)</div>
             <input type="number" value="${r.width||''}" min="0" step="0.25" placeholder="0" oninput="Phases.updateGenRowData(10,'glass_rows',${i},'width',this.value)" style="${monoStyle}"></div>
           <div><div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:var(--text-muted);margin-bottom:4px">H (in)</div>
@@ -2874,7 +2968,7 @@ const Phases = (() => {
           <div><div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:var(--text-muted);margin-bottom:4px">Vendor / Source</div>
             <input type="text" value="${r.vendor||''}" placeholder="Vendor / Source" oninput="Phases.updateGenRowData(10,'fixture_int_rows',${i},'vendor',this.value)" style="${iStyle}"></div>
         </div>
-        <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;margin-bottom:10px">
+        <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:10px;margin-bottom:10px">
           <div><div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:var(--text-muted);margin-bottom:4px">Qty</div>
             <input type="number" value="${r.qty||1}" min="1" oninput="Phases.updateGenRowData(10,'fixture_int_rows',${i},'qty',this.value);Financial.scheduleUpdate()" style="${monoStyle}"></div>
           <div><div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:var(--text-muted);margin-bottom:4px">Unit Price</div>
@@ -2904,7 +2998,7 @@ const Phases = (() => {
   function addFixtureIntRow() { addGenRow(10, 'fixture_int_rows', 'fixture-rows', renderFixtureIntRows); }
 
   return {
-    toggleSection, setCompletion, phaseHeader, iconFor,
+    toggleSection, setCompletion, autoSuggestCompletion, updateAutoSuggestButton, phaseHeader, iconFor,
     addPermitRow, deletePermitRow, updatePermit,
     // 9 trade-based construction phases
     renderTradePhase1, renderTradePhase2, renderTradePhase3,
