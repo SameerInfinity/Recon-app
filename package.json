@@ -12,7 +12,10 @@
     "cap:open:android": "npx cap open android",
     "cap:run:android": "npx cap run android",
     "cap:build:android": "npx cap build android",
-    "dev:android": "node scripts/setup-livereload.js"
+    "dev:android": "node scripts/setup-livereload.js",
+    "build:android": "node scripts/build-native-config.js && npx cap sync android",
+    "deploy:functions": "supabase functions deploy ai-chat --no-verify-jwt && supabase functions deploy delete-user",
+    "functions:serve": "supabase functions serve"
   },
   "dependencies": {
     "@capacitor/android": "^8.4.0",

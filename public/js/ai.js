@@ -360,8 +360,10 @@ const AI = (() => {
     addMessage('info', 'bot', 'Build Assistant', `<span id="${thinkId}" class="ai-thinking-dots">Thinking<span>.</span><span>.</span><span>.</span></span>`, []);
 
     try {
-      // Call server proxy (API key is server-side)
-      const chatApiUrl = (window.CapacitorBridge ? CapacitorBridge.API_BASE : '') + '/api/ai/chat';
+      // Call AI proxy. On native (Capacitor) this hits the Supabase Edge
+      // Function; on web it hits the Render /api/ai/chat route. Either way
+      // the API key stays server-side. Resolver lives in supabase-client.js.
+      const chatApiUrl = SupabaseClient.getAiChatUrl();
       const response = await fetch(chatApiUrl, {
         method: 'POST',
         headers: {

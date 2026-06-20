@@ -14,29 +14,56 @@ const SupabaseClient = (() => {
   async function init() {
     try {
       let config = null;
-      try {
-        // Fetch config from server (reads from .env)
-        // In Capacitor (local assets), use the production server URL
-        const configUrl = (window.CapacitorBridge ? CapacitorBridge.API_BASE : '') + '/api/config';
-        const res = await fetch(configUrl);
-        if (res.ok) {
-          config = await res.json();
-          // Cache for offline PWA support (sessionStorage — cleared on tab close)
-          sessionStorage.setItem('recon_supabase_config', JSON.stringify(config));
-        } else {
-          throw new Error('API config route returned ' + res.status);
+      const isNative = !!(window.CapacitorBridge && CapacitorBridge.isNative);
+
+      // ── NATIVE (Capacitor): read the bundled app-config.json FIRST ──
+      // The standalone Android APK must never depend on the Render server
+      // to bootstrap. app-config.json is generated at build time from .env
+      // (see scripts/build-native-config.js) and bundled into the APK. It
+      // contains only the already-public anon key + project URL, so there
+      // is no secret leak — see CONTEXT.md §2 (standalone architecture).
+      if (isNative) {
+        try {
+          console.log('[Supabase] Native build — loading bundled app-config.json');
+          const res = await fetch('app-config.json', { cache: 'no-store' });
+          if (res.ok) {
+            config = await res.json();
+            sessionStorage.setItem('recon_supabase_config', JSON.stringify(config));
+          } else {
+            console.warn('[Supabase] app-config.json returned', res.status, '— falling back to server config');
+          }
+        } catch (bundleErr) {
+          console.warn('[Supabase] Bundled app-config.json missing:', bundleErr.message, '— falling back to server config');
         }
-      } catch (fetchErr) {
-        // Network offline or API unreachable, fallback to cached config, then hardcoded credentials for standalone builds
-        console.warn('[Supabase] Config fetch failed, attempting to use cached config / hardcoded credentials');
-        const cached = sessionStorage.getItem('recon_supabase_config');
-        if (cached) {
-          config = JSON.parse(cached);
-        } else {
-          // No cached config available and the server is unreachable.
-          // Do NOT fall back to hardcoded production credentials —
-          // they would leak the project ref into version control.
-          console.warn('[Supabase] Offline and no cached config — will surface "no credentials" state to UI.');
+      }
+
+      // ── WEB, or NATIVE without a bundled config: fetch /api/config ──
+      // In Capacitor (local assets), CapacitorBridge.API_BASE is the
+      // production Render URL. In a browser it's '' (same-origin).
+      if (!config) {
+        try {
+          const configUrl = (window.CapacitorBridge ? CapacitorBridge.API_BASE : '') + '/api/config';
+          console.log('[Supabase] Fetching config from:', configUrl, '| isNative:', isNative);
+          const res = await fetch(configUrl);
+          console.log('[Supabase] Config response status:', res.status, res.ok);
+          if (res.ok) {
+            config = await res.json();
+            sessionStorage.setItem('recon_supabase_config', JSON.stringify(config));
+          } else {
+            throw new Error('API config route returned ' + res.status);
+          }
+        } catch (fetchErr) {
+          // Network offline or API unreachable — try the cached config.
+          console.warn('[Supabase] Config fetch FAILED:', fetchErr.message || fetchErr);
+          const cached = sessionStorage.getItem('recon_supabase_config');
+          if (cached) {
+            config = JSON.parse(cached);
+          } else {
+            // No cached config and the server is unreachable.
+            // Do NOT fall back to hardcoded production credentials —
+            // they would leak the project ref into version control.
+            console.warn('[Supabase] Offline and no cached config — will surface "no credentials" state to UI.');
+          }
         }
       }
 
@@ -337,8 +364,7 @@ const SupabaseClient = (() => {
     const { data: { session } } = await _supabase.auth.getSession();
     if (!session?.access_token) throw new Error('No active session');
 
-    const deleteUrl = (window.CapacitorBridge ? CapacitorBridge.API_BASE : '') + '/api/user/delete';
-    const res = await fetch(deleteUrl, {
+    const res = await fetch(getDeleteUserUrl(), {
       method: 'POST',
       headers: {
         'Authorization': `Bearer ${session.access_token}`,
@@ -349,6 +375,29 @@ const SupabaseClient = (() => {
     const data = await res.json();
     if (!res.ok) throw new Error(data.message || 'Failed to delete account');
     return data;
+  }
+
+  // ── Endpoint resolvers: native → Supabase Edge Function, web → Render ──
+  // This is the single switch-point that makes the Android app standalone.
+  // Native uses the bundled Supabase URL (read from app-config.json);
+  // web keeps using the existing Render endpoints (unchanged behavior).
+  // To migrate the web app off Render later, just drop the isNative branch.
+  function _isNativeEnv() {
+    return !!(window.CapacitorBridge && CapacitorBridge.isNative);
+  }
+
+  function getAiChatUrl() {
+    if (_config && _config.supabaseUrl && _isNativeEnv()) {
+      return _config.supabaseUrl + '/functions/v1/ai-chat';
+    }
+    return (window.CapacitorBridge ? CapacitorBridge.API_BASE : '') + '/api/ai/chat';
+  }
+
+  function getDeleteUserUrl() {
+    if (_config && _config.supabaseUrl && _isNativeEnv()) {
+      return _config.supabaseUrl + '/functions/v1/delete-user';
+    }
+    return (window.CapacitorBridge ? CapacitorBridge.API_BASE : '') + '/api/user/delete';
   }
 
   // Guard: redirect to auth if not logged in
@@ -378,5 +427,7 @@ const SupabaseClient = (() => {
     resetPassword,
     deleteUser,
     requireAuth,
+    getAiChatUrl,
+    getDeleteUserUrl,
   };
 })();

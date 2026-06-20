@@ -10,6 +10,11 @@ yarn-error.log*
 .env.local
 .env.*.local
 
+# ── Bundled native app config (generated from .env by scripts/build-native-config.js) ──
+# Contains the anon key + project URL (already public via /api/config) but kept out of
+# git to avoid storing the project ref in history (GAP-01 lesson).
+public/app-config.json
+
 # ── OS files ───────────────────────────────
 .DS_Store
 Thumbs.db

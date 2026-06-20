@@ -80,7 +80,9 @@ Schema:
       ]
     };
 
-    const chatApiUrl = (window.CapacitorBridge ? CapacitorBridge.API_BASE : '') + '/api/ai/chat';
+    // Native → Supabase Edge Function, web → Render proxy. The API key
+    // never reaches the client. See supabase-client.js getAiChatUrl().
+    const chatApiUrl = SupabaseClient.getAiChatUrl();
     const res = await fetch(chatApiUrl, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
