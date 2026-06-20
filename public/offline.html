@@ -1,0 +1,100 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <meta name="theme-color" content="#1C1917">
+  <title>RECON — Offline</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      font-family: -apple-system, system-ui, 'Segoe UI', sans-serif;
+      background: #1C1917;
+      color: #E7E5E4;
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 24px;
+    }
+    .container {
+      text-align: center;
+      max-width: 360px;
+    }
+    .icon {
+      width: 80px; height: 80px;
+      margin: 0 auto 24px;
+      background: #292524;
+      border-radius: 24px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    .icon svg {
+      width: 40px; height: 40px;
+      stroke: #B47A3C;
+      fill: none;
+      stroke-width: 2;
+      stroke-linecap: round;
+      stroke-linejoin: round;
+    }
+    h1 {
+      font-size: 22px;
+      font-weight: 700;
+      margin-bottom: 12px;
+      color: #FAFAF9;
+    }
+    p {
+      font-size: 15px;
+      line-height: 1.6;
+      color: #A8A29E;
+      margin-bottom: 24px;
+    }
+    .retry-btn {
+      display: inline-block;
+      padding: 14px 32px;
+      background: #B47A3C;
+      color: #fff;
+      font-size: 15px;
+      font-weight: 600;
+      border: none;
+      border-radius: 16px;
+      cursor: pointer;
+      transition: background 0.2s;
+    }
+    .retry-btn:hover { background: #96622E; }
+    .retry-btn:active { transform: scale(0.97); }
+    .note {
+      margin-top: 20px;
+      font-size: 13px;
+      color: #78716C;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="icon">
+      <svg viewBox="0 0 24 24">
+        <line x1="2" y1="2" x2="22" y2="22"/>
+        <path d="M8.5 16.5a5 5 0 0 1 7 0"/>
+        <path d="M2 8.82a15 15 0 0 1 4.17-2.64"/>
+        <path d="M12 4a15.3 15.3 0 0 1 4.17 2.18"/>
+        <line x1="1" y1="1" x2="23" y2="23"/>
+      </svg>
+    </div>
+    <h1>You're Offline</h1>
+    <p>RECON needs an internet connection for your first login. Once you've logged in, you can use the app offline — your data will sync when you're back online.</p>
+    <button class="retry-btn" onclick="tryAgain()">Try Again</button>
+    <p class="note">Check your Wi-Fi or mobile data and try again.</p>
+  </div>
+  <script>
+    function tryAgain() {
+      window.location.reload();
+    }
+    // Auto-retry when coming back online
+    window.addEventListener('online', () => {
+      window.location.href = '/auth.html';
+    });
+  </script>
+</body>
+</html>

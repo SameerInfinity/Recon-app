@@ -361,7 +361,8 @@ const AI = (() => {
 
     try {
       // Call server proxy (API key is server-side)
-      const response = await fetch('/api/ai/chat', {
+      const chatApiUrl = (window.CapacitorBridge ? CapacitorBridge.API_BASE : '') + '/api/ai/chat';
+      const response = await fetch(chatApiUrl, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',

@@ -16,7 +16,9 @@ const SupabaseClient = (() => {
       let config = null;
       try {
         // Fetch config from server (reads from .env)
-        const res = await fetch('/api/config');
+        // In Capacitor (local assets), use the production server URL
+        const configUrl = (window.CapacitorBridge ? CapacitorBridge.API_BASE : '') + '/api/config';
+        const res = await fetch(configUrl);
         if (res.ok) {
           config = await res.json();
           // Cache for offline PWA support (sessionStorage — cleared on tab close)
@@ -62,14 +64,14 @@ const SupabaseClient = (() => {
           console.log('[Auth] Signed in:', _user.email);
           // If on auth page, redirect to app
           if (window.location.pathname.includes('auth.html')) {
-            window.location.href = '/';
+            window.location.href = window.CapacitorBridge && CapacitorBridge.isNative ? '/index.html' : '/';
           }
         }
 
         if (event === 'SIGNED_OUT') {
           console.log('[Auth] Signed out');
           _user = null;
-          window.location.href = '/auth.html';
+          window.location.href = window.CapacitorBridge && CapacitorBridge.isNative ? '/auth.html' : '/auth.html';
         }
       });
 
@@ -99,7 +101,8 @@ const SupabaseClient = (() => {
           if (_supabase) {
             try { await _supabase.auth.signOut(); } catch(e){}
           }
-          window.location.href = '/auth.html?expired=1';
+          const authPath = window.CapacitorBridge && CapacitorBridge.isNative ? '/auth.html' : '/auth.html';
+          window.location.href = authPath + '?expired=1';
         }
         return response;
       };
@@ -334,7 +337,8 @@ const SupabaseClient = (() => {
     const { data: { session } } = await _supabase.auth.getSession();
     if (!session?.access_token) throw new Error('No active session');
 
-    const res = await fetch('/api/user/delete', {
+    const deleteUrl = (window.CapacitorBridge ? CapacitorBridge.API_BASE : '') + '/api/user/delete';
+    const res = await fetch(deleteUrl, {
       method: 'POST',
       headers: {
         'Authorization': `Bearer ${session.access_token}`,

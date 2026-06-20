@@ -50,9 +50,10 @@ app.use(helmet({
 const ALLOWED_ORIGINS = [
   'http://localhost:8080',
   'http://localhost:3000',
-  'http://localhost',      // Android local assets origin
-  'capacitor://localhost', // iOS Capacitor local assets origin
-  'ionic://localhost',     // Ionic iOS local assets origin
+  'http://localhost',       // Capacitor Android (http scheme)
+  'https://localhost',      // Capacitor Android (https scheme — default for Capacitor 5+)
+  'capacitor://localhost',  // iOS Capacitor local assets origin
+  'ionic://localhost',      // Ionic iOS local assets origin
 ];
 if (process.env.PRODUCTION_URL) {
   // Accept a comma-separated list so apex + www + CDN domains can all be allowed.
@@ -386,10 +387,10 @@ app.get('*', (req, res) => {
 async function start() {
   await initRateLimiter();
 
-  // GAP-08: in production bind to loopback only — a reverse proxy handles external traffic.
-  // In dev we keep 0.0.0.0 so mobile devices on the same WiFi can reach the server.
+  // Cloud hosts (Render, Railway, Fly.io) require binding to 0.0.0.0
+  // so their external proxy can forward traffic to the app.
+  // We still trust the proxy (set above) so req.ip reflects the real client.
   const HOST = '0.0.0.0';
-  
   app.listen(PORT, HOST, () => {
     console.log('');
     console.log('  ╔══════════════════════════════════════╗');

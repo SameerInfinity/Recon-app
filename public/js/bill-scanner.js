@@ -80,7 +80,8 @@ Schema:
       ]
     };
 
-    const res = await fetch('/api/ai/chat', {
+    const chatApiUrl = (window.CapacitorBridge ? CapacitorBridge.API_BASE : '') + '/api/ai/chat';
+    const res = await fetch(chatApiUrl, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload)
