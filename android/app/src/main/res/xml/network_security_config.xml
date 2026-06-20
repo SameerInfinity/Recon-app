@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="utf-8"?>
+<network-security-config>
+    <!-- Allow cleartext (HTTP) for local development -->
+    <domain-config cleartextTrafficPermitted="true">
+        <domain includeSubdomains="true">localhost</domain>
+        <domain includeSubdomains="true">10.0.0.0</domain>
+        <domain includeSubdomains="true">192.168.0.0</domain>
+    </domain-config>
+
+    <!-- Production endpoints — HTTPS only -->
+    <domain-config cleartextTrafficPermitted="false">
+        <domain includeSubdomains="true">onrender.com</domain>
+        <domain includeSubdomains="true">supabase.co</domain>
+        <domain includeSubdomains="true">googleapis.com</domain>
+        <domain includeSubdomains="true">googleusercontent.com</domain>
+        <domain includeSubdomains="true">jsdelivr.net</domain>
+        <domain includeSubdomains="true">cloudflare.com</domain>
+        <domain includeSubdomains="true">gstatic.com</domain>
+    </domain-config>
+</network-security-config>
