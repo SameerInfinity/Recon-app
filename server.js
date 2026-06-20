@@ -388,7 +388,8 @@ async function start() {
 
   // GAP-08: in production bind to loopback only — a reverse proxy handles external traffic.
   // In dev we keep 0.0.0.0 so mobile devices on the same WiFi can reach the server.
-  const HOST = IS_PRODUCTION ? '127.0.0.1' : '0.0.0.0';
+  const HOST = '0.0.0.0';
+  
   app.listen(PORT, HOST, () => {
     console.log('');
     console.log('  ╔══════════════════════════════════════╗');
