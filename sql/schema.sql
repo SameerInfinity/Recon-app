@@ -55,7 +55,7 @@ CREATE INDEX IF NOT EXISTS idx_projects_user_id ON public.projects(user_id);
 
 
 -- ── 3. PHASES ──────────────────────────────────────
--- phase_number: 1–9 = nine trade phases, 10 = Interior, 11 = Electrical Supply, 12+ = custom
+-- phase_number: 1–9 = nine trade phases, 10 = Interior
 -- data: JSONB blob — stores all line items for the phase.
 -- NOTE: The app serialises data via JSON.stringify() before
 --       sending to Supabase. The default here is the literal
@@ -64,7 +64,7 @@ CREATE INDEX IF NOT EXISTS idx_projects_user_id ON public.projects(user_id);
 CREATE TABLE IF NOT EXISTS public.phases (
   id            UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   project_id    UUID NOT NULL REFERENCES public.projects(id) ON DELETE CASCADE,
-  phase_number  INTEGER NOT NULL CHECK (phase_number >= 1),
+  phase_number  INTEGER NOT NULL CHECK (phase_number BETWEEN 1 AND 12),
   name          TEXT NOT NULL,
   icon          TEXT DEFAULT 'listChecks',
   completion    INTEGER DEFAULT 0 CHECK (completion BETWEEN 0 AND 100),
@@ -261,34 +261,28 @@ CREATE TRIGGER set_updated_at BEFORE UPDATE ON public.labour
 
 -- ── 8. VENDORS (Udhaar / Credit Khata) ──────────────────────
 CREATE TABLE IF NOT EXISTS public.vendors (
-  id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  project_id      UUID NOT NULL REFERENCES public.projects(id) ON DELETE CASCADE,
-  name            TEXT NOT NULL,
-  shop_name       TEXT DEFAULT '',
-  phone           TEXT DEFAULT '',
-  balance         NUMERIC DEFAULT 0,
-  total_amount    NUMERIC DEFAULT 0,
-  paid_amount     NUMERIC DEFAULT 0,
-  opening_balance NUMERIC DEFAULT 0,
-  notes           TEXT DEFAULT '',
-  created_at      TIMESTAMPTZ DEFAULT NOW(),
-  updated_at      TIMESTAMPTZ DEFAULT NOW()
+  id            UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  project_id    UUID NOT NULL REFERENCES public.projects(id) ON DELETE CASCADE,
+  name          TEXT NOT NULL,
+  shop_name     TEXT DEFAULT '',
+  phone         TEXT DEFAULT '',
+  balance       NUMERIC DEFAULT 0,
+  notes         TEXT DEFAULT '',
+  created_at    TIMESTAMPTZ DEFAULT NOW(),
+  updated_at    TIMESTAMPTZ DEFAULT NOW()
 );
 
 CREATE INDEX IF NOT EXISTS idx_vendors_project_id ON public.vendors(project_id);
 
 CREATE TABLE IF NOT EXISTS public.vendor_transactions (
-  id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  project_id      UUID NOT NULL REFERENCES public.projects(id) ON DELETE CASCADE,
-  vendor_id       UUID NOT NULL REFERENCES public.vendors(id) ON DELETE CASCADE,
-  txn_date        DATE NOT NULL,
-  type            TEXT NOT NULL CHECK (type IN ('debit', 'credit')),
-  amount          NUMERIC NOT NULL DEFAULT 0,
-  total_amount    NUMERIC DEFAULT 0,
-  paid_amount     NUMERIC DEFAULT 0,
-  remaining_amount NUMERIC DEFAULT 0,
-  description     TEXT DEFAULT '',
-  created_at      TIMESTAMPTZ DEFAULT NOW()
+  id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  project_id  UUID NOT NULL REFERENCES public.projects(id) ON DELETE CASCADE,
+  vendor_id   UUID NOT NULL REFERENCES public.vendors(id) ON DELETE CASCADE,
+  txn_date    DATE NOT NULL,
+  type        TEXT NOT NULL CHECK (type IN ('debit', 'credit')),
+  amount      NUMERIC NOT NULL DEFAULT 0,
+  description TEXT DEFAULT '',
+  created_at  TIMESTAMPTZ DEFAULT NOW()
 );
 
 CREATE INDEX IF NOT EXISTS idx_vendor_txns_project_id ON public.vendor_transactions(project_id);
@@ -432,7 +426,6 @@ CREATE TABLE IF NOT EXISTS public.site_photos (
   category    TEXT DEFAULT '',
   image_url   TEXT DEFAULT '',
   thumbnail   TEXT DEFAULT '',
-  media_type  TEXT DEFAULT 'photo' CHECK (media_type IN ('photo', 'video')),
   taken_at    TIMESTAMPTZ DEFAULT NOW(),
   created_at  TIMESTAMPTZ DEFAULT NOW(),
   updated_at  TIMESTAMPTZ DEFAULT NOW()

@@ -175,36 +175,14 @@
 
   // ── 3-Card Hub for every trade phase ──────────────────────
   // replaces renderTradeHub
-  // hasSupplyDemand: if true, renders a 4th "Supply Demand Charge" card (Change #4)
-  function renderTradeHubNew(phase, materialCards, laborCards, hasSupplyDemand) {
+  function renderTradeHubNew(phase, materialCards, laborCards) {
     const materialTotal = materialCards.reduce((s, c) => s + sumEntries(phase.id, c.id), 0);
     const laborTotal    = laborCards.reduce((s, c)    => s + sumEntries(phase.id, c.id), 0);
     const billTotal     = (State.getBills(phase.id)||[]).reduce((s,b) => s + (parseFloat(b.totalAmount)||0), 0);
-
-    // Supply Demand Charge calculation (Change #4)
-    const sdcData = getSupplyDemandCharge(phase.id);
-    const sdcTotal = (parseFloat(sdcData.monthlyCharge) || 0) * (parseFloat(sdcData.months) || 0);
-
-    const phaseTotal    = materialTotal + laborTotal + billTotal + sdcTotal;
+    const phaseTotal    = materialTotal + laborTotal + billTotal;
     const matCount      = materialCards.reduce((s,c)=>s+getEntries(phase.id,c.id).length,0);
     const labCount      = laborCards.reduce((s,c)=>s+getEntries(phase.id,c.id).length,0);
     const billCount     = (State.getBills(phase.id)||[]).length;
-
-    // Supply Demand Charge card HTML (Change #4)
-    const sdcCardHtml = hasSupplyDemand ? `
-      <!-- Card 3: Supply Demand Charge -->
-      <button class="category-card" onclick="Phases.showSupplyDemandCharge(${phase.id})">
-        <span class="category-card-arrow">${Phases.iconFor('arrowRight',14)}</span>
-        <span class="category-card-icon">${Phases.iconFor('zap',32)}</span>
-        <div class="category-card-name">Supply Demand Charge</div>
-        <div class="category-card-desc">Monthly electricity demand charges from the utility company.</div>
-        <div class="category-card-meta">
-          <div class="category-card-progress">
-            <div class="category-card-progress-label">${sdcData.months || 0} months</div>
-          </div>
-          <div class="category-card-cost" style="color:var(--amber)">${F.fmt(sdcTotal)}</div>
-        </div>
-      </button>` : '';
 
     return `
     <div class="breadcrumb" style="margin-bottom:12px">
@@ -245,8 +223,6 @@
         </div>
       </button>
 
-      ${sdcCardHtml}
-
     </div>
     
     <!-- Running Total Box (moved to bottom) -->
@@ -256,366 +232,6 @@
     </div>
     <div style="display:none"><div id="phase-total-${phase.id}"></div><div id="budget-bar-${phase.id}"></div></div>`;
   }
-
-  // ── Interior Hub with sub-sections (Change #3) ───────────────
-  // Renders interior like construction — shows sub-sections (rooms) first,
-  // then material + labour within each sub-section.
-  function renderInteriorHub(phase, materialCards, laborCards) {
-    const materialTotal = materialCards.reduce((s, c) => s + sumEntries(phase.id, c.id), 0);
-    const laborTotal    = laborCards.reduce((s, c)    => s + sumEntries(phase.id, c.id), 0);
-    const billTotal     = (State.getBills(phase.id)||[]).reduce((s,b) => s + (parseFloat(b.totalAmount)||0), 0);
-    const phaseTotal    = materialTotal + laborTotal + billTotal;
-
-    // Render sub-section cards
-    const subSectionCards = INTERIOR_SUBSECTIONS.map(sub => {
-      const allSubCards = [...(sub.materialCards||[]), ...(sub.laborCards||[])];
-      const subTotal = allSubCards.reduce((s, c) => s + sumEntries(phase.id, c.id), 0);
-      const subEntries = allSubCards.reduce((s, c) => s + getEntries(phase.id, c.id).length, 0);
-      return `
-        <button class="category-card" onclick="Phases.showInteriorSubSection(${phase.id},'${sub.id}')" style="text-align:left">
-          <span class="category-card-arrow">${Phases.iconFor('arrowRight',14)}</span>
-          <span class="category-card-icon">${Phases.iconFor(sub.icon||'sofa',28)}</span>
-          <div class="category-card-name">${escapeHtml(sub.name)}</div>
-          <div class="category-card-desc">${allSubCards.length} categories · ${subEntries} entries</div>
-          <div class="category-card-meta">
-            <div class="category-card-progress-label">${subEntries} entries</div>
-            <div class="category-card-cost" style="color:var(--amber)">${F.fmt(subTotal)}</div>
-          </div>
-        </button>`;
-    }).join('');
-
-    return `
-    <div class="breadcrumb" style="margin-bottom:12px">
-      <a onclick="App.showOverview()" style="cursor:pointer">Overview</a>
-      <span class="breadcrumb-sep">›</span>
-      <span class="breadcrumb-current">${escapeHtml(phase.name)}</span>
-    </div>
-    <div class="category-hub-header" style="margin-bottom:20px">
-      <div class="category-hub-title">${Phases.iconFor(phase.icon, 20)} <span style="margin-left:8px">${escapeHtml(phase.name)}</span></div>
-    </div>
-    <div class="category-grid" style="grid-template-columns:repeat(auto-fit,minmax(240px,1fr))">
-      ${subSectionCards}
-    </div>
-
-    <!-- Running Total Box -->
-    <div style="margin-top:24px;margin-bottom:20px;background:var(--charcoal-mid);border:1px solid var(--charcoal-border);border-radius:var(--radius-lg);padding:14px 18px;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:12px">
-      <div style="font-size:11px;color:var(--text-muted);text-transform:uppercase;letter-spacing:.08em;font-weight:700">Running Total</div>
-      <div id="hub-running-total-${phase.id}" style="font-family:var(--font-mono);font-size:26px;font-weight:700;color:var(--amber-light)">${F.fmtFull(phaseTotal)}</div>
-    </div>
-    <div style="display:none"><div id="phase-total-${phase.id}"></div><div id="budget-bar-${phase.id}"></div></div>`;
-  }
-
-  // ── Interior sub-section detail view (Change #3) ─────────────
-  // Shows material + labour cards for a specific room sub-section
-  Phases.showInteriorSubSection = function(phaseId, subSectionId) {
-    phaseId = Number(phaseId);
-    const proj = State.getCurrentProject();
-    if (!proj) return;
-    const phase = proj.phases.find(p => Number(p.id) === Number(phaseId));
-    if (!phase) return;
-    const sub = INTERIOR_SUBSECTIONS.find(s => s.id === subSectionId);
-    if (!sub) return;
-    const content = document.getElementById('content-area');
-    if (!content) return;
-
-    const matCards = sub.materialCards || [];
-    const labCards = sub.laborCards || [];
-    const matTotal = matCards.reduce((s, c) => s + sumEntries(phaseId, c.id), 0);
-    const labTotal = labCards.reduce((s, c) => s + sumEntries(phaseId, c.id), 0);
-
-    const renderCards = (cards) => cards.map(c => {
-      const entries = getEntries(phaseId, c.id);
-      const ct = entries.reduce((s,e) => s + (parseFloat(e.total)||0), 0);
-      const isCustom = c.isCustom;
-      const deleteBtn = isCustom ? `<button onclick="event.stopPropagation();Phases._deleteCustomCard(${phaseId},'${escapeAttr(c.id)}')" title="Delete custom card" style="position:absolute;top:8px;right:8px;background:rgba(199,121,102,0.15);border:1px solid rgba(199,121,102,0.3);border-radius:6px;width:28px;height:28px;display:flex;align-items:center;justify-content:center;cursor:pointer;color:#C77966;font-size:14px">✕</button>` : '';
-      return `<div style="position:relative">
-        <button class="category-card" onclick="App.showEntryForm(${phaseId},'${c.id}')" style="text-align:left">
-          <span class="category-card-arrow">${Phases.iconFor('arrowRight',14)}</span>
-          <span class="category-card-icon">${Phases.iconFor(c.icon||'listChecks',26)}</span>
-          <div class="category-card-name">${escapeHtml(c.name)}</div>
-          <div class="category-card-desc">${escapeHtml(c.desc)}</div>
-          <div class="category-card-meta">
-            <div class="category-card-progress-label">${entries.length} entr${entries.length!==1?'ies':'y'}</div>
-            <div class="category-card-cost">${F.fmt(ct)}</div>
-          </div>
-        </button>${deleteBtn}</div>`;
-    }).join('');
-
-    content.innerHTML = `
-      <div class="phase-workspace active">
-        <div class="breadcrumb" style="margin-bottom:12px">
-          <a onclick="App.showPhaseHub(${phaseId})" style="cursor:pointer">← ${escapeHtml(phase.name)}</a>
-          <span class="breadcrumb-sep">›</span>
-          <span class="breadcrumb-current">${escapeHtml(sub.name)}</span>
-        </div>
-        <div class="category-hub-header" style="margin-bottom:20px">
-          <div class="category-hub-title">${Phases.iconFor(sub.icon||'sofa',20)} <span style="margin-left:8px">${escapeHtml(sub.name)}</span></div>
-        </div>
-
-        <!-- Material Section -->
-        <div style="margin-bottom:24px">
-          <div style="font-size:14px;font-weight:700;color:var(--text-primary);margin-bottom:12px;display:flex;align-items:center;gap:6px">
-            ${Phases.iconFor('blocks',16)} Material Costs
-            <span style="font-family:var(--font-mono);font-size:12px;color:var(--amber);margin-left:auto">${F.fmt(matTotal)}</span>
-          </div>
-          <div class="category-grid">${renderCards(matCards)}
-            <!-- Add New Material Card (Change #1) -->
-            <button class="category-card" onclick="Phases.showAddCustomCardModal(${phaseId},false)" style="text-align:left;border-style:dashed;opacity:.7">
-              <span class="category-card-icon">${Phases.iconFor('plus',28)}</span>
-              <div class="category-card-name" style="color:var(--text-muted)">Add New Material</div>
-              <div class="category-card-desc">Create a custom material entry</div>
-            </button>
-          </div>
-        </div>
-
-        <!-- Labor Section -->
-        <div style="margin-bottom:24px">
-          <div style="font-size:14px;font-weight:700;color:var(--text-primary);margin-bottom:12px;display:flex;align-items:center;gap:6px">
-            ${Phases.iconFor('userCircle',16)} Labor Costing
-            <span style="font-family:var(--font-mono);font-size:12px;color:var(--amber);margin-left:auto">${F.fmt(labTotal)}</span>
-          </div>
-          <div class="category-grid">${renderCards(labCards)}</div>
-        </div>
-      </div>`;
-    content.scrollTop = 0;
-  };
-
-  // ── Supply Demand Charge helpers (Change #4) ────────────────
-  function getSupplyDemandCharge(phaseId) {
-    phaseId = Number(phaseId);
-    const proj = State.getCurrentProject();
-    if (!proj) return { monthlyCharge: '', months: '' };
-    const ph = proj.phases.find(p => Number(p.id) === Number(phaseId));
-    if (!ph || !ph.data) return { monthlyCharge: '', months: '' };
-    return ph.data.supplyDemandCharge || { monthlyCharge: '', months: '' };
-  }
-
-  function saveSupplyDemandCharge(phaseId, data) {
-    phaseId = Number(phaseId);
-    const proj = State.getCurrentProject();
-    if (!proj) return;
-    const ph = proj.phases.find(p => Number(p.id) === Number(phaseId));
-    if (!ph) return;
-    if (!ph.data) ph.data = {};
-    ph.data.supplyDemandCharge = data;
-    State.markDirty('phase', phaseId); State.save();
-    Financial.scheduleUpdate();
-  }
-
-  // ── Supply Demand Charge detail view (Change #4) ───────────
-  Phases.showSupplyDemandCharge = function(phaseId) {
-    phaseId = Number(phaseId);
-    const proj = State.getCurrentProject();
-    if (!proj) return;
-    const phase = proj.phases.find(p => Number(p.id) === Number(phaseId));
-    if (!phase) return;
-    const content = document.getElementById('content-area');
-    if (!content) return;
-
-    const sdcData = getSupplyDemandCharge(phaseId);
-    const monthly = parseFloat(sdcData.monthlyCharge) || 0;
-    const months = parseFloat(sdcData.months) || 0;
-    const total = monthly * months;
-
-    // Get entries for SDC entries
-    const sdcEntries = getEntries(phaseId, 'supply_demand_charge');
-    const sdcEntriesTotal = sdcEntries.reduce((s,e) => s + (parseFloat(e.total)||0), 0);
-
-    content.innerHTML = `
-      <div class="phase-workspace active">
-        <div class="breadcrumb" style="margin-bottom:12px">
-          <a onclick="App.showPhaseHub(${phaseId})" style="cursor:pointer">← ${escapeHtml(phase.name)}</a>
-          <span class="breadcrumb-sep">›</span>
-          <span class="breadcrumb-current">Supply Demand Charge</span>
-        </div>
-        <div class="category-hub-header" style="margin-bottom:20px">
-          <div class="category-hub-title">${Phases.iconFor('zap',20)} <span style="margin-left:8px">Supply Demand Charge</span></div>
-        </div>
-
-        <!-- SDC Calculator -->
-        <div style="background:var(--charcoal-mid);border:1px solid var(--charcoal-border);border-radius:var(--radius-lg);padding:20px;margin-bottom:20px">
-          <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:16px">
-            <div>
-              <label style="font-size:10px;font-weight:700;text-transform:uppercase;color:var(--text-muted);margin-bottom:6px;display:block">Monthly Demand Charge (₹)</label>
-              <input type="number" id="sdc-monthly" class="modal-input" value="${escapeAttr(sdcData.monthlyCharge || '')}" placeholder="0" style="font-family:var(--font-mono)" oninput="Phases._updateSDCCalc(${phaseId})">
-            </div>
-            <div>
-              <label style="font-size:10px;font-weight:700;text-transform:uppercase;color:var(--text-muted);margin-bottom:6px;display:block">Number of Months</label>
-              <input type="number" id="sdc-months" class="modal-input" value="${escapeAttr(sdcData.months || '')}" placeholder="0" style="font-family:var(--font-mono)" oninput="Phases._updateSDCCalc(${phaseId})">
-            </div>
-          </div>
-          <div style="display:flex;justify-content:space-between;align-items:center;padding-top:16px;border-top:1px solid var(--charcoal-border)">
-            <span style="font-size:13px;color:var(--text-secondary);font-weight:600">Total Demand Charge</span>
-            <span id="sdc-total" style="font-family:var(--font-mono);font-size:24px;font-weight:700;color:var(--amber)">${F.fmtFull(total)}</span>
-          </div>
-          <button onclick="Phases._saveSDC(${phaseId})" class="modal-btn-primary" style="width:100%;margin-top:16px;padding:12px;border-radius:10px;cursor:pointer;font-size:13px;font-weight:700;font-family:inherit;border:none;background:var(--amber);color:#fff">Save</button>
-        </div>
-
-        <!-- SDC Entry Form -->
-        <div style="background:var(--charcoal-mid);border:1px solid var(--charcoal-border);border-radius:var(--radius-lg);padding:20px;margin-bottom:20px">
-          <div style="font-size:14px;font-weight:700;color:var(--text-primary);margin-bottom:12px">Add SDC Entry</div>
-          <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px">
-            <div>
-              <label style="font-size:10px;font-weight:700;text-transform:uppercase;color:var(--text-muted);margin-bottom:6px;display:block">Date</label>
-              <input type="date" id="sdc-entry-date" class="modal-input" value="${new Date().toISOString().split('T')[0]}">
-            </div>
-            <div>
-              <label style="font-size:10px;font-weight:700;text-transform:uppercase;color:var(--text-muted);margin-bottom:6px;display:block">Amount (₹)</label>
-              <input type="number" id="sdc-entry-amount" class="modal-input" placeholder="0" style="font-family:var(--font-mono)">
-            </div>
-          </div>
-          <div style="margin-bottom:12px">
-            <label style="font-size:10px;font-weight:700;text-transform:uppercase;color:var(--text-muted);margin-bottom:6px;display:block">Description</label>
-            <input type="text" id="sdc-entry-desc" class="modal-input" placeholder="e.g. Monthly demand charge payment">
-          </div>
-          <button onclick="Phases._saveSDCEntry(${phaseId})" class="modal-btn-primary" style="width:100%;padding:10px;border-radius:8px;cursor:pointer;font-size:13px;font-weight:700;font-family:inherit;border:none;background:var(--amber);color:#fff">Save Entry</button>
-        </div>
-
-        <!-- SDC Previous Entries -->
-        ${sdcEntries.length > 0 ? `
-        <div style="margin-top:16px">
-          <div style="font-size:12px;font-weight:700;text-transform:uppercase;color:var(--text-muted);margin-bottom:8px">Previous Entries</div>
-          <table style="width:100%;border-collapse:collapse">
-            <thead><tr style="border-bottom:2px solid var(--charcoal-border)">
-              <th style="padding:8px 10px;color:var(--text-muted);font-size:11px;text-transform:uppercase;text-align:left">Date</th>
-              <th style="padding:8px 10px;color:var(--text-muted);font-size:11px;text-transform:uppercase;text-align:left">Description</th>
-              <th style="padding:8px 10px;color:var(--text-muted);font-size:11px;text-transform:uppercase;text-align:right">Amount</th>
-              <th style="padding:8px 10px;color:var(--text-muted);font-size:11px;text-transform:uppercase;text-align:right"></th>
-            </tr></thead>
-            <tbody>
-              ${sdcEntries.map(e => `<tr style="border-bottom:1px solid var(--charcoal-border)">
-                <td style="padding:8px 10px;font-family:var(--font-mono);font-size:12px;color:var(--text-muted)">${e.date ? new Date(e.date).toLocaleDateString('en-IN') : '—'}</td>
-                <td style="padding:8px 10px;font-size:13px;color:var(--text-secondary)">${escapeHtml(e.notes || e.fields?.description || '—')}</td>
-                <td style="padding:8px 10px;text-align:right;font-family:var(--font-mono);font-weight:700;color:var(--amber)">${F.fmtFull(e.total)}</td>
-                <td style="padding:8px 10px;text-align:right"><button onclick="Phases._deleteSDCEntry(${phaseId},'${escapeAttr(e.id)}')" style="background:none;border:1px solid rgba(199,121,102,0.3);border-radius:4px;padding:2px 6px;color:#C77966;font-size:11px;cursor:pointer">✕</button></td>
-              </tr>`).join('')}
-            </tbody>
-          </table>
-          <div style="margin-top:12px;display:flex;justify-content:space-between;align-items:center;padding:10px;background:rgba(180,122,60,0.08);border:1px solid rgba(180,122,60,0.2);border-radius:8px">
-            <span style="font-size:12px;color:var(--text-secondary);font-weight:600">SDC Entries Total</span>
-            <span style="font-family:var(--font-mono);font-weight:700;color:var(--amber)">${F.fmtFull(sdcEntriesTotal)}</span>
-          </div>
-        </div>` : ''}
-      </div>`;
-    content.scrollTop = 0;
-  };
-
-  Phases._updateSDCCalc = function(phaseId) {
-    const monthly = parseFloat(document.getElementById('sdc-monthly')?.value) || 0;
-    const months = parseFloat(document.getElementById('sdc-months')?.value) || 0;
-    const total = monthly * months;
-    const el = document.getElementById('sdc-total');
-    if (el) el.textContent = F.fmtFull(total);
-  };
-
-  Phases._saveSDC = function(phaseId) {
-    const monthlyCharge = document.getElementById('sdc-monthly')?.value || '';
-    const months = document.getElementById('sdc-months')?.value || '';
-    saveSupplyDemandCharge(phaseId, { monthlyCharge, months });
-    App.toast('Supply Demand Charge saved', 'success');
-    // Refresh
-    Phases.showSupplyDemandCharge(phaseId);
-  };
-
-  Phases._saveSDCEntry = function(phaseId) {
-    const date = document.getElementById('sdc-entry-date')?.value || '';
-    const amount = parseFloat(document.getElementById('sdc-entry-amount')?.value) || 0;
-    const desc = document.getElementById('sdc-entry-desc')?.value?.trim() || '';
-    if (!amount) { App.toast('Enter an amount', 'warning'); return; }
-    const entry = {
-      id: uid(),
-      date,
-      fields: { description: desc },
-      total: amount,
-      notes: desc,
-      createdAt: new Date().toISOString(),
-    };
-    saveEntry(phaseId, 'supply_demand_charge', entry);
-    Financial.scheduleUpdate();
-    App.toast('SDC entry saved', 'success');
-    Phases.showSupplyDemandCharge(phaseId);
-  };
-
-  Phases._deleteSDCEntry = function(phaseId, entryId) {
-    deleteEntry(phaseId, 'supply_demand_charge', entryId);
-    Financial.scheduleUpdate();
-    Phases.showSupplyDemandCharge(phaseId);
-  };
-
-  // ── Add Custom Card Modal (Change #1) ─────────────────────
-  Phases.showAddCustomCardModal = function(phaseId, isLabor) {
-    App.showModal(`
-      <h3 class="modal-title">➕ Add New ${isLabor ? 'Labor' : 'Material'}</h3>
-      <div style="margin-bottom:14px">
-        <label class="modal-label">Material / Item Name *</label>
-        <input class="modal-input" id="custom-card-name" placeholder="e.g. Special Waterproofing">
-      </div>
-      <div style="margin-bottom:14px">
-        <label class="modal-label">Description (optional)</label>
-        <input class="modal-input" id="custom-card-desc" placeholder="e.g. Two-component polyurethane coating">
-      </div>
-      <div style="display:flex;gap:12px">
-        <button onclick="App.closeModal()" class="modal-btn-cancel" style="flex:1;padding:11px;border-radius:10px;cursor:pointer;font-size:13px;font-weight:700;font-family:inherit">Cancel</button>
-        <button onclick="Phases.saveNewCustomCard(${phaseId},${isLabor})" class="modal-btn-primary" style="flex:1;padding:11px;border-radius:10px;cursor:pointer;font-size:13px;font-weight:700;font-family:inherit">Add</button>
-      </div>
-    `);
-  };
-
-  Phases.saveNewCustomCard = function(phaseId, isLabor) {
-    const name = document.getElementById('custom-card-name')?.value?.trim();
-    if (!name) { App.toast('Name is required', 'error'); return; }
-    const desc = document.getElementById('custom-card-desc')?.value?.trim() || 'Custom material entry';
-    const cardId = 'custom_' + Date.now();
-    const card = {
-      id: cardId,
-      name: name,
-      icon: isLabor ? 'userCircle' : 'listChecks',
-      desc: desc,
-      isCustom: true,
-      fields: isLabor
-        ? [{key:'date',label:'Date',type:'date'},{key:'payee',label:'Payee / Worker',type:'text'},{key:'work',label:'Work Description',type:'text'},{key:'amount',label:'Amount (₹)',type:'number'},{key:'mode',label:'Mode',type:'select',options:['Cash','UPI','Cheque','NEFT']}]
-        : [{key:'item',label:'Item Description',type:'text'},{key:'qty',label:'Qty',type:'number'},{key:'unit',label:'Unit',type:'select',options:['kg','bags','pcs','sqft','mtr','ltr','set']},{key:'rate',label:'Rate (₹)',type:'number'},{key:'vendor',label:'Vendor',type:'text'}],
-      costFn: isLabor ? (d => amtC(d,'amount')) : (d => qrC(d,'qty','rate')),
-    };
-    if (isLabor) {
-      // Add to LABOR_IDS so it's classified correctly
-      if (!LABOR_IDS.includes(cardId)) LABOR_IDS.push(cardId);
-    }
-    saveCustomCard(phaseId, card);
-    App.closeModal();
-    App.toast('Custom card added', 'success');
-    // Refresh current view
-    if (typeof App !== 'undefined' && App.showMaterialCards) {
-      App.showMaterialCards(phaseId);
-    }
-  };
-
-  Phases._deleteCustomCard = function(phaseId, cardId) {
-    App.showConfirmModal({
-      icon: Icons.render('trash', 24),
-      title: 'Delete Custom Card?',
-      body: 'This will remove the custom card and all its entries permanently.',
-      confirmLabel: 'Delete',
-      onConfirm: async () => {
-        deleteCustomCard(phaseId, cardId);
-        // Remove from LABOR_IDS if present
-        const idx = LABOR_IDS.indexOf(cardId);
-        if (idx >= 0) LABOR_IDS.splice(idx, 1);
-        App.toast('Custom card deleted', 'info');
-        // Refresh
-        const proj = State.getCurrentProject();
-        if (proj) {
-          const phase = proj.phases.find(p => Number(p.id) === Number(phaseId));
-          if (phase) {
-            if (Number(phaseId) === 10) {
-              // Refresh interior sub-section if on that view
-            }
-            App.showMaterialCards(phaseId);
-          }
-        }
-      }
-    });
-  };
 
   // ── Entry form renderer ────────────────────────────────────
   // Renders the detail form for a single card type (one material type or labor)
@@ -1381,69 +997,24 @@
   const LABOR_IDS = ['thekedar','tile_labor','painter_labor','electrician_labor',
     'fab_labor','plumber_labor','pop_labor','lift_install','floor-prep','paint-prep']; // misc_expenses removed — it's a general expense, not labor
 
-  // ── Custom card helpers (Change #1) ────────────────────────
-  function getCustomCards(phaseId) {
-    phaseId = Number(phaseId);
-    const proj = State.getCurrentProject();
-    if (!proj) return [];
-    const ph = proj.phases.find(p => Number(p.id) === Number(phaseId));
-    if (!ph || !ph.data || !ph.data.customCards) return [];
-    return ph.data.customCards;
-  }
-
-  function saveCustomCard(phaseId, card) {
-    phaseId = Number(phaseId);
-    const proj = State.getCurrentProject();
-    if (!proj) return;
-    const ph = proj.phases.find(p => Number(p.id) === Number(phaseId));
-    if (!ph) return;
-    if (!ph.data) ph.data = {};
-    if (!ph.data.customCards) ph.data.customCards = [];
-    ph.data.customCards.push(card);
-    State.markDirty('phase', phaseId); State.save();
-  }
-
-  function deleteCustomCard(phaseId, cardId) {
-    phaseId = Number(phaseId);
-    const proj = State.getCurrentProject();
-    if (!proj) return;
-    const ph = proj.phases.find(p => Number(p.id) === Number(phaseId));
-    if (!ph || !ph.data || !ph.data.customCards) return;
-    ph.data.customCards = ph.data.customCards.filter(c => c.id !== cardId);
-    // Also remove entries for this card
-    if (ph.data.entries && ph.data.entries[cardId]) {
-      delete ph.data.entries[cardId];
-    }
-    State.markDirty('phase', phaseId); State.save();
-    Financial.scheduleUpdate();
-  }
-
   function getAllCardsForPhase(phaseId) {
     // NOTE: This function must NOT inline the card arrays as a static object literal
     // here, because the const declarations (CIVIL_CARDS_REF etc.) live below this
     // function in the file. Building M inline would hit a TDZ ReferenceError.
     // Instead we use a getter that reads them at call-time, after initialization.
-    let builtIn = [];
     switch (Number(phaseId)) {
-      case 1:  builtIn = CIVIL_CARDS_REF; break;
-      case 2:  builtIn = TILES_CARDS_REF; break;
-      case 3:  builtIn = PAINT_CARDS_REF; break;
-      case 4:  builtIn = ELEC_CARDS_REF; break;
-      case 5:  builtIn = FAB_CARDS_REF; break;
-      case 6:  builtIn = [...PLUMB_EXT_REF, ...PLUMB_INT_REF]; break;
-      case 7:  builtIn = POP_CARDS_REF; break;
-      case 8:  builtIn = LIFT_CARDS_REF; break;
-      case 9:  builtIn = MISC_CARDS_REF; break;
-      case 10: builtIn = INTERIOR_CARDS_REF; break;
-      case 11: builtIn = ELEC_SUPPLY_CARDS_REF; break;
-      default: builtIn = []; break;
+      case 1:  return CIVIL_CARDS_REF;
+      case 2:  return TILES_CARDS_REF;
+      case 3:  return PAINT_CARDS_REF;
+      case 4:  return ELEC_CARDS_REF;
+      case 5:  return FAB_CARDS_REF;
+      case 6:  return [...PLUMB_EXT_REF, ...PLUMB_INT_REF];
+      case 7:  return POP_CARDS_REF;
+      case 8:  return LIFT_CARDS_REF;
+      case 9:  return MISC_CARDS_REF;
+      case 10: return INTERIOR_CARDS_REF;
+      default: return [];
     }
-    // Merge custom cards (Change #1)
-    const customs = getCustomCards(phaseId);
-    if (customs.length > 0) {
-      return [...builtIn, ...customs];
-    }
-    return builtIn;
   }
 
   function getMaterialCardsForPhase(phaseId) {
@@ -1927,151 +1498,18 @@
       costFn: d => (P(d.qty)||0)*(P(d.unit_price)||0) + (P(d.labor)||0) }
   ];
 
-  // ── Phase 11: Electrical Supply (Change #4) ────────────────
-  const ELEC_SUPPLY_CARDS_REF = [
-    { id:'tf_cables', name:'TF / Cables', icon:'zap', desc:'Transformer feeders, HT/LT cables, terminations.',
-      fields:[{key:'type',label:'Cable Type',type:'select',options:['HT Cable (11kV)','LT Cable (415V)','Armoured Cable','Flat Cable','Control Cable']},{key:'size',label:'Size (sqmm)',type:'select',options:['1.5','2.5','4','6','10','16','25','35','50','70','95','120','150','185','240','300']},{key:'brand',label:'Brand',type:'select',options:['Polycab','Havells','KEI','Finolex','RR Kabel','Uniflex','Local']},{key:'qty_mtr',label:'Qty (metres)',type:'number'},{key:'rate_per_mtr',label:'Rate (₹/m)',type:'number'},{key:'vendor',label:'Supplier',type:'text'}],
-      costFn: d => qrC(d,'qty_mtr','rate_per_mtr') },
-    { id:'panels', name:'Panels (DB / SDB / MDB)', icon:'listChecks', desc:'Distribution boards, sub-distribution boards, main distribution boards.',
-      fields:[{key:'type',label:'Panel Type',type:'select',options:['MDB (Main DB)','SDB (Sub DB)','TPN DB','DP Box','Power Panel','Lighting Panel','APFC Panel']},{key:'brand',label:'Brand',type:'select',options:['Legrand','Schneider','Havells','Siemens','ABB','Local']},{key:'rating',label:'Rating (A)',type:'select',options:['32','63','100','125','200','250','400','630','800','1000']},{key:'qty',label:'Qty',type:'number'},{key:'rate',label:'Rate (₹/panel)',type:'number'},{key:'vendor',label:'Supplier',type:'text'}],
-      costFn: d => qrC(d,'qty','rate') },
-    { id:'elec_supply_labor', name:'Electrical Supply Labor', icon:'userCircle', desc:'Installation, termination, testing and commissioning labor.',
-      fields:[{key:'date',label:'Date',type:'date'},{key:'payee',label:'Contractor / Worker',type:'text'},{key:'work',label:'Work Description',type:'text'},{key:'amount',label:'Amount (₹)',type:'number'},{key:'mode',label:'Mode',type:'select',options:['Cash','UPI','Cheque','NEFT']}],
-      costFn: d => amtC(d,'amount') },
-  ];
-
-  // ── Interior sub-sections (Change #3) ─────────────────────
-  // Interior (phase 10) now uses room-based sub-sections instead of
-  // a flat list. Each sub-section is a "mini-phase" within phase 10.
-  const INTERIOR_SUBSECTIONS = [
-    { id: 'living_room', name: 'Living Room', icon: 'sofa',
-      materialCards: [
-        { id:'lr_flooring', name:'Flooring', icon:'ruler', desc:'Living room flooring — tiles, marble, wooden.',
-          fields:[{key:'type',label:'Type',type:'select',options:['Vitrified Tiles','Marble','Wooden','Laminate','Carpet']},{key:'brand',label:'Brand',type:'text'},{key:'area_sqft',label:'Area (sqft)',type:'number'},{key:'rate_per_sqft',label:'Rate (₹/sqft)',type:'number'}],
-          costFn: d => qrC(d,'area_sqft','rate_per_sqft') },
-        { id:'lr_ceiling', name:'False Ceiling / POP', icon:'insulation', desc:'POP or gypsum false ceiling work.',
-          fields:[{key:'type',label:'Type',type:'select',options:['POP','Gypsum Board','Wooden','No Ceiling']},{key:'area_sqft',label:'Area (sqft)',type:'number'},{key:'rate_per_sqft',label:'Rate (₹/sqft)',type:'number'}],
-          costFn: d => qrC(d,'area_sqft','rate_per_sqft') },
-        { id:'lr_paint', name:'Wall Paint & Finish', icon:'palette', desc:'Interior paint, texture, wallpaper.',
-          fields:[{key:'type',label:'Type',type:'select',options:['Emulsion','Distemper','Texture','Wallpaper']},{key:'brand',label:'Brand',type:'text'},{key:'area_sqft',label:'Area (sqft)',type:'number'},{key:'rate_per_sqft',label:'Rate (₹/sqft)',type:'number'}],
-          costFn: d => qrC(d,'area_sqft','rate_per_sqft') },
-        { id:'lr_electrical', name:'Electrical & Lighting', icon:'lightbulb', desc:'Switches, lights, fans, AC points.',
-          fields:[{key:'item',label:'Item',type:'text'},{key:'qty',label:'Qty',type:'number'},{key:'rate',label:'Rate (₹/pc)',type:'number'}],
-          costFn: d => qrC(d,'qty','rate') },
-      ],
-      laborCards: [
-        { id:'lr_labor', name:'Living Room Labor', icon:'userCircle', desc:'Painter, carpenter, electrician, mason payouts.',
-          fields:[{key:'date',label:'Date',type:'date'},{key:'payee',label:'Worker / Contractor',type:'text'},{key:'work',label:'Work Description',type:'text'},{key:'amount',label:'Amount (₹)',type:'number'},{key:'mode',label:'Mode',type:'select',options:['Cash','UPI','Cheque','NEFT']}],
-          costFn: d => amtC(d,'amount') },
-      ]
-    },
-    { id: 'kitchen', name: 'Kitchen', icon: 'sofa',
-      materialCards: [
-        { id:'kt_flooring', name:'Flooring', icon:'ruler', desc:'Kitchen flooring.',
-          fields:[{key:'type',label:'Type',type:'select',options:['Vitrified Tiles','Ceramic','Granite','Kota Stone']},{key:'brand',label:'Brand',type:'text'},{key:'area_sqft',label:'Area (sqft)',type:'number'},{key:'rate_per_sqft',label:'Rate (₹/sqft)',type:'number'}],
-          costFn: d => qrC(d,'area_sqft','rate_per_sqft') },
-        { id:'kt_dado', name:'Dado / Backsplash Tiles', icon:'ruler', desc:'Kitchen wall tiles above counter.',
-          fields:[{key:'type',label:'Type',type:'select',options:['Ceramic','Glass Tile','Stone']},{key:'area_sqft',label:'Area (sqft)',type:'number'},{key:'rate_per_sqft',label:'Rate (₹/sqft)',type:'number'}],
-          costFn: d => qrC(d,'area_sqft','rate_per_sqft') },
-        { id:'kt_counter', name:'Counter / Slab', icon:'blocks', desc:'Granite, quartz, marble kitchen counter.',
-          fields:[{key:'material',label:'Material',type:'select',options:['Granite','Quartz','Marble','Engineered Stone']},{key:'area_sqft',label:'Area (sqft)',type:'number'},{key:'rate_per_sqft',label:'Rate (₹/sqft)',type:'number'}],
-          costFn: d => qrC(d,'area_sqft','rate_per_sqft') },
-        { id:'kt_cabinetry', name:'Cabinetry & Shutters', icon:'sofa', desc:'Kitchen cabinets — modular or custom.',
-          fields:[{key:'type',label:'Type',type:'select',options:['Modular','Semi-Modular','Custom Wood']},{key:'lf',label:'Linear Feet',type:'number'},{key:'rate_per_lf',label:'Rate (₹/LF)',type:'number'}],
-          costFn: d => qrC(d,'lf','rate_per_lf') },
-        { id:'kt_hardware', name:'Hardware & Fittings', icon:'wrenchScrew', desc:'Hinges, handles, baskets, chimney, tap.',
-          fields:[{key:'item',label:'Item',type:'text'},{key:'qty',label:'Qty',type:'number'},{key:'rate',label:'Rate (₹/pc)',type:'number'}],
-          costFn: d => qrC(d,'qty','rate') },
-      ],
-      laborCards: [
-        { id:'kt_labor', name:'Kitchen Labor', icon:'userCircle', desc:'Carpenter, mason, plumber for kitchen.',
-          fields:[{key:'date',label:'Date',type:'date'},{key:'payee',label:'Worker / Contractor',type:'text'},{key:'work',label:'Work Description',type:'text'},{key:'amount',label:'Amount (₹)',type:'number'},{key:'mode',label:'Mode',type:'select',options:['Cash','UPI','Cheque','NEFT']}],
-          costFn: d => amtC(d,'amount') },
-      ]
-    },
-    { id: 'bedrooms', name: 'Bedrooms', icon: 'sofa',
-      materialCards: [
-        { id:'br_flooring', name:'Flooring', icon:'ruler', desc:'Bedroom flooring.',
-          fields:[{key:'type',label:'Type',type:'select',options:['Vitrified Tiles','Wooden','Laminate','Carpet']},{key:'brand',label:'Brand',type:'text'},{key:'area_sqft',label:'Area (sqft)',type:'number'},{key:'rate_per_sqft',label:'Rate (₹/sqft)',type:'number'}],
-          costFn: d => qrC(d,'area_sqft','rate_per_sqft') },
-        { id:'br_wardrobe', name:'Wardrobe / Closet', icon:'sofa', desc:'Built-in or modular wardrobe.',
-          fields:[{key:'type',label:'Type',type:'select',options:['Modular','Custom Wood','WPC','Plywood']},{key:'lf',label:'Linear Feet',type:'number'},{key:'rate_per_lf',label:'Rate (₹/LF)',type:'number'}],
-          costFn: d => qrC(d,'lf','rate_per_lf') },
-        { id:'br_paint', name:'Wall Paint', icon:'palette', desc:'Bedroom wall paint and finish.',
-          fields:[{key:'type',label:'Type',type:'select',options:['Emulsion','Distemper','Texture','Wallpaper']},{key:'area_sqft',label:'Area (sqft)',type:'number'},{key:'rate_per_sqft',label:'Rate (₹/sqft)',type:'number'}],
-          costFn: d => qrC(d,'area_sqft','rate_per_sqft') },
-        { id:'br_electrical', name:'Electrical & Lighting', icon:'lightbulb', desc:'Switches, lights, AC points, fans.',
-          fields:[{key:'item',label:'Item',type:'text'},{key:'qty',label:'Qty',type:'number'},{key:'rate',label:'Rate (₹/pc)',type:'number'}],
-          costFn: d => qrC(d,'qty','rate') },
-      ],
-      laborCards: [
-        { id:'br_labor', name:'Bedroom Labor', icon:'userCircle', desc:'Painter, carpenter, electrician for bedrooms.',
-          fields:[{key:'date',label:'Date',type:'date'},{key:'payee',label:'Worker / Contractor',type:'text'},{key:'work',label:'Work Description',type:'text'},{key:'amount',label:'Amount (₹)',type:'number'},{key:'mode',label:'Mode',type:'select',options:['Cash','UPI','Cheque','NEFT']}],
-          costFn: d => amtC(d,'amount') },
-      ]
-    },
-    { id: 'bathrooms', name: 'Bathrooms', icon: 'droplet',
-      materialCards: [
-        { id:'ba_flooring', name:'Floor & Wall Tiles', icon:'ruler', desc:'Bathroom anti-skid floor tiles and dado.',
-          fields:[{key:'type',label:'Type',type:'select',options:['Ceramic','Porcelain','Vitrified']},{key:'area_sqft',label:'Area (sqft)',type:'number'},{key:'rate_per_sqft',label:'Rate (₹/sqft)',type:'number'}],
-          costFn: d => qrC(d,'area_sqft','rate_per_sqft') },
-        { id:'ba_sanitary', name:'Sanitary Ware', icon:'droplet', desc:'Wash basin, WC, seat, urinal.',
-          fields:[{key:'item',label:'Item',type:'select',options:['Wash Basin','EWC (European)','IWC (Indian)','Urinal']},{key:'brand',label:'Brand',type:'select',options:['Jaquar','Hindware','Cera','Kohler','Parryware','Local']},{key:'qty',label:'Qty',type:'number'},{key:'rate',label:'Rate (₹/pc)',type:'number'}],
-          costFn: d => qrC(d,'qty','rate') },
-        { id:'ba_fittings', name:'CP Fittings & Faucets', icon:'wrenchScrew', desc:'Taps, mixers, shower, health faucet.',
-          fields:[{key:'item',label:'Item',type:'select',options:['Pillar Cock','Bib Cock','Wall Mixer','Shower','Health Faucet','Diverter']},{key:'brand',label:'Brand',type:'select',options:['Jaquar','Hindware','Cera','Kohler','Parryware','Local']},{key:'qty',label:'Qty',type:'number'},{key:'rate',label:'Rate (₹/pc)',type:'number'}],
-          costFn: d => qrC(d,'qty','rate') },
-        { id:'ba_mirror', name:'Mirror & Accessories', icon:'mirror', desc:'Vanity mirror, towel rod, soap dish.',
-          fields:[{key:'item',label:'Item',type:'text'},{key:'qty',label:'Qty',type:'number'},{key:'rate',label:'Rate (₹/pc)',type:'number'}],
-          costFn: d => qrC(d,'qty','rate') },
-      ],
-      laborCards: [
-        { id:'ba_labor', name:'Bathroom Labor', icon:'userCircle', desc:'Plumber, mason, tile setter for bathrooms.',
-          fields:[{key:'date',label:'Date',type:'date'},{key:'payee',label:'Worker / Contractor',type:'text'},{key:'work',label:'Work Description',type:'text'},{key:'amount',label:'Amount (₹)',type:'number'},{key:'mode',label:'Mode',type:'select',options:['Cash','UPI','Cheque','NEFT']}],
-          costFn: d => amtC(d,'amount') },
-      ]
-    },
-    { id: 'common_areas', name: 'Common Areas / Staircase', icon: 'stairs',
-      materialCards: [
-        { id:'ca_staircase', name:'Staircase Tiles / Finish', icon:'stairs', desc:'Staircase treads, risers, railing.',
-          fields:[{key:'type',label:'Type',type:'select',options:['Tiles','Marble','Granite','Wooden']},{key:'step_count',label:'Steps',type:'number'},{key:'rate_per_step',label:'Rate (₹/step)',type:'number'}],
-          costFn: d => qrC(d,'step_count','rate_per_step') },
-        { id:'ca_railing', name:'Railing / Handrail', icon:'window', desc:'SS railing, glass railing, wooden handrail.',
-          fields:[{key:'type',label:'Type',type:'select',options:['SS Railing','Glass Railing','MS Railing','Wooden Handrail']},{key:'length_rft',label:'Length (rft)',type:'number'},{key:'rate_per_rft',label:'Rate (₹/rft)',type:'number'}],
-          costFn: d => qrC(d,'length_rft','rate_per_rft') },
-        { id:'ca_paint', name:'Common Area Paint', icon:'palette', desc:'Corridor, lobby, staircase paint.',
-          fields:[{key:'type',label:'Type',type:'select',options:['Emulsion','Distemper','Texture']},{key:'area_sqft',label:'Area (sqft)',type:'number'},{key:'rate_per_sqft',label:'Rate (₹/sqft)',type:'number'}],
-          costFn: d => qrC(d,'area_sqft','rate_per_sqft') },
-      ],
-      laborCards: [
-        { id:'ca_labor', name:'Common Area Labor', icon:'userCircle', desc:'Labor for common area finishing.',
-          fields:[{key:'date',label:'Date',type:'date'},{key:'payee',label:'Worker / Contractor',type:'text'},{key:'work',label:'Work Description',type:'text'},{key:'amount',label:'Amount (₹)',type:'number'},{key:'mode',label:'Mode',type:'select',options:['Cash','UPI','Cheque','NEFT']}],
-          costFn: d => amtC(d,'amount') },
-      ]
-    },
-  ];
-
-  // Flatten interior sub-sections into a single card list for backward compat
-  // This allows getAllCardsForPhase(10) to return all interior cards
-  const INTERIOR_CARDS_REF_FLAT = INTERIOR_SUBSECTIONS.reduce((arr, sub) => {
-    return arr.concat(sub.materialCards || []).concat(sub.laborCards || []);
-  }, []);
-
-  // Override INTERIOR_CARDS_REF to use the new flat list
-  const INTERIOR_CARDS_REF = INTERIOR_CARDS_REF_FLAT;
-
 // ── Patch financial.js to use entries for phase totals ────
   // Override computePhaseTotal to use entry-based sums for phases 1-10
   const _origComputePhaseTotal = Financial.computePhaseTotal;
   Financial.computePhaseTotal = function(phase) {
     const pid = Number(phase?.id);
-    if (pid >= 1 && pid <= 11) {
+    if (pid >= 1 && pid <= 10) {
       return sumAllEntries(pid) + ((State.getBills && State.getBills(pid))||[]).reduce((s,b)=>s+(parseFloat(b.totalAmount)||0),0);
     }
     return _origComputePhaseTotal(phase);
   };
 
-  // ── Override renderTradePhases 1-11 with new 3-card hub ────
+  // ── Override renderTradePhases 1-10 with new 3-card hub ────
   const PHASE_CARD_MAP = {
     1: [CIVIL_CARDS_REF.filter(c=>!LABOR_IDS.includes(c.id)), CIVIL_CARDS_REF.filter(c=>LABOR_IDS.includes(c.id))],
     2: [TILES_CARDS_REF.filter(c=>!LABOR_IDS.includes(c.id)), TILES_CARDS_REF.filter(c=>LABOR_IDS.includes(c.id))],
@@ -2083,35 +1521,20 @@
     8: [LIFT_CARDS_REF.filter(c=>!LABOR_IDS.includes(c.id)), LIFT_CARDS_REF.filter(c=>LABOR_IDS.includes(c.id))],
     9: [MISC_CARDS_REF.filter(c=>!LABOR_IDS.includes(c.id)), MISC_CARDS_REF.filter(c=>LABOR_IDS.includes(c.id))],
     10: [INTERIOR_CARDS_REF.filter(c=>!LABOR_IDS.includes(c.id)), INTERIOR_CARDS_REF.filter(c=>LABOR_IDS.includes(c.id))],
-    11: [ELEC_SUPPLY_CARDS_REF.filter(c=>!LABOR_IDS.includes(c.id)), ELEC_SUPPLY_CARDS_REF.filter(c=>LABOR_IDS.includes(c.id))],
   };
 
   function makeTradeRenderer(phaseId) {
     return function(phase) {
       const [mat, lab] = PHASE_CARD_MAP[phaseId];
-      // Phase 11 gets a special 4th card for Supply Demand Charge
-      if (Number(phaseId) === 11) {
-        return renderTradeHubNew(phase, mat, lab, true);
-      }
-      // Phase 10 gets interior sub-section rendering
-      if (Number(phaseId) === 10) {
-        return renderInteriorHub(phase, mat, lab);
-      }
       return renderTradeHubNew(phase, mat, lab);
     };
   }
 
-  // Override renderPhaseHub for phases 1-11 to use new 3-card hub
+  // Override renderPhaseHub for phases 1-10 to use new 3-card hub
   const _origRenderPhaseHub = Phases.renderPhaseHub ? Phases.renderPhaseHub.bind(Phases) : null;
   Phases.renderPhaseHub = function(phase) {
-    if (phase.id >= 1 && phase.id <= 11) {
+    if (phase.id >= 1 && phase.id <= 10) {
       const [mat, lab] = PHASE_CARD_MAP[phase.id];
-      if (Number(phase.id) === 11) {
-        return renderTradeHubNew(phase, mat, lab, true);
-      }
-      if (Number(phase.id) === 10) {
-        return renderInteriorHub(phase, mat, lab);
-      }
       return renderTradeHubNew(phase, mat, lab);
     }
     // For other phases, use original
@@ -2128,13 +1551,12 @@
   Phases.renderTradePhase8 = makeTradeRenderer(8);
   Phases.renderTradePhase9 = makeTradeRenderer(9);
   Phases.renderTradePhase10 = makeTradeRenderer(10);
-  Phases.renderTradePhase11 = makeTradeRenderer(11);
 
-  // Override showInputCard for phases 1-11 to use new entry form
+  // Override showInputCard for phases 1-10 to use new entry form
   const _origShowInputCard = (typeof App !== 'undefined' && App.showInputCard) ? App.showInputCard.bind(App) : null;
   if (typeof App !== 'undefined') {
     App.showInputCard = function(phaseId, cardId) {
-      if (phaseId >= 1 && phaseId <= 11) {
+      if (phaseId >= 1 && phaseId <= 10) {
         const allCards = getAllCardsForPhase(phaseId);
         const card = allCards.find(c => c.id === cardId);
         if (card) {
@@ -2201,34 +1623,24 @@
     if (!proj) return '<div style="padding:24px">No project loaded</div>';
     const phase = proj.phases.find(p => Number(p.id) === Number(phaseId));
     if (!phase) return '';
-    const cards = getAllCardsForPhase(phaseId).filter(c =>
+    const cards = (Object.values(ALL_CARDS_REF[phaseId] || {})).filter(c =>
       isLabor ? LABOR_IDS.includes(c.id) : !LABOR_IDS.includes(c.id));
     const label = isLabor ? 'Labor Costing' : 'Material Costs';
     const total = cards.reduce((s,c) => s + sumEntries(phaseId, c.id), 0);
     const cardHtml = cards.map(c => {
       const entries = getEntries(phaseId, c.id);
       const ct = entries.reduce((s,e) => s + (parseFloat(e.total)||0), 0);
-      const isCustom = c.isCustom;
-      const deleteBtn = isCustom ? `<button onclick="event.stopPropagation();Phases._deleteCustomCard(${phaseId},'${escapeAttr(c.id)}')" title="Delete custom card" style="position:absolute;top:8px;right:8px;background:rgba(199,121,102,0.15);border:1px solid rgba(199,121,102,0.3);border-radius:6px;width:28px;height:28px;display:flex;align-items:center;justify-content:center;cursor:pointer;color:#C77966;font-size:14px">✕</button>` : '';
-      return `<div style="position:relative">
-        <button class="category-card" onclick="App.showEntryForm(${phaseId},'${c.id}')" style="text-align:left">
-          <span class="category-card-arrow">${Phases.iconFor('arrowRight',14)}</span>
-          <span class="category-card-icon">${Phases.iconFor(c.icon||'listChecks',28)}</span>
-          <div class="category-card-name">${escapeHtml(c.name)}</div>
-          <div class="category-card-desc">${escapeHtml(c.desc)}</div>
-          <div class="category-card-meta">
-            <div class="category-card-progress-label">${entries.length} entr${entries.length!==1?'ies':'y'}</div>
-            <div class="category-card-cost">${F.fmt(ct)}</div>
-          </div>
-        </button>${deleteBtn}</div>`;
+      return `<button class="category-card" onclick="App.showEntryForm(${phaseId},'${c.id}')" style="text-align:left">
+        <span class="category-card-arrow">${Phases.iconFor('arrowRight',14)}</span>
+        <span class="category-card-icon">${Phases.iconFor(c.icon||'listChecks',28)}</span>
+        <div class="category-card-name">${escapeHtml(c.name)}</div>
+        <div class="category-card-desc">${escapeHtml(c.desc)}</div>
+        <div class="category-card-meta">
+          <div class="category-card-progress-label">${entries.length} entr${entries.length!==1?'ies':'y'}</div>
+          <div class="category-card-cost">${F.fmt(ct)}</div>
+        </div>
+      </button>`;
     }).join('');
-    // Add "Add New" card at the end (Change #1)
-    const addNewCard = !isLabor ? `
-      <button class="category-card" onclick="Phases.showAddCustomCardModal(${phaseId},false)" style="text-align:left;border-style:dashed;opacity:.7">
-        <span class="category-card-icon">${Phases.iconFor('plus',28)}</span>
-        <div class="category-card-name" style="color:var(--text-muted)">Add New Material</div>
-        <div class="category-card-desc">Create a custom material entry</div>
-      </button>` : '';
     return `<div class="category-hub">
       <div class="breadcrumb" style="margin-bottom:12px">
         <a onclick="App.showOverview()" style="cursor:pointer">Overview</a>
@@ -2238,7 +1650,7 @@
       <div class="category-hub-header" style="margin-bottom:20px">
         <div class="category-hub-title">${Phases.iconFor(phase.icon, 20)} <span style="margin-left:8px">${escapeHtml(phase.name)}</span></div>
       </div>
-      <div class="category-grid">${cardHtml}${addNewCard}</div>
+      <div class="category-grid">${cardHtml}</div>
       
       <!-- Section details & total box at the bottom -->
       <div style="margin-top:24px;margin-bottom:20px;background:var(--charcoal-mid);border:1px solid var(--charcoal-border);border-radius:var(--radius-lg);padding:14px 18px">

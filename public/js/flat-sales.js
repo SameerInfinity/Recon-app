@@ -46,7 +46,7 @@ const FlatSales = (() => {
         <div class="hub-header" style="margin-bottom:20px">
           <div class="hub-header-left">
             <div>
-              <h2 class="hub-title" style="font-size:22px">${Icons.render('building', 22)} Flat / Shop Purchaser</h2>
+              <h2 class="hub-title" style="font-size:22px">${Icons.render('building', 22)} Flat Sales / Purchaser</h2>
               <p class="hub-subtitle">Track buyers, agreed amounts, instalments and payment proofs.</p>
             </div>
           </div>

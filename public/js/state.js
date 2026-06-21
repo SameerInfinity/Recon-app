@@ -94,7 +94,6 @@ const State = (() => {
     { id: 8, name: 'Lift (Elevator)',   icon: 'stairs',     completion: 0, data: {} },
     { id: 9, name: 'Other (Misc.)',     icon: 'listChecks', completion: 0, data: {} },
     { id: 10, name: 'Interior',          icon: 'sofa',       completion: 0, data: {} },
-    { id: 11, name: 'Electrical Supply', icon: 'zap',        completion: 0, data: {} },
   ];
 
   const DEFAULT_PHASE_META = [
@@ -108,7 +107,6 @@ const State = (() => {
     { phase_number: 8, name: 'Lift (Elevator)',   icon: 'stairs' },
     { phase_number: 9, name: 'Other (Misc.)',     icon: 'listChecks' },
     { phase_number: 10, name: 'Interior',         icon: 'sofa' },
-    { phase_number: 11, name: 'Electrical Supply', icon: 'zap' },
   ];
 
   // Section map for data migration

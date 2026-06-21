@@ -1,7 +1,6 @@
 /* ═══════════════════════════════════════════
    VENDOR-KHATA.JS — Vendor Credit Ledger (Udhaar)
    Track balances owed to hardware/material suppliers
-   Change #6: Total/Paid/Remaining for udhaari AND purchase
    ═══════════════════════════════════════════ */
 
 const VendorKhata = (() => {
@@ -52,9 +51,6 @@ const VendorKhata = (() => {
         const bal = parseFloat(v.balance) || 0;
         const isOwed = bal > 0;
         const txns = (proj.vendorTransactions || []).filter(t => t.vendorId === v.id);
-        // Calculate totals from transactions (Change #6)
-        const totalPurchased = txns.filter(t => t.type === 'debit').reduce((s, t) => s + (parseFloat(t.totalAmount) || parseFloat(t.amount) || 0), 0);
-        const totalPaid = txns.filter(t => t.type === 'debit').reduce((s, t) => s + (parseFloat(t.paidAmount) || 0), 0) + txns.filter(t => t.type === 'credit').reduce((s, t) => s + (parseFloat(t.amount) || 0), 0);
         html += `
           <div class="category-card" onclick="VendorKhata.showVendorLedger('${escapeAttr(v.id)}')" style="cursor:pointer; transition: transform 0.15s, box-shadow 0.15s;" onmouseover="this.style.transform='translateY(-2px)';this.style.boxShadow='0 8px 24px rgba(0,0,0,0.3)'" onmouseout="this.style.transform='';this.style.boxShadow=''">
             <div class="cat-card-header">
@@ -66,11 +62,9 @@ const VendorKhata = (() => {
             </div>
             <div class="cat-card-meta" style="margin-top:12px">
               <span style="font-size:11px; color:var(--text-muted)">${txns.length} transactions</span>
-              <span style="font-size:11px; color:var(--text-muted); margin-left:8px">Total: ${Financial.fmt(totalPurchased)}</span>
-              <span style="font-size:11px; color:var(--text-muted); margin-left:8px">Paid: ${Financial.fmt(totalPaid)}</span>
             </div>
             <div class="cat-card-footer" style="margin-top:16px; padding-top:12px; border-top:1px solid var(--charcoal-border); display:flex; justify-content:space-between; align-items:center">
-              <span style="font-size:12px; color:var(--text-muted)">Remaining (Udhaar)</span>
+              <span style="font-size:12px; color:var(--text-muted)">Outstanding</span>
               <span style="font-family:var(--font-mono); font-weight:700; font-size:16px; color:${isOwed ? '#C77966' : '#A8B89C'}">${isOwed ? Financial.fmt(bal) : 'Cleared ✓'}</span>
             </div>
           </div>
@@ -81,7 +75,7 @@ const VendorKhata = (() => {
     return html;
   }
 
-  // ── Add Vendor Modal (Change #6: Total/Paid/Remaining) ────
+  // ── Add Vendor Modal ──────────────────────────────────────
   function showAddVendorModal() {
     App.showModal(`
       <h3 class="modal-title">🏪 Add New Vendor</h3>
@@ -99,18 +93,8 @@ const VendorKhata = (() => {
           <input class="modal-input" id="new-vendor-phone" placeholder="10-digit number" style="font-family:var(--font-mono)">
         </div>
         <div>
-          <label class="modal-label">Total Amount (₹)</label>
-          <input class="modal-input" type="number" id="new-vendor-total" placeholder="0" style="font-family:var(--font-mono)" oninput="VendorKhata._calcVendorRemaining()">
-        </div>
-      </div>
-      <div style="display:grid; grid-template-columns:1fr 1fr; gap:12px; margin-bottom:14px">
-        <div>
-          <label class="modal-label">Paid Amount (₹)</label>
-          <input class="modal-input" type="number" id="new-vendor-paid" placeholder="0" style="font-family:var(--font-mono)" oninput="VendorKhata._calcVendorRemaining()">
-        </div>
-        <div>
-          <label class="modal-label">Remaining / Udhaar (₹)</label>
-          <input class="modal-input" type="number" id="new-vendor-balance" placeholder="0" style="font-family:var(--font-mono);background:rgba(199,121,102,0.08)" readonly>
+          <label class="modal-label">Opening Balance (Udhaar)</label>
+          <input class="modal-input" type="number" id="new-vendor-balance" placeholder="0" style="font-family:var(--font-mono)">
         </div>
       </div>
       <div style="margin-bottom:20px">
@@ -124,31 +108,20 @@ const VendorKhata = (() => {
     `);
   }
 
-  // Auto-calculate remaining amount for vendor creation
-  function _calcVendorRemaining() {
-    const total = parseFloat(document.getElementById('new-vendor-total')?.value) || 0;
-    const paid = parseFloat(document.getElementById('new-vendor-paid')?.value) || 0;
-    const remaining = Math.max(0, total - paid);
-    const balEl = document.getElementById('new-vendor-balance');
-    if (balEl) balEl.value = remaining || '';
-  }
-
   async function saveNewVendor() {
     const name = document.getElementById('new-vendor-name').value.trim();
     if (!name) { App.toast('Vendor name is required', 'error'); return; }
     const shopName = document.getElementById('new-vendor-shop').value.trim();
     const phone = document.getElementById('new-vendor-phone').value.trim();
-    const totalAmount = parseFloat(document.getElementById('new-vendor-total').value) || 0;
-    const paidAmount = parseFloat(document.getElementById('new-vendor-paid').value) || 0;
-    const balance = Math.max(0, totalAmount - paidAmount);
+    const balance = parseFloat(document.getElementById('new-vendor-balance').value) || 0;
     const notes = document.getElementById('new-vendor-notes').value.trim();
-    await State.addVendor({ name, shopName, phone, balance, notes, totalAmount, paidAmount, openingBalance: balance });
+    await State.addVendor({ name, shopName, phone, balance, notes });
     App.closeModal();
     App.toast('Vendor added', 'success');
     App.showVendorHub();
   }
 
-  // ── Vendor Ledger View (Change #6: Total/Paid/Remaining) ──
+  // ── Vendor Ledger View ───────────────────────────────────
   function showVendorLedger(id) {
     const proj = State.getCurrentProject();
     if (!proj) return;
@@ -173,7 +146,7 @@ const VendorKhata = (() => {
         </div>
         <div class="hub-header-right">
           <div class="phase-chip" style="margin-right:12px; background:${isOwed ? '#C7796618' : '#A8B89C18'}; color:${isOwed ? '#C77966' : '#A8B89C'}">
-            <span class="phase-pct">Remaining: ${isOwed ? Financial.fmt(bal) + ' Udhaar' : 'Cleared ✓'}</span>
+            <span class="phase-pct">Balance: ${isOwed ? Financial.fmt(bal) + ' Owed' : 'Cleared ✓'}</span>
           </div>
           <button class="btn btn-secondary" onclick="VendorKhata.showVendorTransactionModal('${escapeAttr(v.id)}','debit')" style="margin-right:8px">+ Purchase (Udhaar)</button>
           <button class="btn btn-primary" onclick="VendorKhata.showVendorTransactionModal('${escapeAttr(v.id)}','credit')">✓ Record Payment</button>
@@ -182,22 +155,14 @@ const VendorKhata = (() => {
 
       ${v.notes ? `<div style="background:var(--charcoal-mid); border:1px solid var(--charcoal-border); border-radius:10px; padding:12px 16px; margin:16px 0; font-size:12px; color:var(--text-muted)">📝 ${escapeHtml(v.notes)}</div>` : ''}
 
-      <!-- Summary Cards (Change #6) -->
-      <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-bottom:20px">
-        ${_summaryCard('Total Purchased', Financial.fmt(txns.filter(t=>t.type==='debit').reduce((s,t)=>s+(parseFloat(t.totalAmount)||parseFloat(t.amount)||0),0)), '#9E7758')}
-        ${_summaryCard('Total Paid', Financial.fmt(txns.filter(t=>t.type==='credit').reduce((s,t)=>s+(parseFloat(t.amount)||0),0) + txns.filter(t=>t.type==='debit').reduce((s,t)=>s+(parseFloat(t.paidAmount)||0),0)), '#A8B89C')}
-        ${_summaryCard('Remaining Udhaar', Financial.fmt(bal), isOwed ? '#C77966' : '#A8B89C')}
-      </div>
-
       <div class="section-title" style="margin-top:20px; color:var(--text-muted); font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:0.06em">Transaction History</div>
       <table style="width:100%; border-collapse:collapse; margin-top:12px">
         <thead>
           <tr style="border-bottom:2px solid var(--charcoal-border)">
             <th style="padding:10px 12px; color:var(--text-muted); font-size:11px; text-transform:uppercase; text-align:left">Date</th>
             <th style="padding:10px 12px; color:var(--text-muted); font-size:11px; text-transform:uppercase; text-align:left">Description</th>
-            <th style="padding:10px 12px; color:var(--text-muted); font-size:11px; text-transform:uppercase; text-align:right">Total Amount</th>
-            <th style="padding:10px 12px; color:var(--text-muted); font-size:11px; text-transform:uppercase; text-align:right">Paid</th>
-            <th style="padding:10px 12px; color:var(--text-muted); font-size:11px; text-transform:uppercase; text-align:right">Remaining (Udhaar)</th>
+            <th style="padding:10px 12px; color:var(--text-muted); font-size:11px; text-transform:uppercase; text-align:right">Debit (Udhaar)</th>
+            <th style="padding:10px 12px; color:var(--text-muted); font-size:11px; text-transform:uppercase; text-align:right">Payment Made</th>
             <th style="padding:10px 12px; color:var(--text-muted); font-size:11px; text-transform:uppercase; text-align:center">Proof</th>
             <th style="padding:10px 12px; color:var(--text-muted); font-size:11px; text-transform:uppercase; text-align:right">Balance</th>
           </tr>
@@ -206,19 +171,14 @@ const VendorKhata = (() => {
     `;
 
     if (txns.length === 0) {
-      html += `<tr><td colspan="7" style="padding:32px; text-align:center; color:var(--text-muted); font-size:13px">No transactions yet. Use the buttons above to add purchases or payments.</td></tr>`;
+      html += `<tr><td colspan="6" style="padding:32px; text-align:center; color:var(--text-muted); font-size:13px">No transactions yet. Use the buttons above to add purchases or payments.</td></tr>`;
     } else {
       // Sort oldest-first to compute running balance chronologically
       const sortedAsc = [...txns].sort((a, b) => new Date(a.date) - new Date(b.date));
-      let runningBal = parseFloat(v.openingBalance) || parseFloat(v.balance) || 0;
+      let runningBal = parseFloat(v.openingBalance) || 0;
       const rowsWithBal = sortedAsc.map(t => {
         const isDebit = t.type === 'debit';
-        // For debit: remaining increases balance; for credit: payment decreases balance
-        if (isDebit) {
-          runningBal += (parseFloat(t.remainingAmount) || parseFloat(t.amount) || 0);
-        } else {
-          runningBal -= (parseFloat(t.amount) || 0);
-        }
+        runningBal += isDebit ? (parseFloat(t.amount) || 0) : -(parseFloat(t.amount) || 0);
         return { ...t, runningBal };
       });
       // Show newest first for display
@@ -250,40 +210,22 @@ const VendorKhata = (() => {
           }
         }
 
-        // Change #6: Show Total/Paid/Remaining for debit (purchase) entries
-        if (isDebit) {
-          const totalAmt = parseFloat(t.totalAmount) || parseFloat(t.amount) || 0;
-          const paidAmt = parseFloat(t.paidAmount) || 0;
-          const remainAmt = parseFloat(t.remainingAmount) || (totalAmt - paidAmt);
-          html += `
-            <tr style="border-bottom:1px solid var(--charcoal-border)">
-              <td style="padding:12px; font-family:var(--font-mono); font-size:12px; color:var(--text-muted)">${new Date(t.date).toLocaleDateString('en-IN')}</td>
-              <td style="padding:12px; font-size:13px; color:var(--text-secondary)">${escapeHtml(t.description || '—')}</td>
-              <td style="padding:12px; text-align:right; font-family:var(--font-mono); font-weight:700; color:var(--text-secondary)">${Financial.fmt(totalAmt)}</td>
-              <td style="padding:12px; text-align:right; font-family:var(--font-mono); font-weight:700; color:#A8B89C">${paidAmt > 0 ? Financial.fmt(paidAmt) : '—'}</td>
-              <td style="padding:12px; text-align:right; font-family:var(--font-mono); font-weight:700; color:#C77966">${remainAmt > 0 ? Financial.fmt(remainAmt) : '—'}</td>
-              ${proofCell}
-              <td style="padding:12px; text-align:right; font-family:var(--font-mono); font-weight:700; color:${balColor}">
-                ${balText}
-              </td>
-            </tr>
-          `;
-        } else {
-          // Credit (payment) entries — just show amount
-          html += `
-            <tr style="border-bottom:1px solid var(--charcoal-border)">
-              <td style="padding:12px; font-family:var(--font-mono); font-size:12px; color:var(--text-muted)">${new Date(t.date).toLocaleDateString('en-IN')}</td>
-              <td style="padding:12px; font-size:13px; color:var(--text-secondary)">${escapeHtml(t.description || '—')}</td>
-              <td style="padding:12px; text-align:right; font-family:var(--font-mono); font-weight:700; color:var(--text-muted)">—</td>
-              <td style="padding:12px; text-align:right; font-family:var(--font-mono); font-weight:700; color:#A8B89C">${Financial.fmt(t.amount)}</td>
-              <td style="padding:12px; text-align:right; font-family:var(--font-mono); font-weight:700; color:var(--text-muted)">—</td>
-              ${proofCell}
-              <td style="padding:12px; text-align:right; font-family:var(--font-mono); font-weight:700; color:${balColor}">
-                ${balText}
-              </td>
-            </tr>
-          `;
-        }
+        html += `
+          <tr style="border-bottom:1px solid var(--charcoal-border)">
+            <td style="padding:12px; font-family:var(--font-mono); font-size:12px; color:var(--text-muted)">${new Date(t.date).toLocaleDateString('en-IN')}</td>
+            <td style="padding:12px; font-size:13px; color:var(--text-secondary)">${escapeHtml(t.description || '—')}</td>
+            <td style="padding:12px; text-align:right; font-family:var(--font-mono); font-weight:700; color:${isDebit ? '#C77966' : 'var(--text-muted)'}">
+              ${isDebit ? Financial.fmt(t.amount) : '—'}
+            </td>
+            <td style="padding:12px; text-align:right; font-family:var(--font-mono); font-weight:700; color:${!isDebit ? '#A8B89C' : 'var(--text-muted)'}">
+              ${!isDebit ? Financial.fmt(t.amount) : '—'}
+            </td>
+            ${proofCell}
+            <td style="padding:12px; text-align:right; font-family:var(--font-mono); font-weight:700; color:${balColor}">
+              ${balText}
+            </td>
+          </tr>
+        `;
       });
     }
 
@@ -298,42 +240,12 @@ const VendorKhata = (() => {
     document.getElementById('content-area').innerHTML = html;
   }
 
-  function _summaryCard(label, value, color) {
-    return `<div style="background:var(--charcoal-mid);border:1px solid var(--charcoal-border);border-radius:10px;padding:14px 16px">
-      <div style="font-size:10px;text-transform:uppercase;letter-spacing:.08em;font-weight:700;color:var(--text-muted);margin-bottom:6px">${label}</div>
-      <div style="font-family:var(--font-mono);font-size:20px;font-weight:700;color:${color}">${value}</div>
-    </div>`;
-  }
-
-  // ── Transaction Modal (Change #6: Total/Paid/Remaining) ───
+  // ── Transaction Modal ────────────────────────────────────
   function showVendorTransactionModal(vendorId, type) {
     const today = new Date().toISOString().split('T')[0];
     const isDebit = type === 'debit';
     const title = isDebit ? '+ Record Purchase (Udhaar)' : '✓ Record Payment to Vendor';
     const btnText = isDebit ? 'Add Purchase' : 'Record Payment';
-
-    // For debit (purchase): show Total/Paid/Remaining fields (Change #6)
-    const purchaseFieldsHtml = isDebit ? `
-      <div style="display:grid; grid-template-columns:1fr 1fr; gap:12px; margin-bottom:14px">
-        <div>
-          <label class="modal-label">Total Amount (₹) *</label>
-          <input class="modal-input" type="number" id="txn-total-amount" placeholder="0" style="font-family:var(--font-mono)" oninput="VendorKhata._calcTxnRemaining()">
-        </div>
-        <div>
-          <label class="modal-label">Paid Amount (₹)</label>
-          <input class="modal-input" type="number" id="txn-paid-amount" placeholder="0" style="font-family:var(--font-mono)" oninput="VendorKhata._calcTxnRemaining()">
-        </div>
-      </div>
-      <div style="margin-bottom:14px">
-        <label class="modal-label">Remaining / Udhaar Amount (₹)</label>
-        <input class="modal-input" type="number" id="txn-remaining-amount" placeholder="0" style="font-family:var(--font-mono);background:rgba(199,121,102,0.08)" readonly>
-      </div>
-    ` : `
-      <div style="margin-bottom:14px">
-        <label class="modal-label">Amount (₹) *</label>
-        <input class="modal-input" type="number" id="txn-amount" placeholder="0" style="font-family:var(--font-mono)">
-      </div>
-    `;
 
     // Payment proof upload — only for credit (payment) transactions
     const proofUploadHtml = !isDebit ? `
@@ -358,12 +270,17 @@ const VendorKhata = (() => {
       <h3 class="modal-title">${title}</h3>
       <input type="hidden" id="txn-vendor-id" value="${vendorId}">
       <input type="hidden" id="txn-type" value="${type}">
-      <div style="margin-bottom:14px">
-        <label class="modal-label">Date *</label>
-        <input class="modal-input" type="date" id="txn-date" value="${today}" style="font-family:var(--font-mono)">
+      <div style="display:grid; grid-template-columns:1fr 1fr; gap:12px; margin-bottom:14px">
+        <div>
+          <label class="modal-label">Date *</label>
+          <input class="modal-input" type="date" id="txn-date" value="${today}" style="font-family:var(--font-mono)">
+        </div>
+        <div>
+          <label class="modal-label">Amount (₹) *</label>
+          <input class="modal-input" type="number" id="txn-amount" placeholder="0" style="font-family:var(--font-mono)">
+        </div>
       </div>
-      ${purchaseFieldsHtml}
-      <div style="margin-bottom:14px">
+      <div style="margin-bottom:${isDebit ? '20px' : '14px'}">
         <label class="modal-label">Description</label>
         <input class="modal-input" type="text" id="txn-description"
           placeholder="${isDebit ? 'e.g. 50 bags OPC cement @ 350/bag' : 'e.g. Cash payment settlement, UPI transfer'}">
@@ -376,15 +293,6 @@ const VendorKhata = (() => {
           style="flex:1; padding:11px; border-radius:10px; cursor:pointer; font-size:13px; font-weight:700; font-family:inherit">${btnText}</button>
       </div>
     `);
-  }
-
-  // Auto-calculate remaining amount for purchase transactions
-  function _calcTxnRemaining() {
-    const total = parseFloat(document.getElementById('txn-total-amount')?.value) || 0;
-    const paid = parseFloat(document.getElementById('txn-paid-amount')?.value) || 0;
-    const remaining = Math.max(0, total - paid);
-    const remainEl = document.getElementById('txn-remaining-amount');
-    if (remainEl) remainEl.value = remaining || '';
   }
 
   // Handle proof image upload preview
@@ -427,34 +335,15 @@ const VendorKhata = (() => {
     const vendorId = document.getElementById('txn-vendor-id').value;
     const type = document.getElementById('txn-type').value;
     const date = document.getElementById('txn-date').value;
+    const amount = parseFloat(document.getElementById('txn-amount').value);
     const description = document.getElementById('txn-description').value.trim();
     const proofDataUrl = document.getElementById('proof-data-url')?.value || '';
     const proofFileType = document.getElementById('proof-file-type')?.value || '';
 
     if (!date) { App.toast('Date is required', 'error'); return; }
-
-    const isDebit = type === 'debit';
-    let amount, totalAmount, paidAmount, remainingAmount;
-
-    if (isDebit) {
-      // Change #6: Purchase with Total/Paid/Remaining
-      totalAmount = parseFloat(document.getElementById('txn-total-amount').value);
-      paidAmount = parseFloat(document.getElementById('txn-paid-amount').value) || 0;
-      remainingAmount = Math.max(0, (totalAmount || 0) - paidAmount);
-      amount = remainingAmount; // The balance-impacting amount is the remaining
-
-      if (!totalAmount || totalAmount <= 0) { App.toast('Enter a valid total amount', 'error'); return; }
-    } else {
-      amount = parseFloat(document.getElementById('txn-amount').value);
-      if (!amount || amount <= 0) { App.toast('Enter a valid amount', 'error'); return; }
-    }
+    if (!amount || amount <= 0) { App.toast('Enter a valid amount', 'error'); return; }
 
     const txnData = { vendorId, type, date, amount, description };
-    if (isDebit) {
-      txnData.totalAmount = totalAmount;
-      txnData.paidAmount = paidAmount;
-      txnData.remainingAmount = remainingAmount;
-    }
     if (proofDataUrl) {
       txnData.proofDataUrl = proofDataUrl;
       txnData.proofFileType = proofFileType;
@@ -514,7 +403,6 @@ const VendorKhata = (() => {
     showVendorTransactionModal, saveVendorTransaction,
     viewProof,
     _handleProofUpload, _clearProof,
-    _calcVendorRemaining, _calcTxnRemaining,
     deleteVendor
   };
 })();
