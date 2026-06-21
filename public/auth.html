@@ -276,7 +276,8 @@
 
 <script src="js/security.js?v=1"></script>
 <script src="js/capacitor-bridge.js?v=1"></script>
-<script src="js/supabase-client.js?v=21"></script>
+<script src="js/supabase.min.js"></script>
+<script src="js/supabase-client.js?v=22"></script>
 <script src="js/icons.js"></script>
 <script>
 const AuthUI = (() => {
@@ -372,7 +373,7 @@ const AuthUI = (() => {
       await SupabaseClient.signIn(email, password);
       loginAttempts = 0; window.__reconLockoutPersist && window.__reconLockoutPersist();
       showSuccess('Signed in! Redirecting...');
-      setTimeout(() => { window.location.href = (window.CapacitorBridge && CapacitorBridge.isNative) ? '/index.html' : '/'; }, 500);
+      setTimeout(() => { window.location.href = (window.CapacitorBridge && window.CapacitorBridge.isNative) ? '/index.html' : '/'; }, 500);
     } catch (err) {
       loginAttempts++; window.__reconLockoutPersist && window.__reconLockoutPersist();
       if (loginAttempts >= 5) {
@@ -407,7 +408,7 @@ const AuthUI = (() => {
         switchTab('login');
       } else {
         showSuccess('Account created! Redirecting...');
-        setTimeout(() => { window.location.href = (window.CapacitorBridge && CapacitorBridge.isNative) ? '/index.html' : '/'; }, 500);
+        setTimeout(() => { window.location.href = (window.CapacitorBridge && window.CapacitorBridge.isNative) ? '/index.html' : '/'; }, 500);
       }
     } catch (err) {
       showError(err.message || 'Registration failed. Try a different email.');
@@ -433,7 +434,7 @@ const AuthUI = (() => {
 
   SupabaseClient.onReady((sb) => {
     if (SupabaseClient.isAuthenticated()) {
-      window.location.href = (window.CapacitorBridge && CapacitorBridge.isNative) ? '/index.html' : '/';
+      window.location.href = (window.CapacitorBridge && window.CapacitorBridge.isNative) ? '/index.html' : '/';
     }
   });
 
@@ -455,7 +456,7 @@ const AuthUI = (() => {
       // listener fires before this page attached it.
       const isCapacitor = !!(window.Capacitor && window.Capacitor.isNativePlatform && window.Capacitor.isNativePlatform());
       if (isCapacitor) {
-        window.location.href = (window.CapacitorBridge && CapacitorBridge.isNative) ? '/index.html' : '/';
+        window.location.href = (window.CapacitorBridge && window.CapacitorBridge.isNative) ? '/index.html' : '/';
       }
     } catch (err) {
       btn.disabled = false;

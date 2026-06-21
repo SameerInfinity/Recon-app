@@ -94,6 +94,7 @@ const State = (() => {
     { id: 8, name: 'Lift (Elevator)',   icon: 'stairs',     completion: 0, data: {} },
     { id: 9, name: 'Other (Misc.)',     icon: 'listChecks', completion: 0, data: {} },
     { id: 10, name: 'Interior',          icon: 'sofa',       completion: 0, data: {} },
+    { id: 11, name: 'Electrical Supply', icon: 'zap',        completion: 0, data: {} },
   ];
 
   const DEFAULT_PHASE_META = [
@@ -107,6 +108,7 @@ const State = (() => {
     { phase_number: 8, name: 'Lift (Elevator)',   icon: 'stairs' },
     { phase_number: 9, name: 'Other (Misc.)',     icon: 'listChecks' },
     { phase_number: 10, name: 'Interior',         icon: 'sofa' },
+    { phase_number: 11, name: 'Electrical Supply', icon: 'zap' },
   ];
 
   // Section map for data migration
@@ -425,79 +427,9 @@ const State = (() => {
     if (!client || !uid) return;
     if (_isReplaying) return;
 
-    const queue = getSyncQueue();
-    if (queue.length === 0) return;
-
-    _isReplaying = true;
-    console.log('[Sync] Replaying', queue.length, 'queued mutations...');
     window.dispatchEvent(new CustomEvent('syncstart'));
-
-    let anyFailed = false;
-    let anySucceeded = false;
-    let networkError = false;
-
-    try {
-      for (let i = 0; i < queue.length; i++) {
-        const item = queue[i];
-        // Skip items whose payload references a local (non-UUID) id — they can't be synced yet
-        if (item.action !== 'delete' && item.id && !isUUID(item.id) && item.table !== 'projects') {
-          console.warn(`[Sync] Skipping non-UUID item in queue: ${item.table}/${item.id}`);
-          continue;
-        }
-
-        let success = false;
-        try {
-          if (item.action === 'insert') {
-            const { error } = await client.from(item.table).insert(item.payload);
-            if (!error) { success = true; } else {
-              // If row already exists, treat as success (idempotent)
-              if (error.code === '23505') { success = true; }
-              else console.warn(`[Sync] Queue insert error for table ${item.table}:`, error.message);
-            }
-          } else if (item.action === 'update') {
-            const { error } = await client.from(item.table).update(item.payload).eq('id', item.id);
-            if (!error) { success = true; }
-            else console.warn(`[Sync] Queue update error for table ${item.table}:`, error.message);
-          } else if (item.action === 'delete') {
-            const { error } = await client.from(item.table).delete().eq('id', item.id);
-            if (!error) { success = true; }
-            else console.warn(`[Sync] Queue delete error for table ${item.table}:`, error.message);
-          }
-        } catch (err) {
-          console.warn(`[Sync] Queue network exception for table ${item.table}:`, err.message);
-          networkError = true;
-          // Stop on network errors — we're likely offline again
-          break;
-        }
-
-        if (success) {
-          anySucceeded = true;
-          const currentQueue = getSyncQueue();
-          const updated = currentQueue.filter(q => !(q.id === item.id && q.timestamp === item.timestamp));
-          saveSyncQueue(updated);
-          window.dispatchEvent(new CustomEvent('syncqueuechanged'));
-        } else {
-          anyFailed = true;
-          // Don't break — skip and try the next item (resilient replay)
-          // Only stop on network errors, not on constraint/logic errors
-        }
-      }
-    } finally {
-      _isReplaying = false;
-      const allSucceeded = !anyFailed && !networkError;
-      window.dispatchEvent(new CustomEvent('syncend', { detail: { success: allSucceeded } }));
-      console.log('[Sync] Replay completed.', allSucceeded ? 'All items synced.' : 'Some items failed or were skipped.');
-    }
-
-    if (anySucceeded || (!anyFailed && !networkError)) {
-      // NOTE: Do NOT call loadFromSupabase() or _notifySynced() here!
-      // Those caused the sync loop (247 requests/min):
-      //   _notifySynced → statesynced → showHub → Financial.updateAllTotals → State.save → saveToSupabase → loop
-      // The local state is already correct — we just pushed it to the cloud.
-      // Set post-sync suppress to prevent re-render triggered saves.
-      _postSyncSuppressUntil = Date.now() + 5000;
-      _notifyDirtyChanged();
-    }
+    const allSucceeded = await _replaySyncQueueQuiet();
+    window.dispatchEvent(new CustomEvent('syncend', { detail: { success: allSucceeded } }));
   }
 
   function hasUnsyncedChanges() {
@@ -702,8 +634,14 @@ const State = (() => {
     try {
       for (let i = 0; i < queue.length; i++) {
         const item = queue[i];
-        if (item.action !== 'delete' && item.id && !isUUID(item.id) && item.table !== 'projects') {
-          console.warn(`[Sync] Skipping non-UUID item in queue: ${item.table}/${item.id}`);
+
+        // Skip and remove invalid non-UUID items from queue immediately to prevent blocking sync forever
+        if (item.id && !isUUID(item.id) && item.table !== 'projects') {
+          console.warn(`[Sync] Skipping and removing invalid non-UUID item from queue: ${item.table}/${item.id}`);
+          const currentQueue = getSyncQueue();
+          const updated = currentQueue.filter(q => !(q.id === item.id && q.timestamp === item.timestamp));
+          saveSyncQueue(updated);
+          window.dispatchEvent(new CustomEvent('syncqueuechanged'));
           continue;
         }
 
@@ -713,21 +651,27 @@ const State = (() => {
             const { error } = await client.from(item.table).insert(item.payload);
             if (!error) { success = true; } else {
               if (error.code === '23505') { success = true; }
-              else console.warn(`[Sync] Queue insert error for table ${item.table}:`, error.message);
+              else {
+                console.warn(`[Sync] Queue insert error for table ${item.table}:`, error.message);
+              }
             }
           } else if (item.action === 'update') {
             const { error } = await client.from(item.table).update(item.payload).eq('id', item.id);
             if (!error) { success = true; }
-            else console.warn(`[Sync] Queue update error for table ${item.table}:`, error.message);
+            else {
+              console.warn(`[Sync] Queue update error for table ${item.table}:`, error.message);
+            }
           } else if (item.action === 'delete') {
             const { error } = await client.from(item.table).delete().eq('id', item.id);
             if (!error) { success = true; }
-            else console.warn(`[Sync] Queue delete error for table ${item.table}:`, error.message);
+            else {
+              console.warn(`[Sync] Queue delete error for table ${item.table}:`, error.message);
+            }
           }
         } catch (err) {
           console.warn(`[Sync] Queue network exception for table ${item.table}:`, err.message);
           networkError = true;
-          break;
+          break; // Stop replaying on temporary network issues
         }
 
         if (success) {
@@ -738,6 +682,20 @@ const State = (() => {
           window.dispatchEvent(new CustomEvent('syncqueuechanged'));
         } else {
           anyFailed = true;
+          // Increment retry count to prevent infinite loop on bad items (e.g. database errors)
+          const currentQueue = getSyncQueue();
+          const qItem = currentQueue.find(q => q.id === item.id && q.timestamp === item.timestamp);
+          if (qItem) {
+            qItem.retryCount = (qItem.retryCount || 0) + 1;
+            if (qItem.retryCount >= 5) {
+              console.warn(`[Sync] Discarding persistently failing queue item after 5 attempts:`, qItem);
+              const updated = currentQueue.filter(q => !(q.id === item.id && q.timestamp === item.timestamp));
+              saveSyncQueue(updated);
+              window.dispatchEvent(new CustomEvent('syncqueuechanged'));
+            } else {
+              saveSyncQueue(currentQueue);
+            }
+          }
         }
       }
     } finally {
@@ -749,6 +707,12 @@ const State = (() => {
 
     // Update dirty state notification (queue length affects hasUnsyncedChanges)
     _notifyDirtyChanged();
+
+    // Set post-sync suppress to prevent saves triggered by dashboard updates immediately after successful sync
+    if (anySucceeded || allSucceeded) {
+      _postSyncSuppressUntil = Date.now() + 5000;
+      _notifyDirtyChanged();
+    }
 
     return allSucceeded;
   }
@@ -1253,7 +1217,7 @@ const State = (() => {
   }
 
   function generateId() {
-    return Date.now().toString() + '-' + Math.random().toString(36).substr(2, 9);
+    return generateUUID();
   }
 
   function generateUUID() {

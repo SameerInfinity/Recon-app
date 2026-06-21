@@ -603,7 +603,7 @@ const App = (() => {
     const proj = State.getCurrentProject();
     if (!proj) { content.innerHTML = emptyState('No project open', 'Open or create a project from Dashboard.'); return; }
     const phases = Array.isArray(proj.phases) ? proj.phases : [];
-    const construction = phases.filter(p => p.id >= 1 && p.id <= 9);
+    const construction = phases.filter(p => p.id >= 1 && p.id <= 11 || p.id >= 12);
     const totalProject = Financial.computeProjectTotal(proj);
 
     const phaseCard = (ph) => {
@@ -643,6 +643,16 @@ const App = (() => {
               </div>
             </div>
             <span class="m-phase-card-chev" style="color:var(--amber)">›</span>
+          </button>
+          <button class="m-phase-card" onclick="App.showAddNewPhaseModal()" style="border:1.5px dashed var(--charcoal-border); background:var(--charcoal-surface); opacity:.7">
+            <span class="m-phase-card-icon">${Icons.render('plus', 22)}</span>
+            <div class="m-phase-card-body">
+              <div class="m-phase-card-name" style="color:var(--text-muted)">Add New Phase</div>
+              <div class="m-phase-card-meta">
+                <span>Create a custom construction phase</span>
+              </div>
+            </div>
+            <span class="m-phase-card-chev" style="color:var(--text-muted)">›</span>
           </button>
         </div>
       </div>`;
@@ -978,7 +988,7 @@ const App = (() => {
           </button>
           <button class="m-list-row" onclick="App.showFlatSales()">
             <span class="icon">${Icons.render('building', 18)}</span>
-            <div class="body"><div class="label">Flat Sales / Purchaser</div><div class="desc">Buyers and payments received</div></div>
+            <div class="body"><div class="label">Flat / Shop Purchaser</div><div class="desc">Buyers and payments received</div></div>
             <span class="chev">›</span>
           </button>
           <button class="m-list-row" onclick="App.showQuickLeads()">
@@ -1717,6 +1727,94 @@ const App = (() => {
 
   // ── Helpers ────────────────────────────────────────────
 
+  // ── Add New Phase Modal (Change #2) ──────────────────
+  function showAddNewPhaseModal() {
+    App.showModal(`
+      <h3 class="modal-title">➕ Add New Phase</h3>
+      <div style="margin-bottom:14px">
+        <label class="modal-label">Phase Name *</label>
+        <input class="modal-input" id="new-phase-name" placeholder="e.g. Landscaping">
+      </div>
+      <div style="margin-bottom:14px">
+        <label class="modal-label">Icon</label>
+        <select class="modal-input" id="new-phase-icon" style="appearance:auto">
+          <option value="listChecks">Checklist</option>
+          <option value="building">Building</option>
+          <option value="framing">Framing</option>
+          <option value="zap">Electrical</option>
+          <option value="pipe">Pipes</option>
+          <option value="sofa">Interior</option>
+          <option value="tools">Tools</option>
+          <option value="pickaxe">Earthwork</option>
+          <option value="ruler">Measurement</option>
+          <option value="paintbrush">Paint</option>
+          <option value="door">Door</option>
+          <option value="window">Window</option>
+          <option value="stairs">Stairs</option>
+          <option value="droplet">Plumbing</option>
+          <option value="insulation">Insulation</option>
+          <option value="blocks">Blocks</option>
+          <option value="foundation">Foundation</option>
+        </select>
+      </div>
+      <div style="font-size:12px;color:var(--text-muted);margin-bottom:14px">
+        A matching estimation trade will be auto-created for this phase.
+      </div>
+      <div style="display:flex;gap:12px">
+        <button onclick="App.closeModal()" class="modal-btn-cancel" style="flex:1;padding:11px;border-radius:10px;cursor:pointer;font-size:13px;font-weight:700;font-family:inherit">Cancel</button>
+        <button onclick="App.saveNewPhase()" class="modal-btn-primary" style="flex:1;padding:11px;border-radius:10px;cursor:pointer;font-size:13px;font-weight:700;font-family:inherit">Create Phase</button>
+      </div>
+    `);
+  }
+
+  function saveNewPhase() {
+    const name = document.getElementById('new-phase-name')?.value?.trim();
+    if (!name) { App.toast('Phase name is required', 'error'); return; }
+    const icon = document.getElementById('new-phase-icon')?.value || 'listChecks';
+
+    const proj = State.getCurrentProject();
+    if (!proj) return;
+
+    // Determine next available phase ID (start from 12)
+    const existingIds = (proj.phases || []).map(p => Number(p.id));
+    let newId = 12;
+    while (existingIds.includes(newId)) newId++;
+
+    // Create the new phase
+    const newPhase = { id: newId, name, icon, completion: 0, data: {} };
+    if (!proj.phases) proj.phases = [];
+    proj.phases.push(newPhase);
+
+    // Auto-create matching estimation trade (Change #2)
+    if (!proj.estimation) proj.estimation = {};
+    if (!proj.estimation.constr) proj.estimation.constr = {};
+    const tradeKey = 'custom_' + newId;
+    proj.estimation.constr[tradeKey] = { material: '', labor: '' };
+
+    // Add to Estimation TRADES and TRADE_PHASE_MAP dynamically
+    if (typeof Estimation !== 'undefined') {
+      // Add trade to TRADES array
+      if (Array.isArray(Estimation._customTrades)) {
+        Estimation._customTrades.push({ key: tradeKey, label: name, icon: icon });
+      } else {
+        Estimation._customTrades = [{ key: tradeKey, label: name, icon: icon }];
+      }
+      // Add to TRADE_PHASE_MAP
+      if (Estimation._customPhaseMap) {
+        Estimation._customPhaseMap[tradeKey] = newId;
+      } else {
+        Estimation._customPhaseMap = {};
+        Estimation._customPhaseMap[tradeKey] = newId;
+      }
+    }
+
+    State.updateProjectInfo({ phases: proj.phases, estimation: proj.estimation });
+    App.closeModal();
+    App.toast('Phase "' + name + '" created', 'success');
+    // Refresh construction hub
+    App.showHub('construction');
+  }
+
   function showEditProjectModal() {
     const proj = State.getCurrentProject();
     if (!proj) return toast('No project open', 'warning');
@@ -2337,6 +2435,7 @@ const App = (() => {
     showTutorial: window.showTutorial || function(){},
     showEditProjectModal, saveEditProject,
     confirmDeleteProject, confirmDeleteProjectById, confirmDeleteAccount,
+    showAddNewPhaseModal, saveNewPhase,
     // legacy no-ops
     toggleSidebar() {}, toggleSidebarGroup() {},
   };

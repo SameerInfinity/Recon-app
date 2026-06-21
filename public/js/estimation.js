@@ -36,6 +36,7 @@ const Estimation = (() => {
     { key: 'pop',         label: 'POP & False Ceiling',     icon: 'roof'       },
     { key: 'lift',        label: 'Lift / Elevator',         icon: 'stairs'     },
     { key: 'other',       label: 'Other / Misc.',           icon: 'blocks'     },
+    { key: 'electrical_supply', label: 'Electrical Supply', icon: 'zap'        },
   ];
 
   /* ── State helpers ──────────────────────────────────────── */
@@ -523,7 +524,8 @@ const Estimation = (() => {
   /* ── Map Estimation trades to Phase IDs ─────────────────── */
   const TRADE_PHASE_MAP = {
     civil: 1, tiles: 2, painting: 3, electrical: 4,
-    fabrication: 5, plumbing: 6, pop: 7, lift: 8, other: 9
+    fabrication: 5, plumbing: 6, pop: 7, lift: 8, other: 9,
+    electrical_supply: 11
   };
 
   /**
@@ -544,6 +546,10 @@ const Estimation = (() => {
     return { material, labor, total: material + labor };
   }
 
-  return { renderCard, _toggleCard, _toggleTrade, _onInput, applyToBudget, clearAll, _addCustomItem, _removeCustomItem, _updateCustomItem, getTradeBudget, TRADE_PHASE_MAP };
+  return { renderCard, _toggleCard, _toggleTrade, _onInput, applyToBudget, clearAll, _addCustomItem, _removeCustomItem, _updateCustomItem, getTradeBudget, TRADE_PHASE_MAP,
+    // Change #2: support dynamic custom trades
+    _customTrades: [], _customPhaseMap: {},
+    get TRADES_ALL() { return [...TRADES, ...this._customTrades]; }
+  };
 
 })();

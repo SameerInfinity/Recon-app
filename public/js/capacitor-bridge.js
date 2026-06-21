@@ -15,7 +15,7 @@ const CapacitorBridge = (() => {
   // This is the Render-deployed backend. Used by the native app
   // to reach /api/config, /api/ai/chat, /api/user/delete etc.
   // UPDATE THIS when you deploy to a new URL or add a custom domain.
-  const PRODUCTION_SERVER_URL = 'https://colancio.onrender.com/';
+  const PRODUCTION_SERVER_URL = 'https://colancio.onrender.com';
 
   // API base: in browser (localhost) use relative paths,
   // in Capacitor (local assets) use the full production URL
@@ -73,7 +73,7 @@ const CapacitorBridge = (() => {
   // Wraps fetch() to always use the correct base URL
   // and handles offline gracefully
   async function apiFetch(path, options = {}) {
-    if (_isOffline() && !path.includes('/api/config')) {
+    if (isOffline() && !path.includes('/api/config')) {
       // Allow config fetch even when offline (uses cache)
       throw new Error('OFFLINE: No internet connection');
     }
@@ -154,7 +154,7 @@ const CapacitorBridge = (() => {
   // Auto-init
   init();
 
-  return {
+  const bridge = {
     isNative,
     isAndroid,
     isIOS,
@@ -167,4 +167,9 @@ const CapacitorBridge = (() => {
     showOfflineBanner,
     hideOfflineBanner,
   };
+
+  // Expose to window explicitly
+  window.CapacitorBridge = bridge;
+
+  return bridge;
 })();

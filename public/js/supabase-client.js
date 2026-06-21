@@ -14,35 +14,73 @@ const SupabaseClient = (() => {
   async function init() {
     try {
       let config = null;
-      const isNative = !!(window.CapacitorBridge && CapacitorBridge.isNative);
+      const isNative = !!((window.CapacitorBridge && window.CapacitorBridge.isNative) || (window.Capacitor && window.Capacitor.isNativePlatform && window.Capacitor.isNativePlatform()));
+
+      console.log('[Supabase] ── init() start ──');
+      console.log('[Supabase] isNative:', isNative);
+      console.log('[Supabase] window.Capacitor:', !!window.Capacitor);
+      console.log('[Supabase] window.supabase SDK loaded:', !!window.supabase);
+      console.log('[Supabase] location:', window.location.href);
 
       // ── NATIVE (Capacitor): read the bundled app-config.json FIRST ──
-      // The standalone Android APK must never depend on the Render server
-      // to bootstrap. app-config.json is generated at build time from .env
-      // (see scripts/build-native-config.js) and bundled into the APK. It
-      // contains only the already-public anon key + project URL, so there
-      // is no secret leak — see CONTEXT.md §2 (standalone architecture).
       if (isNative) {
+        // Strategy 1: fetch with absolute path (most reliable in Capacitor)
         try {
-          console.log('[Supabase] Native build — loading bundled app-config.json');
-          const res = await fetch('app-config.json', { cache: 'no-store' });
+          console.log('[Supabase] Native: trying fetch("/app-config.json")');
+          const res = await fetch('/app-config.json');
+          console.log('[Supabase] Native: fetch("/app-config.json") status:', res.status, res.ok);
           if (res.ok) {
             config = await res.json();
-            sessionStorage.setItem('recon_supabase_config', JSON.stringify(config));
-          } else {
-            console.warn('[Supabase] app-config.json returned', res.status, '— falling back to server config');
+            console.log('[Supabase] Native: config loaded via /app-config.json ✓', config.supabaseUrl ? 'URL present' : 'URL MISSING');
           }
-        } catch (bundleErr) {
-          console.warn('[Supabase] Bundled app-config.json missing:', bundleErr.message, '— falling back to server config');
+        } catch (err1) {
+          console.warn('[Supabase] Native: fetch("/app-config.json") failed:', err1.message);
+        }
+
+        // Strategy 2: fetch with relative path (fallback)
+        if (!config) {
+          try {
+            console.log('[Supabase] Native: trying fetch("app-config.json")');
+            const res = await fetch('app-config.json');
+            console.log('[Supabase] Native: fetch("app-config.json") status:', res.status, res.ok);
+            if (res.ok) {
+              config = await res.json();
+              console.log('[Supabase] Native: config loaded via app-config.json ✓');
+            }
+          } catch (err2) {
+            console.warn('[Supabase] Native: fetch("app-config.json") failed:', err2.message);
+          }
+        }
+
+        // Strategy 3: XMLHttpRequest synchronous (last resort for WebView quirks)
+        if (!config) {
+          try {
+            console.log('[Supabase] Native: trying XMLHttpRequest for /app-config.json');
+            const xhr = new XMLHttpRequest();
+            xhr.open('GET', '/app-config.json', false); // synchronous
+            xhr.send(null);
+            if (xhr.status === 200 && xhr.responseText) {
+              config = JSON.parse(xhr.responseText);
+              console.log('[Supabase] Native: config loaded via XHR ✓');
+            } else {
+              console.warn('[Supabase] Native: XHR status:', xhr.status);
+            }
+          } catch (err3) {
+            console.warn('[Supabase] Native: XHR failed:', err3.message);
+          }
+        }
+
+        if (config) {
+          try { sessionStorage.setItem('recon_supabase_config', JSON.stringify(config)); } catch(e) {}
+        } else {
+          console.error('[Supabase] Native: ALL config load strategies failed!');
         }
       }
 
       // ── WEB, or NATIVE without a bundled config: fetch /api/config ──
-      // In Capacitor (local assets), CapacitorBridge.API_BASE is the
-      // production Render URL. In a browser it's '' (same-origin).
       if (!config) {
         try {
-          const configUrl = (window.CapacitorBridge ? CapacitorBridge.API_BASE : '') + '/api/config';
+          const configUrl = (window.CapacitorBridge ? window.CapacitorBridge.API_BASE : '') + '/api/config';
           console.log('[Supabase] Fetching config from:', configUrl, '| isNative:', isNative);
           const res = await fetch(configUrl);
           console.log('[Supabase] Config response status:', res.status, res.ok);
@@ -53,15 +91,12 @@ const SupabaseClient = (() => {
             throw new Error('API config route returned ' + res.status);
           }
         } catch (fetchErr) {
-          // Network offline or API unreachable — try the cached config.
           console.warn('[Supabase] Config fetch FAILED:', fetchErr.message || fetchErr);
           const cached = sessionStorage.getItem('recon_supabase_config');
           if (cached) {
             config = JSON.parse(cached);
+            console.log('[Supabase] Using cached config from sessionStorage');
           } else {
-            // No cached config and the server is unreachable.
-            // Do NOT fall back to hardcoded production credentials —
-            // they would leak the project ref into version control.
             console.warn('[Supabase] Offline and no cached config — will surface "no credentials" state to UI.');
           }
         }
@@ -69,19 +104,37 @@ const SupabaseClient = (() => {
 
       if (!config || !config.supabaseUrl || !config.supabaseAnonKey) {
         console.warn('[Supabase] No credentials configured — running in offline mode');
+        console.warn('[Supabase] config object:', JSON.stringify(config));
         _ready = true;
         _readyCallbacks.forEach(cb => cb(null));
         return;
       }
 
+      console.log('[Supabase] Config OK — URL:', config.supabaseUrl);
       _config = config;
 
-      // Dynamically load Supabase SDK if not already loaded
+      // ── Load SDK ──
+      // The local SDK bundle (public/js/supabase.min.js) is loaded via a
+      // <script> tag in index.html / auth.html BEFORE this file — so
+      // window.supabase should already exist.
       if (!window.supabase) {
-        await loadScript('https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js');
+        console.warn('[Supabase] SDK not preloaded — fetching from CDN (web fallback)');
+        try {
+          await loadScript('https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js');
+        } catch (cdnErr) {
+          console.error('[Supabase] CDN SDK load failed:', cdnErr);
+          throw new Error('Supabase SDK could not be loaded. Check your internet connection.');
+        }
       }
 
+      if (!window.supabase || !window.supabase.createClient) {
+        console.error('[Supabase] SDK object:', typeof window.supabase, window.supabase);
+        throw new Error('Supabase SDK is not available — cannot initialize.');
+      }
+
+      console.log('[Supabase] Creating client with URL:', config.supabaseUrl);
       _supabase = window.supabase.createClient(config.supabaseUrl, config.supabaseAnonKey);
+      console.log('[Supabase] Client created successfully ✓');
 
       // Listen for auth state changes
       _supabase.auth.onAuthStateChange((event, session) => {
@@ -91,14 +144,14 @@ const SupabaseClient = (() => {
           console.log('[Auth] Signed in:', _user.email);
           // If on auth page, redirect to app
           if (window.location.pathname.includes('auth.html')) {
-            window.location.href = window.CapacitorBridge && CapacitorBridge.isNative ? '/index.html' : '/';
+            window.location.href = (window.CapacitorBridge && window.CapacitorBridge.isNative) ? '/index.html' : '/';
           }
         }
 
         if (event === 'SIGNED_OUT') {
           console.log('[Auth] Signed out');
           _user = null;
-          window.location.href = window.CapacitorBridge && CapacitorBridge.isNative ? '/auth.html' : '/auth.html';
+          window.location.href = (window.CapacitorBridge && window.CapacitorBridge.isNative) ? '/auth.html' : '/auth.html';
         }
       });
 
@@ -107,39 +160,62 @@ const SupabaseClient = (() => {
       _user = session?.user || null;
 
       // Global fetch interceptor to catch 401/403 auth expiry
-      // Intercepts same-origin AND direct Supabase external calls.
-      // The _isHandlingAuthError guard prevents re-entry when signOut()
-      // itself triggers another 401 (which would otherwise loop forever).
+      // IMPORTANT: This must NOT intercept:
+      //   - Supabase auth endpoints (/auth/v1/*) — they legitimately return 401
+      //     during token refresh and Supabase handles that internally
+      //   - Local file requests (/, /index.html, /app-config.json, etc.)
+      //   - Edge Function calls (they may return 401 for their own reasons)
       let _isHandlingAuthError = false;
+      let _consecutive401Count = 0;
       const originalFetch = window.fetch;
       window.fetch = async function(...args) {
         const response = await originalFetch.apply(this, args);
         const reqUrl = typeof args[0] === 'string' ? args[0] : args[0]?.url || '';
-        const isSameOrigin = reqUrl.startsWith('/') || reqUrl.startsWith(window.location.origin);
-        const isSupabase = reqUrl.includes('supabase.co') || isSameOrigin;
+
+        // Skip interception for auth endpoints — Supabase manages its own token lifecycle
+        const isAuthEndpoint = reqUrl.includes('/auth/v1/') || reqUrl.includes('/auth/v1?');
+        // Skip local file requests (native WebView serves local assets via / paths)
+        const isLocalFile = reqUrl.match(/^\/?[\w.-]+\.(html|json|js|css|png|svg|ico)/) || reqUrl === '/';
+        // Only intercept Supabase REST/Realtime data calls, not auth
+        const isSupabaseData = reqUrl.includes('supabase.co') && !isAuthEndpoint;
+
         if (
           !_isHandlingAuthError &&
-          isSupabase &&
+          !isLocalFile &&
+          !isAuthEndpoint &&
+          isSupabaseData &&
           (response.status === 401 || response.status === 403) &&
           !window.location.pathname.includes('auth.html')
         ) {
-          _isHandlingAuthError = true;
-          console.warn('[Auth] Token expired or invalid, redirecting to login...');
-          if (_supabase) {
-            try { await _supabase.auth.signOut(); } catch(e){}
+          _consecutive401Count++;
+          console.warn(`[Auth] Supabase data request returned ${response.status} (count: ${_consecutive401Count}):`, reqUrl);
+
+          // Only force logout after multiple consecutive 401s — a single 401 could
+          // be a race condition during token refresh. Supabase's auth state change
+          // listener handles real sign-outs already.
+          if (_consecutive401Count >= 3) {
+            _isHandlingAuthError = true;
+            console.warn('[Auth] Multiple consecutive 401s — session is dead, redirecting to login...');
+            if (_supabase) {
+              try { await _supabase.auth.signOut(); } catch(e){}
+            }
+            const authPath = (window.CapacitorBridge && window.CapacitorBridge.isNative) ? '/auth.html' : '/auth.html';
+            window.location.href = authPath + '?expired=1';
           }
-          const authPath = window.CapacitorBridge && CapacitorBridge.isNative ? '/auth.html' : '/auth.html';
-          window.location.href = authPath + '?expired=1';
+        } else if (response.ok || (response.status >= 200 && response.status < 400)) {
+          // Reset counter on any successful request
+          _consecutive401Count = 0;
         }
         return response;
       };
 
       _ready = true;
       _readyCallbacks.forEach(cb => cb(_supabase));
-      console.log('[Supabase] Initialized', _user ? `(user: ${_user.email})` : '(no session)');
+      console.log('[Supabase] ── init() complete ✓ ──', _user ? `(user: ${_user.email})` : '(no session)');
 
     } catch (err) {
-      console.error('[Supabase] Init error:', err);
+      console.error('[Supabase] ── init() FAILED ──', err);
+      console.error('[Supabase] Error details:', err.message, err.stack);
       _ready = true;
       _readyCallbacks.forEach(cb => cb(null));
     }
@@ -383,21 +459,21 @@ const SupabaseClient = (() => {
   // web keeps using the existing Render endpoints (unchanged behavior).
   // To migrate the web app off Render later, just drop the isNative branch.
   function _isNativeEnv() {
-    return !!(window.CapacitorBridge && CapacitorBridge.isNative);
+    return !!((window.CapacitorBridge && window.CapacitorBridge.isNative) || (window.Capacitor && window.Capacitor.isNativePlatform && window.Capacitor.isNativePlatform()));
   }
 
   function getAiChatUrl() {
     if (_config && _config.supabaseUrl && _isNativeEnv()) {
       return _config.supabaseUrl + '/functions/v1/ai-chat';
     }
-    return (window.CapacitorBridge ? CapacitorBridge.API_BASE : '') + '/api/ai/chat';
+    return (window.CapacitorBridge ? window.CapacitorBridge.API_BASE : '') + '/api/ai/chat';
   }
 
   function getDeleteUserUrl() {
     if (_config && _config.supabaseUrl && _isNativeEnv()) {
       return _config.supabaseUrl + '/functions/v1/delete-user';
     }
-    return (window.CapacitorBridge ? CapacitorBridge.API_BASE : '') + '/api/user/delete';
+    return (window.CapacitorBridge ? window.CapacitorBridge.API_BASE : '') + '/api/user/delete';
   }
 
   // Guard: redirect to auth if not logged in

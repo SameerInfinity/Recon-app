@@ -192,7 +192,7 @@ const Dashboard = (() => {
     const isPositive = net >= 0;
     return `
       <div style="background:linear-gradient(135deg,${isPositive ? 'rgba(168,184,156,0.12)' : 'rgba(199,121,102,0.12)'},transparent);border:1.5px solid ${isPositive ? 'rgba(168,184,156,0.35)' : 'rgba(199,121,102,0.35)'};border-radius:var(--r-lg);padding:16px 20px;margin-bottom:16px;cursor:pointer" onclick="App.showFlatSales()">
-        <div style="font-size:10px;text-transform:uppercase;letter-spacing:.1em;font-weight:700;color:var(--text-muted);margin-bottom:6px">Net Position (Flat Sales / Purchaser)</div>
+        <div style="font-size:10px;text-transform:uppercase;letter-spacing:.1em;font-weight:700;color:var(--text-muted);margin-bottom:6px">Net Position (Flat / Shop Purchaser)</div>
         <div style="display:flex;align-items:flex-end;justify-content:space-between;gap:12px;flex-wrap:wrap">
           <div>
             <div style="font-family:var(--font-mono);font-size:28px;font-weight:800;color:${isPositive ? '#A8B89C' : '#C77966'}">${isPositive ? '+' : ''}${F.fmtFull(net)}</div>

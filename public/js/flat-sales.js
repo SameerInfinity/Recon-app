@@ -15,7 +15,18 @@ const FlatSales = (() => {
   const fmtDate = (s) => s ? new Date(s).toLocaleDateString('en-IN', { day:'2-digit', month:'short', year:'numeric' }) : '—';
 
   function generateId() {
-    return Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
+    if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+      return crypto.randomUUID();
+    }
+    if (typeof crypto !== 'undefined' && typeof crypto.getRandomValues === 'function') {
+      return ([1e7]+-1e3+-4e3+-8e3+-1e11).replace(/[018]/g, c =>
+        (c ^ crypto.getRandomValues(new Uint8Array(1))[0] & 15 >> c / 4).toString(16)
+      );
+    }
+    return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
+      var r = Math.random() * 16 | 0, v = c == 'x' ? r : (r & 0x3 | 0x8);
+      return v.toString(16);
+    });
   }
 
   // ── Hub: list of all buyers ───────────────────────────────
@@ -35,7 +46,7 @@ const FlatSales = (() => {
         <div class="hub-header" style="margin-bottom:20px">
           <div class="hub-header-left">
             <div>
-              <h2 class="hub-title" style="font-size:22px">${Icons.render('building', 22)} Flat Sales / Purchaser</h2>
+              <h2 class="hub-title" style="font-size:22px">${Icons.render('building', 22)} Flat / Shop Purchaser</h2>
               <p class="hub-subtitle">Track buyers, agreed amounts, instalments and payment proofs.</p>
             </div>
           </div>
