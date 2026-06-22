@@ -64,7 +64,7 @@ CREATE INDEX IF NOT EXISTS idx_projects_user_id ON public.projects(user_id);
 CREATE TABLE IF NOT EXISTS public.phases (
   id            UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   project_id    UUID NOT NULL REFERENCES public.projects(id) ON DELETE CASCADE,
-  phase_number  INTEGER NOT NULL CHECK (phase_number BETWEEN 1 AND 12),
+  phase_number  INTEGER NOT NULL CHECK (phase_number BETWEEN 1 AND 200),
   name          TEXT NOT NULL,
   icon          TEXT DEFAULT 'listChecks',
   completion    INTEGER DEFAULT 0 CHECK (completion BETWEEN 0 AND 100),
@@ -75,6 +75,11 @@ CREATE TABLE IF NOT EXISTS public.phases (
 );
 
 CREATE INDEX IF NOT EXISTS idx_phases_project_id ON public.phases(project_id);
+
+-- v2.2 migration: phase_number range widened from 1..12 → 1..200 so the new
+-- Electrical Supply phase (#11) + 8 interior section phases (#20-27) +
+-- custom user-added phases (#30+) all fit.
+ALTER TABLE public.phases DROP CONSTRAINT IF EXISTS phases_phase_number_check;
 
 
 -- ── 4. SUBCONTRACTORS ──────────────────────────────
@@ -267,6 +272,9 @@ CREATE TABLE IF NOT EXISTS public.vendors (
   shop_name     TEXT DEFAULT '',
   phone         TEXT DEFAULT '',
   balance       NUMERIC DEFAULT 0,
+  total_amount  NUMERIC DEFAULT 0,
+  paid_amount   NUMERIC DEFAULT 0,
+  opening_balance NUMERIC DEFAULT 0,
   notes         TEXT DEFAULT '',
   created_at    TIMESTAMPTZ DEFAULT NOW(),
   updated_at    TIMESTAMPTZ DEFAULT NOW()
@@ -281,12 +289,23 @@ CREATE TABLE IF NOT EXISTS public.vendor_transactions (
   txn_date    DATE NOT NULL,
   type        TEXT NOT NULL CHECK (type IN ('debit', 'credit')),
   amount      NUMERIC NOT NULL DEFAULT 0,
+  total_amount     NUMERIC NOT NULL DEFAULT 0,
+  paid_amount      NUMERIC NOT NULL DEFAULT 0,
+  remaining_amount NUMERIC NOT NULL DEFAULT 0,
   description TEXT DEFAULT '',
   created_at  TIMESTAMPTZ DEFAULT NOW()
 );
 
 CREATE INDEX IF NOT EXISTS idx_vendor_txns_project_id ON public.vendor_transactions(project_id);
 CREATE INDEX IF NOT EXISTS idx_vendor_txns_vendor_id ON public.vendor_transactions(vendor_id);
+
+-- ── v2.2 migration: vendor khata now tracks total/paid/remaining per transaction ──
+ALTER TABLE public.vendors ADD COLUMN IF NOT EXISTS total_amount NUMERIC DEFAULT 0;
+ALTER TABLE public.vendors ADD COLUMN IF NOT EXISTS paid_amount NUMERIC DEFAULT 0;
+ALTER TABLE public.vendors ADD COLUMN IF NOT EXISTS opening_balance NUMERIC DEFAULT 0;
+ALTER TABLE public.vendor_transactions ADD COLUMN IF NOT EXISTS total_amount NUMERIC NOT NULL DEFAULT 0;
+ALTER TABLE public.vendor_transactions ADD COLUMN IF NOT EXISTS paid_amount NUMERIC NOT NULL DEFAULT 0;
+ALTER TABLE public.vendor_transactions ADD COLUMN IF NOT EXISTS remaining_amount NUMERIC NOT NULL DEFAULT 0;
 
 ALTER TABLE public.vendors              ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.vendor_transactions  ENABLE ROW LEVEL SECURITY;
@@ -417,7 +436,7 @@ CREATE TRIGGER set_updated_at BEFORE UPDATE ON public.leads
   FOR EACH ROW EXECUTE FUNCTION public.update_updated_at();
 
 
--- ── 12. SITE PHOTOS (Construction site photo log) ──────────────────
+-- ── 12. SITE PHOTOS (Construction site photo / video log) ──────────
 CREATE TABLE IF NOT EXISTS public.site_photos (
   id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   project_id  UUID NOT NULL REFERENCES public.projects(id) ON DELETE CASCADE,
@@ -426,12 +445,16 @@ CREATE TABLE IF NOT EXISTS public.site_photos (
   category    TEXT DEFAULT '',
   image_url   TEXT DEFAULT '',
   thumbnail   TEXT DEFAULT '',
+  video_url   TEXT DEFAULT '',
   taken_at    TIMESTAMPTZ DEFAULT NOW(),
   created_at  TIMESTAMPTZ DEFAULT NOW(),
   updated_at  TIMESTAMPTZ DEFAULT NOW()
 );
 
 CREATE INDEX IF NOT EXISTS idx_site_photos_project_id ON public.site_photos(project_id);
+
+-- v2.2 migration: site_photos now also stores short site videos
+ALTER TABLE public.site_photos ADD COLUMN IF NOT EXISTS video_url TEXT DEFAULT '';
 
 ALTER TABLE public.site_photos ENABLE ROW LEVEL SECURITY;
 

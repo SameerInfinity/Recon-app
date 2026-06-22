@@ -598,21 +598,37 @@ const App = (() => {
     ]);
   }
 
-  // ── CONSTRUCTION HUB (phases 1-9) ──────────────────────
+  // ── CONSTRUCTION HUB ──────────────────────────────────
+  // Shows standard construction phases (1-9 + 11 = Electrical Supply) plus
+  // any user-added custom construction phases (id ≥ 30, isCustom && !isInterior).
+  // Phase 10 (legacy Interior) and the new interior section phases (20-27) are excluded.
   function renderConstructionHub(content) {
     const proj = State.getCurrentProject();
     if (!proj) { content.innerHTML = emptyState('No project open', 'Open or create a project from Dashboard.'); return; }
     const phases = Array.isArray(proj.phases) ? proj.phases : [];
-    const construction = phases.filter(p => p.id >= 1 && p.id <= 9);
+    const construction = phases.filter(p => {
+      const pid = Number(p.id);
+      if (p.hidden) return false;
+      if (p.isInterior) return false;
+      // Standard construction phases: 1-9 (Civil..Other), 11 (Electrical Supply)
+      if (pid >= 1 && pid <= 11) return pid !== 10; // exclude legacy Interior
+      // Custom construction phases: id ≥ 30, not flagged isInterior
+      if (pid >= 30 && p.isCustom) return true;
+      return false;
+    }).sort((a,b) => Number(a.id) - Number(b.id));
     const totalProject = Financial.computeProjectTotal(proj);
 
     const phaseCard = (ph) => {
       const cost = Financial.computePhaseTotal(ph);
       const comp = ph.completion || 0;
-      return `<button class="m-phase-card" onclick="App.showPhaseHub(${ph.id})">
+      const delBtn = ph.isCustom
+        ? `<span onclick="event.stopPropagation();App._deleteCustomPhase(${ph.id})" title="Delete this phase" style="position:absolute;top:8px;right:8px;background:rgba(0,0,0,0.4);color:#fff;border-radius:50%;width:22px;height:22px;display:flex;align-items:center;justify-content:center;cursor:pointer;font-size:11px">×</span>`
+        : '';
+      return `<button class="m-phase-card" onclick="App.showPhaseHub(${ph.id})" style="position:relative">
+        ${delBtn}
         <span class="m-phase-card-icon">${Icons.render(ph.icon, 22)}</span>
         <div class="m-phase-card-body">
-          <div class="m-phase-card-name">${escapeHtml(ph.name)}</div>
+          <div class="m-phase-card-name">${escapeHtml(ph.name)}${ph.isCustom ? ' <span style="font-size:9px;color:var(--amber);text-transform:uppercase;letter-spacing:.05em">Custom</span>' : ''}</div>
           <div class="m-phase-card-meta">
             <span>${comp}% complete</span>
             <span>·</span>
@@ -644,32 +660,100 @@ const App = (() => {
             </div>
             <span class="m-phase-card-chev" style="color:var(--amber)">›</span>
           </button>
+          <button class="m-phase-card" onclick="App.showAddPhaseModal('construction')" style="border:1.5px dashed var(--amber-border); background:var(--amber-light-bg)">
+            <span class="m-phase-card-icon" style="color:var(--amber)">${Icons.render('plus', 22)}</span>
+            <div class="m-phase-card-body">
+              <div class="m-phase-card-name" style="color:var(--amber)">Add New Phase</div>
+              <div class="m-phase-card-meta"><span>Create a custom construction phase</span></div>
+            </div>
+            <span class="m-phase-card-chev" style="color:var(--amber)">›</span>
+          </button>
         </div>
       </div>`;
     AI.setWatching?.('Construction Trades');
   }
 
-  // ── INTERIOR TAB (phase 10 directly) ──────────────────
+  // ── INTERIOR TAB ──────────────────────────────────────
+  // Now behaves like Construction: a list of interior section phase cards
+  // (phases 20-27) + any user-added custom interior phases. Clicking a card
+  // opens that section's hub with Material + Labour cards (just like construction).
   function renderInteriorTab(content) {
     const proj = State.getCurrentProject();
     if (!proj) { content.innerHTML = emptyState('No project open', 'Open or create a project from Dashboard.'); return; }
-    const phase = proj.phases.find(p => p.id === 10);
-    if (!phase) {
-      content.innerHTML = `<div class="phase-workspace active"><div class="m-empty"><div class="m-empty-icon">${Icons.render('sofa', 40)}</div><div class="m-empty-title">No Interior Phase</div><div class="m-empty-desc">Add an interior finish phase to your project to get started.</div></div></div>`;
+    const phases = Array.isArray(proj.phases) ? proj.phases : [];
+    const interior = phases.filter(p => {
+      if (p.hidden) return false;
+      if (p.isInterior) return true;
+      return false;
+    }).sort((a,b) => Number(a.id) - Number(b.id));
+    const totalInterior = interior.reduce((s, p) => s + Financial.computePhaseTotal(p), 0);
+
+    const phaseCard = (ph) => {
+      const cost = Financial.computePhaseTotal(ph);
+      const comp = ph.completion || 0;
+      const delBtn = ph.isCustom
+        ? `<span onclick="event.stopPropagation();App._deleteCustomPhase(${ph.id})" title="Delete this phase" style="position:absolute;top:8px;right:8px;background:rgba(0,0,0,0.4);color:#fff;border-radius:50%;width:22px;height:22px;display:flex;align-items:center;justify-content:center;cursor:pointer;font-size:11px">×</span>`
+        : '';
+      return `<button class="m-phase-card" onclick="App.showPhaseHub(${ph.id})" style="position:relative">
+        ${delBtn}
+        <span class="m-phase-card-icon">${Icons.render(ph.icon, 22)}</span>
+        <div class="m-phase-card-body">
+          <div class="m-phase-card-name">${escapeHtml(ph.name)}${ph.isCustom ? ' <span style="font-size:9px;color:var(--amber);text-transform:uppercase;letter-spacing:.05em">Custom</span>' : ''}</div>
+          <div class="m-phase-card-meta">
+            <span>${comp}% complete</span>
+            <span>·</span>
+            <span class="m-phase-card-cost">${Financial.fmt(cost)}</span>
+          </div>
+          <div class="m-phase-card-progress"><i style="width:${comp}%"></i></div>
+        </div>
+        <span class="m-phase-card-chev">›</span>
+      </button>`;
+    };
+
+    if (interior.length === 0) {
+      content.innerHTML = `<div class="phase-workspace active"><div class="m-empty">
+        <div class="m-empty-icon">${Icons.render('sofa', 40)}</div>
+        <div class="m-empty-title">No Interior Sections</div>
+        <div class="m-empty-desc">Interior section phases (Flooring, Painting, Doors, Cabinetry, etc.) will appear here.</div>
+        <button class="btn btn-primary" onclick="App.showAddPhaseModal('interior')" style="margin-top:12px">+ Add Interior Phase</button>
+      </div></div>`;
+      currentView = 'interior-hub';
+      AI.setWatching?.('Interior Sections · Hub');
       return;
     }
-    content.innerHTML = `<div class="phase-workspace active">${Phases.renderPhaseHub(phase)}</div>`;
+
+    content.innerHTML = `
+      <div class="phase-workspace active">
+        <div class="m-hero-card">
+          <div class="m-hero-eyebrow">Interior Sections</div>
+          <div class="m-hero-amount">${Financial.fmtFull(totalInterior)}</div>
+          <div class="m-hero-sub">${interior.length} sections · each with material & labour</div>
+        </div>
+        <div class="m-section-title">Interior Sections <span class="count">${interior.length}</span></div>
+        <div class="m-phase-grid">
+          ${interior.map(phaseCard).join('')}
+          <button class="m-phase-card" onclick="App.showAddPhaseModal('interior')" style="border:1.5px dashed var(--amber-border); background:var(--amber-light-bg)">
+            <span class="m-phase-card-icon" style="color:var(--amber)">${Icons.render('plus', 22)}</span>
+            <div class="m-phase-card-body">
+              <div class="m-phase-card-name" style="color:var(--amber)">Add New Interior Phase</div>
+              <div class="m-phase-card-meta"><span>Create a custom interior section</span></div>
+            </div>
+            <span class="m-phase-card-chev" style="color:var(--amber)">›</span>
+          </button>
+        </div>
+      </div>`;
     content.scrollTop = 0;
     currentView = 'interior-hub';
-    currentPhase = 10;
     Financial.updateAllTotals?.();
-    AI.setWatching?.('Interior Finish · Hub');
+    AI.setWatching?.('Interior Sections · Hub');
   }
 
   // Drill into a phase — delegate to existing Phases module
   function showPhaseHub(phaseId) {
     phaseId = Number(phaseId);
-    const isInterior = phaseId === 10;
+    const proj = State.getCurrentProject(); if (!proj) return;
+    const phase = proj.phases.find(p => Number(p.id) === Number(phaseId)); if (!phase) return;
+    const isInterior = !!phase.isInterior;
     if (!_isNavigatingBack) {
       _pushNav({ type: 'hub', name: currentHub, ledgerTab: currentLedgerTab });
     }
@@ -678,12 +762,10 @@ const App = (() => {
     currentCategory = null;
     currentView = isInterior ? 'interior-hub' : 'phase-hub';
     document.querySelectorAll('.m-tab').forEach(t => t.classList.toggle('active', t.dataset.tab === currentHub));
-    const proj = State.getCurrentProject(); if (!proj) return;
-    const phase = proj.phases.find(p => Number(p.id) === Number(phaseId)); if (!phase) return;
     const content = document.getElementById('content-area'); if (!content) return;
     document.getElementById('fab-container').innerHTML = '';
     const backHub = isInterior ? 'interior' : 'construction';
-    const backLabel = isInterior ? 'Interior' : 'All Trades';
+    const backLabel = isInterior ? 'Interior Sections' : 'All Trades';
     content.innerHTML = `
       <button class="back-to-hub" onclick="App.showHub('${backHub}')">← ${backLabel}</button>
       ${Phases.renderPhaseHub(phase)}`;
@@ -697,10 +779,16 @@ const App = (() => {
 
   function showPhaseCategory(phaseId, categoryId) {
     phaseId = Number(phaseId);
+    // The new entry-model phases (1-11, 20-27, custom) do not use CATEGORY_REGISTRY.
+    // If the phase has no registry entry, delegate to the phase hub (which then
+    // routes through Material / Labour / Extra cards).
+    if (!Phases?.CATEGORY_REGISTRY?.[phaseId]) {
+      return showPhaseHub(phaseId);
+    }
     if (!_isNavigatingBack) {
       _pushNav({ type: 'phase-hub', phaseId: currentPhase });
     }
-    currentHub = phaseId === 10 ? 'interior' : 'construction'; currentPhase = phaseId; currentCategory = categoryId;
+    currentHub = _phaseHubName(phaseId); currentPhase = phaseId; currentCategory = categoryId;
     currentView = phaseId === 10 ? 'interior-category' : 'phase-category';
     const proj = State.getCurrentProject(); if (!proj) return;
     const phase = proj.phases.find(p => Number(p.id) === Number(phaseId)); if (!phase) return;
@@ -726,8 +814,8 @@ const App = (() => {
       ? Phases.filterPhaseHtmlBySections(html, category.sectionIds)
       : Phases.renderCategoryMetaCard(category);
 
-    const backHub = phaseId === 10 ? 'interior' : 'construction';
-    const backLabel = phaseId === 10 ? 'Interior' : phase.name;
+    const backHub = _phaseHubName(phaseId);
+    const backLabel = backHub === 'interior' ? 'Interior Sections' : phase.name;
     content.innerHTML = `
       <div class="phase-workspace active" id="pw-${phaseId}">
         <button class="back-to-hub" onclick="App.showHub('${backHub}')">← Back to ${backLabel}</button>
@@ -748,15 +836,15 @@ const App = (() => {
     if (!_isNavigatingBack) {
       _pushNav({ type: 'category', phaseId: currentPhase, categoryId: currentCategory });
     }
-    currentHub = phaseId === 10 ? 'interior' : 'construction'; currentPhase = phaseId; currentCategory = cardId;
-    currentView = phaseId === 10 ? 'interior-category' : 'phase-category';
+    currentHub = _phaseHubName(phaseId); currentPhase = phaseId; currentCategory = cardId;
+    currentView = _phaseHubName(phaseId) === 'interior' ? 'interior-category' : 'phase-category';
     const proj = State.getCurrentProject(); if (!proj) return;
     const phase = proj.phases.find(p => Number(p.id) === Number(phaseId)); if (!phase) return;
     const card = Phases.getInputCard ? Phases.getInputCard(phaseId, cardId) : null;
     if (!card) return showPhaseHub(phaseId);
     const content = document.getElementById('content-area'); if (!content) return;
-    const backHub = phaseId === 10 ? 'interior' : 'construction';
-    const backLabel = phaseId === 10 ? 'Interior' : phase.name;
+    const backHub = _phaseHubName(phaseId);
+    const backLabel = backHub === 'interior' ? 'Interior Sections' : phase.name;
     content.innerHTML = `
       <div class="phase-workspace active" id="pw-${phaseId}">
         <button class="back-to-hub" onclick="App.showHub('${backHub}')">← Back to ${backLabel}</button>
@@ -768,19 +856,24 @@ const App = (() => {
     syncSidebarActiveState(currentHub, currentView, currentLedgerTab);
   }
 
+  function _phaseHubName(phaseId) {
+    const proj = State.getCurrentProject();
+    const ph = proj?.phases?.find(p => Number(p.id) === Number(phaseId));
+    return ph?.isInterior ? 'interior' : 'construction';
+  }
   function showMaterialCards(phaseId) {
     phaseId = Number(phaseId);
     if (!_isNavigatingBack) {
       _pushNav({ type: 'phase-hub', phaseId: currentPhase });
     }
-    currentHub = phaseId === 10 ? 'interior' : 'construction'; currentPhase = phaseId; currentCategory = 'material';
+    currentHub = _phaseHubName(phaseId); currentPhase = phaseId; currentCategory = 'material';
     currentView = 'material-cards';
     const content = document.getElementById('content-area'); if (!content) return;
     const back = `App.showPhaseHub(${phaseId})`;
     if (Phases?.renderCardListView) {
       content.innerHTML = `<div class="phase-workspace active">
         <button class="back-to-hub" onclick="${back}">← Back</button>
-        ${Phases.renderCardListView(phaseId, false)}</div>`;
+        ${Phases.renderCardListView(phaseId, false, 'material')}</div>`;
     } else {
       content.innerHTML = `<div class="phase-workspace active">
         <button class="back-to-hub" onclick="${back}">← Back</button>
@@ -810,14 +903,35 @@ const App = (() => {
     if (!_isNavigatingBack) {
       _pushNav({ type: 'phase-hub', phaseId: currentPhase });
     }
-    currentHub = phaseId === 10 ? 'interior' : 'construction'; currentPhase = phaseId; currentCategory = 'labor';
+    currentHub = _phaseHubName(phaseId); currentPhase = phaseId; currentCategory = 'labor';
     currentView = 'labor-cards';
     const content = document.getElementById('content-area'); if (!content) return;
     const back = `App.showPhaseHub(${phaseId})`;
     if (Phases?.renderCardListView) {
       content.innerHTML = `<div class="phase-workspace active">
         <button class="back-to-hub" onclick="${back}">← Back</button>
-        ${Phases.renderCardListView(phaseId, true)}</div>`;
+        ${Phases.renderCardListView(phaseId, true, 'labor')}</div>`;
+    } else {
+      content.innerHTML = `<div class="phase-workspace active">
+        <button class="back-to-hub" onclick="${back}">← Back</button>
+        <div class="m-empty"><div class="m-empty-title">Module not loaded</div><div class="m-empty-desc">Try refreshing the page.</div></div></div>`;
+    }
+    content.scrollTop = 0;
+    syncSidebarActiveState(currentHub, currentView, currentLedgerTab);
+  }
+  function showExtraCards(phaseId) {
+    phaseId = Number(phaseId);
+    if (!_isNavigatingBack) {
+      _pushNav({ type: 'phase-hub', phaseId: currentPhase });
+    }
+    currentHub = _phaseHubName(phaseId); currentPhase = phaseId; currentCategory = 'extra';
+    currentView = 'extra-cards';
+    const content = document.getElementById('content-area'); if (!content) return;
+    const back = `App.showPhaseHub(${phaseId})`;
+    if (Phases?.renderCardListView) {
+      content.innerHTML = `<div class="phase-workspace active">
+        <button class="back-to-hub" onclick="${back}">← Back</button>
+        ${Phases.renderCardListView(phaseId, false, 'extra')}</div>`;
     } else {
       content.innerHTML = `<div class="phase-workspace active">
         <button class="back-to-hub" onclick="${back}">← Back</button>
@@ -831,7 +945,7 @@ const App = (() => {
     if (!_isNavigatingBack) {
       _pushNav({ type: 'category', phaseId: currentPhase, categoryId: currentCategory });
     }
-    currentHub = phaseId === 10 ? 'interior' : 'construction'; currentPhase = phaseId; currentCategory = cardId;
+    currentHub = _phaseHubName(phaseId); currentPhase = phaseId; currentCategory = cardId;
     currentView = 'entry-form';
     const content = document.getElementById('content-area'); if (!content) return;
     const back = `App.showPhaseHub(${phaseId})`;
@@ -978,7 +1092,7 @@ const App = (() => {
           </button>
           <button class="m-list-row" onclick="App.showFlatSales()">
             <span class="icon">${Icons.render('building', 18)}</span>
-            <div class="body"><div class="label">Flat Sales / Purchaser</div><div class="desc">Buyers and payments received</div></div>
+            <div class="body"><div class="label">Flat / Shop Purchaser</div><div class="desc">Buyers and payments received</div></div>
             <span class="chev">›</span>
           </button>
           <button class="m-list-row" onclick="App.showQuickLeads()">
@@ -2312,15 +2426,78 @@ const App = (() => {
     }
   });
 
+  // ── Add Custom Phase modal (Task 2) ────────────────────────
+  // Adds a new phase to either the Construction or Interior tab.
+  // Also auto-creates a matching estimation trade so the new phase appears
+  // in the pre-construction estimator (and vice-versa via Estimation._addCustomTrade).
+  function showAddPhaseModal(defaultTab) {
+    const tab = defaultTab === 'interior' ? 'interior' : 'construction';
+    const iconOptions = ['listChecks','pickaxe','ruler','paintbrush','zap','door','droplet','insulation','stairs','sofa','blocks','bricks','wrench','wrenchScrew','pipe','foundation','hammer','column','lightbulb','mirror','paintRoller','palette'];
+    App.showModal(`
+      <h3 class="modal-title">${Icons.render('plus', 16)} Add New Phase</h3>
+      <div style="margin-bottom:12px">
+        <label class="modal-label">Phase Name *</label>
+        <input id="cp-name" class="modal-input" placeholder="e.g. Landscaping">
+      </div>
+      <div style="margin-bottom:12px">
+        <label class="modal-label">Icon</label>
+        <select id="cp-icon" class="modal-input" style="appearance:auto">
+          ${iconOptions.map(ic => `<option value="${ic}">${ic}</option>`).join('')}
+        </select>
+      </div>
+      <div style="margin-bottom:12px">
+        <label class="modal-label">Show On Tab</label>
+        <select id="cp-tab" class="modal-input" style="appearance:auto">
+          <option value="construction" ${tab==='construction'?'selected':''}>Construction</option>
+          <option value="interior" ${tab==='interior'?'selected':''}>Interior</option>
+        </select>
+      </div>
+      <div style="display:flex;gap:12px">
+        <button onclick="App.closeModal()" class="modal-btn-cancel" style="flex:1;padding:11px;border-radius:10px;border:1px solid var(--charcoal-border);background:none;color:var(--text-secondary);cursor:pointer;font-family:inherit;font-weight:600">Cancel</button>
+        <button onclick="App._saveCustomPhase()" class="modal-btn-primary" style="flex:1;padding:11px;border-radius:10px;border:none;background:var(--amber);color:#fff;cursor:pointer;font-family:inherit;font-weight:600">Add Phase</button>
+      </div>
+    `);
+  }
+
+  async function _saveCustomPhase() {
+    const name = document.getElementById('cp-name')?.value.trim();
+    if (!name) { App.toast('Phase name is required', 'error'); return; }
+    const icon = document.getElementById('cp-icon')?.value || 'listChecks';
+    const tab  = document.getElementById('cp-tab')?.value || 'construction';
+    const isInterior = tab === 'interior';
+    const phase = State.addCustomPhase({ name, icon, isInterior });
+    App.closeModal();
+    App.toast('Phase added' + (phase ? ` (id: ${phase.id})` : ''), 'success');
+    // Refresh the hub the new phase belongs to
+    showHub(isInterior ? 'interior' : 'construction');
+  }
+
+  function _deleteCustomPhase(phaseId) {
+    App.showConfirmModal({
+      icon: Icons.render('trash', 24),
+      title: 'Delete this custom phase?',
+      body: 'All entries saved under this phase will be removed and the linked estimation trade will be deleted.',
+      confirmLabel: 'Delete Phase',
+      onConfirm: () => {
+        State.deleteCustomPhase(phaseId);
+        App.toast('Phase deleted', 'info');
+        // Refresh whichever hub we're currently on (best-effort)
+        showHub(currentHub === 'interior' ? 'interior' : 'construction');
+      }
+    });
+  }
+
   return {
     init, startNewProject, openProject, showProjectPicker, syncProjectToCloud, forceSyncNow,
     wizardNext, wizardBack, wizardSkip,
     showHub, setLedgerTab,
     // phase routes
     showPhase, showPhaseHub, showInteriorHub, showPhaseCategory, showInputCard,
-    showMaterialCards, showLaborCards, showEntryForm, showPhaseBills, showConstructionBills,
+    showMaterialCards, showLaborCards, showExtraCards, showEntryForm, showPhaseBills, showConstructionBills,
     // more routes
     showRaBillsHub, showSubLedger, showFlatSales, showFlatSalesBuyer, showQuickLeads, showLeadDetail, showSitePhotos, showSitePhotoDetail, showTools,
+    // custom phase helpers (Task 2)
+    showAddPhaseModal, _saveCustomPhase, _deleteCustomPhase,
     // legacy aliases
     showLabourHub, showVendorHub, showInventoryHub, showOverview, showDashboard,
     refreshDashboard,

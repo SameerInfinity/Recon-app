@@ -79,34 +79,57 @@ const State = (() => {
     return val || {};
   }
 
-  // 9 trade-based construction phases (1-9) + Interior (#10).
+  // Construction trade phases (1-9) + Interior (#10, legacy container) +
+  // Electrical Supply (#11) + Interior section phases (#20-27).
   // The 9 trades reflect the standard Indian contractor workflow:
   // civil structure, tiles, paint, electrical, fabrication, plumbing,
   // POP/false ceiling, lift/elevator, and a misc catch-all.
+  // Phase 11 = Electrical Supply (transformer, cables, panels, supply demand charge).
+  // Phases 20-27 = interior finish sections (flooring, painting, doors, cabinetry,
+  // trim, closets, glass, fixtures) — these are tagged `isInterior:true` so the
+  // Interior tab picks them up exactly like Construction picks up 1-9.
   const defaultPhases = () => [
-    { id: 1, name: 'Civil Work',         icon: 'pickaxe',    completion: 0, data: {} },
-    { id: 2, name: 'Tiles & Flooring',  icon: 'ruler',      completion: 0, data: {} },
-    { id: 3, name: 'Painting',          icon: 'paintbrush', completion: 0, data: {} },
-    { id: 4, name: 'Electrical Work',   icon: 'zap',        completion: 0, data: {} },
-    { id: 5, name: 'Furniture & Fabrication', icon: 'door',  completion: 0, data: {} },
-    { id: 6, name: 'Plumbing Work',     icon: 'droplet',    completion: 0, data: {} },
-    { id: 7, name: 'POP & False Ceiling', icon: 'insulation', completion: 0, data: {} },
-    { id: 8, name: 'Lift (Elevator)',   icon: 'stairs',     completion: 0, data: {} },
-    { id: 9, name: 'Other (Misc.)',     icon: 'listChecks', completion: 0, data: {} },
-    { id: 10, name: 'Interior',          icon: 'sofa',       completion: 0, data: {} },
+    { id: 1,  name: 'Civil Work',                icon: 'pickaxe',    completion: 0, data: {} },
+    { id: 2,  name: 'Tiles & Flooring',          icon: 'ruler',      completion: 0, data: {} },
+    { id: 3,  name: 'Painting',                  icon: 'paintbrush', completion: 0, data: {} },
+    { id: 4,  name: 'Electrical Work',           icon: 'zap',        completion: 0, data: {} },
+    { id: 5,  name: 'Furniture & Fabrication',   icon: 'door',       completion: 0, data: {} },
+    { id: 6,  name: 'Plumbing Work',             icon: 'droplet',    completion: 0, data: {} },
+    { id: 7,  name: 'POP & False Ceiling',       icon: 'insulation', completion: 0, data: {} },
+    { id: 8,  name: 'Lift (Elevator)',           icon: 'stairs',     completion: 0, data: {} },
+    { id: 9,  name: 'Other (Misc.)',             icon: 'listChecks', completion: 0, data: {} },
+    { id: 10, name: 'Interior (Legacy)',         icon: 'sofa',       completion: 0, data: {}, hidden: true },
+    { id: 11, name: 'Electrical Supply',         icon: 'zap',        completion: 0, data: {} },
+    { id: 20, name: 'Interior Flooring',         icon: 'ruler',      completion: 0, data: {}, isInterior: true },
+    { id: 21, name: 'Interior Painting',         icon: 'paintbrush', completion: 0, data: {}, isInterior: true },
+    { id: 22, name: 'Interior Doors & Hardware', icon: 'door',       completion: 0, data: {}, isInterior: true },
+    { id: 23, name: 'Interior Cabinetry',        icon: 'sofa',       completion: 0, data: {}, isInterior: true },
+    { id: 24, name: 'Interior Trim & Staircase', icon: 'stairs',     completion: 0, data: {}, isInterior: true },
+    { id: 25, name: 'Interior Closets',          icon: 'door',       completion: 0, data: {}, isInterior: true },
+    { id: 26, name: 'Interior Glass & Mirror',   icon: 'mirror',     completion: 0, data: {}, isInterior: true },
+    { id: 27, name: 'Interior Fixtures',         icon: 'lightbulb',  completion: 0, data: {}, isInterior: true },
   ];
 
   const DEFAULT_PHASE_META = [
-    { phase_number: 1, name: 'Civil Work',         icon: 'pickaxe' },
-    { phase_number: 2, name: 'Tiles & Flooring',  icon: 'ruler' },
-    { phase_number: 3, name: 'Painting',          icon: 'paintbrush' },
-    { phase_number: 4, name: 'Electrical Work',   icon: 'zap' },
-    { phase_number: 5, name: 'Furniture & Fabrication', icon: 'door' },
-    { phase_number: 6, name: 'Plumbing Work',     icon: 'droplet' },
-    { phase_number: 7, name: 'POP & False Ceiling', icon: 'insulation' },
-    { phase_number: 8, name: 'Lift (Elevator)',   icon: 'stairs' },
-    { phase_number: 9, name: 'Other (Misc.)',     icon: 'listChecks' },
-    { phase_number: 10, name: 'Interior',         icon: 'sofa' },
+    { phase_number: 1,  name: 'Civil Work',                icon: 'pickaxe' },
+    { phase_number: 2,  name: 'Tiles & Flooring',          icon: 'ruler' },
+    { phase_number: 3,  name: 'Painting',                  icon: 'paintbrush' },
+    { phase_number: 4,  name: 'Electrical Work',           icon: 'zap' },
+    { phase_number: 5,  name: 'Furniture & Fabrication',   icon: 'door' },
+    { phase_number: 6,  name: 'Plumbing Work',             icon: 'droplet' },
+    { phase_number: 7,  name: 'POP & False Ceiling',       icon: 'insulation' },
+    { phase_number: 8,  name: 'Lift (Elevator)',           icon: 'stairs' },
+    { phase_number: 9,  name: 'Other (Misc.)',             icon: 'listChecks' },
+    { phase_number: 10, name: 'Interior (Legacy)',         icon: 'sofa', hidden: true },
+    { phase_number: 11, name: 'Electrical Supply',         icon: 'zap' },
+    { phase_number: 20, name: 'Interior Flooring',         icon: 'ruler',      isInterior: true },
+    { phase_number: 21, name: 'Interior Painting',         icon: 'paintbrush', isInterior: true },
+    { phase_number: 22, name: 'Interior Doors & Hardware', icon: 'door',       isInterior: true },
+    { phase_number: 23, name: 'Interior Cabinetry',        icon: 'sofa',       isInterior: true },
+    { phase_number: 24, name: 'Interior Trim & Staircase', icon: 'stairs',     isInterior: true },
+    { phase_number: 25, name: 'Interior Closets',          icon: 'door',       isInterior: true },
+    { phase_number: 26, name: 'Interior Glass & Mirror',   icon: 'mirror',     isInterior: true },
+    { phase_number: 27, name: 'Interior Fixtures',         icon: 'lightbulb',  isInterior: true },
   ];
 
   // Section map for data migration
@@ -277,6 +300,10 @@ const State = (() => {
       const key = url.replace('local-image://', '');
       return InMemoryImages[key] || '';
     }
+    if (url.startsWith('local-video://')) {
+      const key = url.replace('local-video://', '');
+      return InMemoryImages[key] || '';
+    }
     return url;
   }
 
@@ -346,7 +373,7 @@ const State = (() => {
       });
     }
 
-    // 3. Scan site photos
+    // 3. Scan site photos (images + videos)
     if (Array.isArray(proj.sitePhotos)) {
       proj.sitePhotos.forEach(p => {
         if (p.imageUrl && p.imageUrl.startsWith('local-image://')) {
@@ -354,6 +381,9 @@ const State = (() => {
         }
         if (p.thumbnail && p.thumbnail.startsWith('local-image://')) {
           keysToLoad.add(p.thumbnail.replace('local-image://', ''));
+        }
+        if (p.videoUrl && p.videoUrl.startsWith('local-video://')) {
+          keysToLoad.add(p.videoUrl.replace('local-video://', ''));
         }
       });
     }
@@ -829,12 +859,25 @@ const State = (() => {
                 ph.data = parseJsonIfNeeded(ph.data);
               });
             }
-            for (let i = 1; i <= 10; i++) {
-              if (!p.phases.find(ph => ph.id === i)) {
-                const meta = DEFAULT_PHASE_META[i - 1];
-                p.phases.push({ id: i, name: meta.name, icon: meta.icon, completion: 0, data: {} });
+            // Backfill any missing standard phases (1-27, but skipping 12-19 which are reserved)
+            DEFAULT_PHASE_META.forEach(meta => {
+              if (!p.phases.find(ph => ph.id === meta.phase_number)) {
+                p.phases.push({
+                  id: meta.phase_number,
+                  name: meta.name,
+                  icon: meta.icon,
+                  completion: 0,
+                  data: {},
+                  ...(meta.hidden ? { hidden: true } : {}),
+                  ...(meta.isInterior ? { isInterior: true } : {}),
+                });
+              } else {
+                // Also stamp isInterior/hidden onto existing rows so filters work consistently
+                const existing = p.phases.find(ph => ph.id === meta.phase_number);
+                if (meta.isInterior) existing.isInterior = true;
+                if (meta.hidden) existing.hidden = true;
               }
-            }
+            });
             // Migrate new feature arrays (added in later versions)
             if (!p.labour) p.labour = [];
             if (!p.labourLogs) p.labourLogs = [];
@@ -907,13 +950,24 @@ const State = (() => {
         data: parseJsonIfNeeded(p.data),
       }));
 
-      // Fill missing phases (1-10: 9 trades + interior)
-      for (let i = 1; i <= 10; i++) {
-        if (!phases.find(p => p.id === i)) {
-          const meta = DEFAULT_PHASE_META[i - 1];
-          phases.push({ id: i, name: meta.name, icon: meta.icon, completion: 0, data: {} });
+      // Fill missing standard phases (1-27, skipping reserved 12-19)
+      DEFAULT_PHASE_META.forEach(meta => {
+        if (!phases.find(p => p.id === meta.phase_number)) {
+          phases.push({
+            id: meta.phase_number,
+            name: meta.name,
+            icon: meta.icon,
+            completion: 0,
+            data: {},
+            ...(meta.hidden ? { hidden: true } : {}),
+            ...(meta.isInterior ? { isInterior: true } : {}),
+          });
+        } else {
+          const existing = phases.find(p => p.id === meta.phase_number);
+          if (meta.isInterior) existing.isInterior = true;
+          if (meta.hidden) existing.hidden = true;
         }
-      }
+      });
       phases.sort((a, b) => a.id - b.id);
       normalizePhaseIcons(phases);
 
@@ -966,11 +1020,19 @@ const State = (() => {
         })),
         vendors: (vendorsRes.data || []).map(v => ({
           id: v.id, name: v.name, shopName: v.shop_name, phone: v.phone,
-          balance: parseFloat(v.balance) || 0, notes: v.notes, createdAt: v.created_at
+          balance: parseFloat(v.balance) || 0,
+          totalAmount: parseFloat(v.total_amount) || 0,
+          paidAmount: parseFloat(v.paid_amount) || 0,
+          openingBalance: parseFloat(v.opening_balance) || 0,
+          notes: v.notes, createdAt: v.created_at
         })),
         vendorTransactions: (vendorTxnsRes.data || []).map(t => ({
-          id: t.id, vendorId: t.vendor_id, txnDate: t.txn_date, type: t.type,
-          amount: parseFloat(t.amount) || 0, description: t.description, createdAt: t.created_at
+          id: t.id, vendorId: t.vendor_id, txnDate: t.txn_date, date: t.txn_date, type: t.type,
+          amount: parseFloat(t.amount) || 0,
+          totalAmount: parseFloat(t.total_amount) || parseFloat(t.amount) || 0,
+          paidAmount: parseFloat(t.paid_amount) || (t.type === 'credit' ? (parseFloat(t.amount) || 0) : 0),
+          remainingAmount: parseFloat(t.remaining_amount) || (t.type === 'debit' ? Math.max(0, (parseFloat(t.total_amount) || parseFloat(t.amount) || 0) - (parseFloat(t.paid_amount) || 0)) : 0),
+          description: t.description, createdAt: t.created_at
         })),
         materials: (materialsRes.data || []).map(m => ({
           id: m.id, name: m.name, unit: m.unit, currentStock: parseFloat(m.current_stock) || 0,
@@ -1000,6 +1062,7 @@ const State = (() => {
           id: p.id,
           name: p.name, description: p.description, category: p.category,
           imageUrl: p.image_url, thumbnail: p.thumbnail,
+          videoUrl: p.video_url || '',
           takenAt: p.taken_at, createdAt: p.created_at,
         })),
         invoices: [],
@@ -1566,6 +1629,9 @@ const State = (() => {
         shop_name: v.shopName || '',
         phone: v.phone || '',
         balance: v.balance || 0,
+        total_amount: v.totalAmount || 0,
+        paid_amount: v.paidAmount || 0,
+        opening_balance: v.openingBalance || v.balance || 0,
         notes: v.notes || '',
         created_at: v.createdAt,
       }));
@@ -1579,9 +1645,12 @@ const State = (() => {
         id: t.id,
         project_id: newProjectId,
         vendor_id: t.vendorId,
-        txn_date: t.txnDate,
+        txn_date: t.txnDate || t.date,
         type: t.type,
         amount: t.amount || 0,
+        total_amount: t.totalAmount || t.amount || 0,
+        paid_amount: t.paidAmount || (t.type === 'credit' ? (t.amount || 0) : 0),
+        remaining_amount: t.remainingAmount || (t.type === 'debit' ? Math.max(0, (t.totalAmount || t.amount || 0) - (t.paidAmount || 0)) : 0),
         description: t.description || '',
         created_at: t.createdAt,
       }));
@@ -1671,6 +1740,7 @@ const State = (() => {
         category: p.category || '',
         image_url: p.imageUrl || '',
         thumbnail: p.thumbnail || '',
+        video_url: p.videoUrl || '',
         taken_at: p.takenAt || p.createdAt,
         created_at: p.createdAt,
       }));
@@ -2045,6 +2115,9 @@ const State = (() => {
     vendor.id = isProjectSynced ? generateUUID() : generateId();
     vendor.createdAt = new Date().toISOString();
     vendor.balance = parseFloat(vendor.balance) || 0;
+    vendor.totalAmount = parseFloat(vendor.totalAmount) || 0;
+    vendor.paidAmount  = parseFloat(vendor.paidAmount)  || 0;
+    vendor.openingBalance = parseFloat(vendor.openingBalance) || vendor.balance;
     proj.vendors.push(vendor);
     saveLocal();
 
@@ -2056,6 +2129,9 @@ const State = (() => {
         shop_name: vendor.shopName || '',
         phone: vendor.phone || '',
         balance: vendor.balance,
+        total_amount: vendor.totalAmount,
+        paid_amount: vendor.paidAmount,
+        opening_balance: vendor.openingBalance,
         notes: vendor.notes || '',
         created_at: vendor.createdAt,
       };
@@ -2080,6 +2156,9 @@ const State = (() => {
     if (updates.shopName !== undefined) payload.shop_name = updates.shopName;
     if (updates.phone !== undefined) payload.phone = updates.phone;
     if (updates.balance !== undefined) payload.balance = parseFloat(updates.balance) || 0;
+    if (updates.totalAmount !== undefined) payload.total_amount = parseFloat(updates.totalAmount) || 0;
+    if (updates.paidAmount !== undefined) payload.paid_amount = parseFloat(updates.paidAmount) || 0;
+    if (updates.openingBalance !== undefined) payload.opening_balance = parseFloat(updates.openingBalance) || 0;
     if (updates.notes !== undefined) payload.notes = updates.notes;
     if (updates.boqItems !== undefined) payload.boq_items = Array.isArray(updates.boqItems) ? updates.boqItems : [];
 
@@ -2123,8 +2202,16 @@ const State = (() => {
     
     const vendor = (proj.vendors || []).find(v => String(v.id) === String(txn.vendorId));
     if (vendor) {
-      const delta = txn.type === 'debit' ? (parseFloat(txn.amount) || 0) : -(parseFloat(txn.amount) || 0);
-      const newBalance = (parseFloat(vendor.balance) || 0) + delta;
+      // For debit (purchase): outstanding increases by remainingAmount (= totalAmount − paidAmount).
+      // For credit (payment): outstanding decreases by amount paid.
+      let delta;
+      if (txn.type === 'debit') {
+        const rem = parseFloat(txn.remainingAmount);
+        delta = isNaN(rem) ? (parseFloat(txn.amount) || 0) : rem;
+      } else {
+        delta = -(parseFloat(txn.amount) || 0);
+      }
+      const newBalance = Math.max(0, (parseFloat(vendor.balance) || 0) + delta);
       await updateVendor(vendor.id, { balance: newBalance });
     }
 
@@ -2132,6 +2219,12 @@ const State = (() => {
     const isProjectSynced = _useSupabase && client && isUUID(proj.id) && isUUID(txn.vendorId);
     txn.id = isProjectSynced ? generateUUID() : generateId();
     txn.createdAt = new Date().toISOString();
+    // Normalise fields — keep legacy `amount` for backward-compat with old code paths
+    txn.amount = parseFloat(txn.amount) || 0;
+    txn.totalAmount = parseFloat(txn.totalAmount) || txn.amount;
+    txn.paidAmount  = parseFloat(txn.paidAmount)  || (txn.type === 'credit' ? txn.amount : 0);
+    txn.remainingAmount = parseFloat(txn.remainingAmount) || (txn.type === 'debit' ? Math.max(0, txn.totalAmount - txn.paidAmount) : 0);
+    if (!txn.txnDate) txn.txnDate = txn.date; // snake_case column on Supabase
     proj.vendorTransactions.push(txn);
     saveLocal();
 
@@ -2142,7 +2235,10 @@ const State = (() => {
         vendor_id: txn.vendorId,
         txn_date: txn.txnDate,
         type: txn.type,
-        amount: parseFloat(txn.amount) || 0,
+        amount: txn.amount,
+        total_amount: txn.totalAmount,
+        paid_amount: txn.paidAmount,
+        remaining_amount: txn.remainingAmount,
         description: txn.description || '',
         created_at: txn.createdAt,
       };
@@ -2799,6 +2895,7 @@ const State = (() => {
     photo.id = isProjectSynced ? generateUUID() : generateId();
     photo.createdAt = new Date().toISOString();
     if (!photo.takenAt) photo.takenAt = photo.createdAt;
+    if (!photo.videoUrl) photo.videoUrl = '';
     proj.sitePhotos.unshift(photo);  // Newest first
     saveLocal();
 
@@ -2811,6 +2908,7 @@ const State = (() => {
         category: photo.category || '',
         image_url: photo.imageUrl || '',
         thumbnail: photo.thumbnail || '',
+        video_url: photo.videoUrl || '',
         taken_at: photo.takenAt,
       };
       try {
@@ -2840,6 +2938,7 @@ const State = (() => {
     if (updates.category !== undefined) payload.category = updates.category;
     if (updates.imageUrl !== undefined) payload.image_url = updates.imageUrl;
     if (updates.thumbnail !== undefined) payload.thumbnail = updates.thumbnail;
+    if (updates.videoUrl !== undefined) payload.video_url = updates.videoUrl;
 
     if (_useSupabase && client && isUUID(id)) {
       try {
@@ -2858,7 +2957,7 @@ const State = (() => {
     const proj = getCurrentProject();
     if (!proj || !proj.sitePhotos) return;
 
-    // Also clean up local image from IndexedDB
+    // Also clean up local image/video bytes from IndexedDB
     const photo = proj.sitePhotos.find(p => String(p.id) === String(id));
     if (photo) {
       if (photo.imageUrl && photo.imageUrl.startsWith('local-image://')) {
@@ -2867,6 +2966,10 @@ const State = (() => {
       }
       if (photo.thumbnail && photo.thumbnail.startsWith('local-image://')) {
         const key = photo.thumbnail.replace('local-image://', '');
+        await deleteLocalImage(key);
+      }
+      if (photo.videoUrl && photo.videoUrl.startsWith('local-video://')) {
+        const key = photo.videoUrl.replace('local-video://', '');
         await deleteLocalImage(key);
       }
     }
@@ -2894,6 +2997,106 @@ const State = (() => {
     return proj.sitePhotos;
   }
 
+  // ── Custom Cards (project-scoped "Add New" material/labour cards) ──────
+  // Stored at proj.customCards[phaseId] = [ cardSpec, ... ]
+  // Each cardSpec: { id, name, icon, desc, isLabor, fields:[{key,label,type,options?}], costExpr }
+  function getCustomCards(phaseId) {
+    const proj = getCurrentProject();
+    if (!proj) return [];
+    if (!proj.customCards) proj.customCards = {};
+    return proj.customCards[phaseId] || [];
+  }
+
+  function addCustomCard(phaseId, cardSpec) {
+    const proj = getCurrentProject();
+    if (!proj) return null;
+    if (!proj.customCards) proj.customCards = {};
+    if (!proj.customCards[phaseId]) proj.customCards[phaseId] = [];
+    if (!cardSpec.id) cardSpec.id = 'custom_' + Date.now().toString(36) + Math.random().toString(36).slice(2,5);
+    proj.customCards[phaseId].push(cardSpec);
+    markDirty('project');
+    save();
+    return cardSpec;
+  }
+
+  function deleteCustomCard(phaseId, cardId) {
+    const proj = getCurrentProject();
+    if (!proj || !proj.customCards || !proj.customCards[phaseId]) return;
+    proj.customCards[phaseId] = proj.customCards[phaseId].filter(c => c.id !== cardId);
+    markDirty('project');
+    save();
+  }
+
+  // ── Custom Phases ("Add New Phase" feature) ────────────────────
+  // Custom phases use IDs starting at 30 (1-11 standard, 20-27 interior sections,
+  // 12-19 and 28-29 reserved). They are persisted as normal phases in proj.phases[]
+  // and flagged `isCustom:true`. They live in the same Supabase `phases` table.
+  const CUSTOM_PHASE_ID_START = 30;
+
+  function nextCustomPhaseId() {
+    const proj = getCurrentProject();
+    if (!proj) return CUSTOM_PHASE_ID_START;
+    const used = new Set((proj.phases || []).map(p => Number(p.id)));
+    let id = CUSTOM_PHASE_ID_START;
+    while (used.has(id)) id++;
+    return id;
+  }
+
+  function addCustomPhase({ name, icon, isInterior, estimationTradeKey }) {
+    const proj = getCurrentProject();
+    if (!proj) return null;
+    if (!proj.phases) proj.phases = [];
+    const id = nextCustomPhaseId();
+    const phase = {
+      id,
+      name: name || ('Custom Phase ' + id),
+      icon: icon || 'listChecks',
+      completion: 0,
+      data: {},
+      isCustom: true,
+      ...(isInterior ? { isInterior: true } : {}),
+    };
+    proj.phases.push(phase);
+    // Also register an estimation trade so budgets can flow into the new phase.
+    if (!proj.estimation) proj.estimation = { land: {}, constr: {} };
+    if (!proj.estimation.constr) proj.estimation.constr = {};
+    const tradeKey = estimationTradeKey || ('custom_' + id);
+    if (!proj.estimation.constr[tradeKey]) {
+      proj.estimation.constr[tradeKey] = { material: '', labor: '', label: name };
+    }
+    if (!proj.estimation.constr.customTrades) proj.estimation.constr.customTrades = [];
+    if (!proj.estimation.constr.customTrades.find(t => t.key === tradeKey)) {
+      proj.estimation.constr.customTrades.push({ key: tradeKey, label: name, phaseId: id, isInterior: !!isInterior });
+    }
+    markDirty('project');
+    save();
+    return phase;
+  }
+
+  function deleteCustomPhase(phaseId) {
+    const proj = getCurrentProject();
+    if (!proj || !proj.phases) return;
+    const ph = proj.phases.find(p => Number(p.id) === Number(phaseId));
+    if (!ph || !ph.isCustom) return; // never delete a standard phase
+    proj.phases = proj.phases.filter(p => Number(p.id) !== Number(phaseId));
+    // Also remove the linked estimation custom trade (if any)
+    if (proj.estimation?.constr?.customTrades) {
+      proj.estimation.constr.customTrades = proj.estimation.constr.customTrades.filter(t => Number(t.phaseId) !== Number(phaseId));
+    }
+    // And drop any customCards registered against it
+    if (proj.customCards && proj.customCards[phaseId]) {
+      delete proj.customCards[phaseId];
+    }
+    markDirty('project');
+    save();
+  }
+
+  function getCustomPhases() {
+    const proj = getCurrentProject();
+    if (!proj || !proj.phases) return [];
+    return proj.phases.filter(p => p.isCustom);
+  }
+
   return {
     load, save, onLoaded,
     createProject, syncProjectToCloud, getCurrentProject, getProjects,
@@ -2909,6 +3112,8 @@ const State = (() => {
     getBuyers, addBuyer, updateBuyer, deleteBuyer, addBuyerPayment, deleteBuyerPayment,
     addLead, updateLead, deleteLead, getLeads,
     addSitePhoto, updateSitePhoto, deleteSitePhoto, getSitePhotos,
+    getCustomCards, addCustomCard, deleteCustomCard,
+    addCustomPhase, deleteCustomPhase, getCustomPhases, nextCustomPhaseId,
     updateProjectInfo, deleteProject, archivedProject: archiveProject,
     getLocalImage, saveLocalImage, deleteLocalImage, preLoadProjectImages,
     replaySyncQueue, hasUnsyncedChanges, forceSync,

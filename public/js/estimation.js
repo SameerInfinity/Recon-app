@@ -26,16 +26,27 @@ const Estimation = (() => {
   const F = Financial;
 
   /* ── Construction trade definitions ─────────────────────── */
+  // Standard trades map to phases 1-9 + Electrical Supply (11).
+  // Interior section phases (20-27) are also estimatable so budgets can flow into them.
   const TRADES = [
-    { key: 'civil',       label: 'Civil Work',              icon: 'foundation' },
-    { key: 'tiles',       label: 'Tiles & Flooring',        icon: 'bricks'     },
-    { key: 'painting',    label: 'Painting',                icon: 'paintbrush' },
-    { key: 'electrical',  label: 'Electrical Work',         icon: 'zap'        },
-    { key: 'fabrication', label: 'Furniture & Fabrication', icon: 'tools'      },
-    { key: 'plumbing',    label: 'Plumbing Work',           icon: 'pipe'       },
-    { key: 'pop',         label: 'POP & False Ceiling',     icon: 'roof'       },
-    { key: 'lift',        label: 'Lift / Elevator',         icon: 'stairs'     },
-    { key: 'other',       label: 'Other / Misc.',           icon: 'blocks'     },
+    { key: 'civil',             label: 'Civil Work',              icon: 'foundation', phaseId: 1  },
+    { key: 'tiles',             label: 'Tiles & Flooring',        icon: 'bricks',     phaseId: 2  },
+    { key: 'painting',          label: 'Painting',                icon: 'paintbrush', phaseId: 3  },
+    { key: 'electrical',        label: 'Electrical Work',         icon: 'zap',        phaseId: 4  },
+    { key: 'fabrication',       label: 'Furniture & Fabrication', icon: 'tools',      phaseId: 5  },
+    { key: 'plumbing',          label: 'Plumbing Work',           icon: 'pipe',       phaseId: 6  },
+    { key: 'pop',               label: 'POP & False Ceiling',     icon: 'roof',       phaseId: 7  },
+    { key: 'lift',              label: 'Lift / Elevator',         icon: 'stairs',     phaseId: 8  },
+    { key: 'other',             label: 'Other / Misc.',           icon: 'blocks',     phaseId: 9  },
+    { key: 'electrical_supply', label: 'Electrical Supply',       icon: 'zap',        phaseId: 11 },
+    { key: 'int_flooring',      label: 'Interior Flooring',       icon: 'ruler',      phaseId: 20, isInterior: true },
+    { key: 'int_painting',      label: 'Interior Painting',       icon: 'paintbrush', phaseId: 21, isInterior: true },
+    { key: 'int_doors',         label: 'Interior Doors & Hardware', icon: 'door',     phaseId: 22, isInterior: true },
+    { key: 'int_cabinetry',     label: 'Interior Cabinetry',      icon: 'sofa',       phaseId: 23, isInterior: true },
+    { key: 'int_trim',          label: 'Interior Trim & Staircase', icon: 'stairs',   phaseId: 24, isInterior: true },
+    { key: 'int_closets',       label: 'Interior Closets',        icon: 'door',       phaseId: 25, isInterior: true },
+    { key: 'int_glass',         label: 'Interior Glass & Mirror', icon: 'mirror',     phaseId: 26, isInterior: true },
+    { key: 'int_fixtures',      label: 'Interior Fixtures',       icon: 'lightbulb',  phaseId: 27, isInterior: true },
   ];
 
   /* ── State helpers ──────────────────────────────────────── */
@@ -49,11 +60,27 @@ const Estimation = (() => {
       archFees: '', landOther: '', customItems: []
     };
     if (!e.constr) e.constr = {};
+    // Standard trades
     TRADES.forEach(t => {
+      if (!e.constr[t.key]) e.constr[t.key] = { material: '', labor: '' };
+    });
+    // Custom trades (added by the user via "Add New Trade" button)
+    if (!Array.isArray(e.constr.customTrades)) e.constr.customTrades = [];
+    e.constr.customTrades.forEach(t => {
       if (!e.constr[t.key]) e.constr[t.key] = { material: '', labor: '' };
     });
     if (!Array.isArray(e.land.customItems)) e.land.customItems = [];
     return e;
+  }
+
+  // Returns the full trade list (standard + custom) for rendering.
+  function allTrades() {
+    const e = getEst();
+    const customs = (e && e.constr && Array.isArray(e.constr.customTrades)) ? e.constr.customTrades : [];
+    return [
+      ...TRADES,
+      ...customs.map(t => ({ key: t.key, label: t.label || 'Custom Trade', icon: t.icon || 'listChecks', phaseId: t.phaseId, isCustom: true, isInterior: !!t.isInterior }))
+    ];
   }
 
   function pn(v) { return parseFloat(String(v || '').replace(/[,₹$\s]/g, '')) || 0; }
@@ -67,7 +94,8 @@ const Estimation = (() => {
     return baseTotal + customTotal;
   }
   function calcConstrTotal(e) {
-    return TRADES.reduce((s, t) => {
+    const trades = allTrades();
+    return trades.reduce((s, t) => {
       const tr = e.constr[t.key] || {};
       return s + pn(tr.material) + pn(tr.labor);
     }, 0);
@@ -148,16 +176,20 @@ const Estimation = (() => {
     const hasBudget   = budget > 0;
 
     /* ── Trade accordion rows ── */
-    const tradeRows = TRADES.map(t => {
+    const tradesList = allTrades();
+    const tradeRows = tradesList.map(t => {
       const tr = e.constr[t.key] || {};
       const rowTotal = pn(tr.material) + pn(tr.labor);
       const matAmt = pn(tr.material);
       const labAmt = pn(tr.labor);
+      const delBtn = t.isCustom
+        ? `<span onclick="event.stopPropagation();Estimation._removeCustomTrade('${escapeAttr(t.key)}')" title="Remove this custom trade" style="margin-left:6px;color:var(--danger);cursor:pointer;font-size:14px;line-height:1">×</span>`
+        : '';
       return `
         <div class="est-trade-row" id="etr-${escapeAttr(t.key)}">
           <div class="est-trade-header" onclick="Estimation._toggleTrade('${escapeAttr(t.key)}')">
             <span class="est-trade-icon">${iconSvg(t.icon, 14)}</span>
-            <span class="est-trade-name">${escapeHtml(t.label)}</span>
+            <span class="est-trade-name">${escapeHtml(t.label)}${t.isInterior ? ' <span style="font-size:9px;color:var(--amber);text-transform:uppercase;letter-spacing:.05em">Interior</span>' : ''}${t.isCustom ? ' <span style="font-size:9px;color:var(--amber);text-transform:uppercase;letter-spacing:.05em">Custom</span>' : ''}${delBtn}</span>
             <span class="est-trade-total mono" id="etr-tot-${escapeAttr(t.key)}">${rowTotal > 0 ? F.fmt(rowTotal) : '—'}</span>
             <svg class="est-trade-chevron" viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><polyline points="6 9 12 15 18 9"/></svg>
           </div>
@@ -184,6 +216,13 @@ const Estimation = (() => {
           </div>
         </div>`;
     }).join('');
+
+    /* ── "Add New Trade" button (Task 2: bidirectional sync with phases) ── */
+    const addTradeBtn = `
+      <button class="est-btn-add-custom" onclick="Estimation._addCustomTrade()" type="button" style="margin-top:8px;width:100%">
+        <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+        <span>Add New Trade (auto-creates phase)</span>
+      </button>`;
 
     /* ── Budget diff badge ── */
     let diffHtml = '';
@@ -286,6 +325,7 @@ const Estimation = (() => {
 
           <div class="est-trades-list">
             ${tradeRows}
+            ${addTradeBtn}
           </div>
 
           <div class="est-subtotal-row">
@@ -354,8 +394,9 @@ const Estimation = (() => {
     const ids = ['landCost','devDN','devGovt','devOther','archFees','landOther'];
     ids.forEach(k => { l[k] = _val('el-' + k); });
 
-    /* Collect trade inputs */
-    TRADES.forEach(t => {
+    /* Collect trade inputs (standard + custom) */
+    const trades = allTrades();
+    trades.forEach(t => {
       if (!e.constr[t.key]) e.constr[t.key] = {};
       e.constr[t.key].material = _val('ecm-' + t.key);
       e.constr[t.key].labor    = _val('ecl-' + t.key);
@@ -383,7 +424,7 @@ const Estimation = (() => {
     if (emptyBadge) emptyBadge.textContent = grand > 0 ? '' : 'Enter values';
 
     /* Per-trade row totals + row total line inside accordion */
-    TRADES.forEach(t => {
+    trades.forEach(t => {
       const tr = e.constr[t.key] || {};
       const rowTot = pn(tr.material) + pn(tr.labor);
       const totEl = document.getElementById('etr-tot-' + t.key);
@@ -521,10 +562,28 @@ const Estimation = (() => {
 
 
   /* ── Map Estimation trades to Phase IDs ─────────────────── */
+  // Static map for the 9 standard construction trades + Electrical Supply (11)
+  // + the 8 interior section phases (20-27). Custom user-added trades are
+  // stored on proj.estimation.constr.customTrades with their own phaseId.
   const TRADE_PHASE_MAP = {
     civil: 1, tiles: 2, painting: 3, electrical: 4,
-    fabrication: 5, plumbing: 6, pop: 7, lift: 8, other: 9
+    fabrication: 5, plumbing: 6, pop: 7, lift: 8, other: 9,
+    electrical_supply: 11,
+    int_flooring: 20, int_painting: 21, int_doors: 22, int_cabinetry: 23,
+    int_trim: 24, int_closets: 25, int_glass: 26, int_fixtures: 27,
   };
+
+  function _resolveTradeKeyForPhase(phaseId) {
+    phaseId = Number(phaseId);
+    // Standard trade?
+    const stdKey = Object.keys(TRADE_PHASE_MAP).find(k => TRADE_PHASE_MAP[k] === phaseId);
+    if (stdKey) return stdKey;
+    // Custom trade?
+    const proj = State.getCurrentProject();
+    const ct = proj?.estimation?.constr?.customTrades || [];
+    const custom = ct.find(t => Number(t.phaseId) === phaseId);
+    return custom ? custom.key : null;
+  }
 
   /**
    * Get the per-trade budget from estimation for a given phase ID.
@@ -534,8 +593,7 @@ const Estimation = (() => {
   function getTradeBudget(phaseId) {
     const proj = State.getCurrentProject();
     if (!proj || !proj.estimation || !proj.estimation.constr) return null;
-    // Find which trade key maps to this phase ID
-    const tradeKey = Object.keys(TRADE_PHASE_MAP).find(k => TRADE_PHASE_MAP[k] === Number(phaseId));
+    const tradeKey = _resolveTradeKeyForPhase(phaseId);
     if (!tradeKey) return null;
     const tr = proj.estimation.constr[tradeKey];
     if (!tr) return null;
@@ -544,6 +602,81 @@ const Estimation = (() => {
     return { material, labor, total: material + labor };
   }
 
-  return { renderCard, _toggleCard, _toggleTrade, _onInput, applyToBudget, clearAll, _addCustomItem, _removeCustomItem, _updateCustomItem, getTradeBudget, TRADE_PHASE_MAP };
+  /* ── Custom Trade handlers (Task 2: Add New Trade → auto-create phase) ── */
+  function _addCustomTrade() {
+    App.showModal(`
+      <h3 class="modal-title">${Icons.render('plus', 16)} Add New Trade</h3>
+      <div style="margin-bottom:12px">
+        <label class="modal-label">Trade Name *</label>
+        <input id="ct-name" class="modal-input" placeholder="e.g. Landscaping">
+      </div>
+      <div style="margin-bottom:12px">
+        <label class="modal-label">Show Phase On Tab</label>
+        <select id="ct-tab" class="modal-input" style="appearance:auto">
+          <option value="construction">Construction</option>
+          <option value="interior">Interior</option>
+        </select>
+      </div>
+      <div style="font-size:11px;color:var(--text-muted);margin-bottom:12px">
+        A matching phase will be auto-created on the selected tab so you can log material & labour entries against it.
+      </div>
+      <div style="display:flex;gap:12px">
+        <button onclick="App.closeModal()" class="modal-btn-cancel" style="flex:1;padding:11px;border-radius:10px;border:1px solid var(--charcoal-border);background:none;color:var(--text-secondary);cursor:pointer;font-family:inherit;font-weight:600">Cancel</button>
+        <button onclick="Estimation._saveCustomTrade()" class="modal-btn-primary" style="flex:1;padding:11px;border-radius:10px;border:none;background:var(--amber);color:#fff;cursor:pointer;font-family:inherit;font-weight:600">Add Trade</button>
+      </div>
+    `);
+  }
+
+  function _saveCustomTrade() {
+    const name = document.getElementById('ct-name')?.value.trim();
+    if (!name) { App.toast('Trade name is required', 'error'); return; }
+    const isInterior = document.getElementById('ct-tab')?.value === 'interior';
+    // 1) Create the linked phase via State.addCustomPhase — this also auto-registers
+    //    the trade on proj.estimation.constr.customTrades via the State helper.
+    const phase = State.addCustomPhase({ name, icon: 'listChecks', isInterior });
+    if (!phase) { App.toast('Could not create phase', 'error'); return; }
+    const tradeKey = 'custom_' + phase.id;
+    // 2) Make sure the trade entry exists with empty material/labor values.
+    const e = getEst();
+    if (!e.constr[tradeKey]) e.constr[tradeKey] = { material: '', labor: '' };
+    State.updateProjectInfo({ estimation: e });
+    App.closeModal();
+    App.toast('Trade added — phase #' + phase.id + ' created', 'success');
+    // Re-render the estimation card so the new trade row appears
+    const card = document.getElementById('est-card');
+    if (card) {
+      const fresh = document.createElement('div');
+      fresh.innerHTML = renderCard();
+      card.replaceWith(fresh.firstElementChild);
+    }
+  }
+
+  function _removeCustomTrade(tradeKey) {
+    App.showConfirmModal({
+      icon: Icons.render('trash', 24),
+      title: 'Remove this custom trade?',
+      body: 'The linked custom phase and all its entries will also be deleted.',
+      confirmLabel: 'Remove',
+      onConfirm: () => {
+        const e = getEst();
+        if (e?.constr?.customTrades) {
+          const ct = e.constr.customTrades.find(t => t.key === tradeKey);
+          if (ct && ct.phaseId) State.deleteCustomPhase(ct.phaseId);
+          e.constr.customTrades = e.constr.customTrades.filter(t => t.key !== tradeKey);
+          delete e.constr[tradeKey];
+          State.updateProjectInfo({ estimation: e });
+        }
+        App.toast('Trade removed', 'info');
+        const card = document.getElementById('est-card');
+        if (card) {
+          const fresh = document.createElement('div');
+          fresh.innerHTML = renderCard();
+          card.replaceWith(fresh.firstElementChild);
+        }
+      }
+    });
+  }
+
+  return { renderCard, _toggleCard, _toggleTrade, _onInput, applyToBudget, clearAll, _addCustomItem, _removeCustomItem, _updateCustomItem, _addCustomTrade, _saveCustomTrade, _removeCustomTrade, getTradeBudget, TRADE_PHASE_MAP };
 
 })();
