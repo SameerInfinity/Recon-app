@@ -1,5 +1,5 @@
 /* ═══════════════════════════════════════════════════════════════
-   ARCONZA · APP.JS  (mobile-first, bottom-nav controller)
+   RECON · APP.JS  (mobile-first, bottom-nav controller)
    - Top app bar + AI right drawer
    - 4 hubs: Dashboard, Phases, Ledgers (Labour/Vendor/Inventory), More
    - Reuses every existing module (Dashboard, Phases, LabourVendors,
@@ -563,8 +563,6 @@ const App = (() => {
 
   // ── Hub router ──────────────────────────────────────────
   function showHub(name) {
-    // M-05: if a walkthrough is in progress, abandon it cleanly before navigating.
-    if (_wtActive) stopWalkthrough();
     if (!_isNavigatingBack && name !== currentHub) {
       _pushNav({ type: 'hub', name: currentHub, ledgerTab: currentLedgerTab });
     }
@@ -601,8 +599,8 @@ const App = (() => {
   }
 
   // ── CONSTRUCTION HUB ──────────────────────────────────
-  // Shows standard construction phases (1-9 + 11 = Electrical Supply + 12 = Water Supply)
-  // plus any user-added custom construction phases (id ≥ 30, isCustom && !isInterior).
+  // Shows standard construction phases (1-9 + 11 = Electrical Supply) plus
+  // any user-added custom construction phases (id ≥ 30, isCustom && !isInterior).
   // Phase 10 (legacy Interior) and the new interior section phases (20-27) are excluded.
   function renderConstructionHub(content) {
     const proj = State.getCurrentProject();
@@ -612,8 +610,8 @@ const App = (() => {
       const pid = Number(p.id);
       if (p.hidden) return false;
       if (p.isInterior) return false;
-      // Standard construction phases: 1-9 (Civil..Other), 11 (Electrical Supply), 12 (Water Supply)
-      if (pid >= 1 && pid <= 12) return pid !== 10; // exclude legacy Interior
+      // Standard construction phases: 1-9 (Civil..Other), 11 (Electrical Supply)
+      if (pid >= 1 && pid <= 11) return pid !== 10; // exclude legacy Interior
       // Custom construction phases: id ≥ 30, not flagged isInterior
       if (pid >= 30 && p.isCustom) return true;
       return false;
@@ -642,34 +640,6 @@ const App = (() => {
       </button>`;
     };
 
-    // ── "All Bills (Construction)" card — distinct style, always at bottom ──
-    // Aggregates scanned bills + entry-bill photos from all construction phases
-    // (1-9 + 11 + 12). Rendered after the "Add New Phase" card so it sits at
-    // the very bottom of the hub, visually separated via .m-all-bills-card CSS.
-    const constrBills = [];
-    (proj.phases || []).forEach(ph => {
-      const pid = Number(ph.id);
-      if (pid >= 1 && pid <= 12 && pid !== 10) {
-        (State.getBills(ph.id) || []).forEach(b => constrBills.push(b));
-      }
-    });
-    const constrBillsTotal = constrBills.reduce((s, b) => s + (parseFloat(b.totalAmount) || 0), 0);
-    const allBillsConstrHtml = `
-      <button class="m-all-bills-card" onclick="App.showConstructionBills()">
-        <span class="m-all-bills-card-icon">${Icons.render('fileText', 22)}</span>
-        <div class="m-all-bills-card-body">
-          <div class="m-all-bills-card-title-row">
-            <span class="m-all-bills-card-name">All Bills (Construction)</span>
-            <span class="m-all-bills-card-badge">${Icons.render('bot',10)} AI Scanner</span>
-          </div>
-          <div class="m-all-bills-card-meta">
-            <span>${constrBills.length} bill${constrBills.length!==1?'s':''} scanned across all construction trades</span>
-            ${constrBillsTotal > 0 ? `<span>·</span><span class="m-all-bills-card-cost">${Financial.fmt(constrBillsTotal)}</span>` : ''}
-          </div>
-        </div>
-        <span class="m-all-bills-card-chev">›</span>
-      </button>`;
-
     content.innerHTML = `
       <div class="phase-workspace active">
         <div class="m-hero-card">
@@ -680,6 +650,16 @@ const App = (() => {
         <div class="m-section-title">All Trades <span class="count">${construction.length}</span></div>
         <div class="m-phase-grid">
           ${construction.map(phaseCard).join('')}
+          <button class="m-phase-card" onclick="App.showConstructionBills()" style="border:1.5px solid var(--amber-glow); background:var(--charcoal-mid)">
+            <span class="m-phase-card-icon" style="color:var(--amber)">${Icons.render('fileText', 22)}</span>
+            <div class="m-phase-card-body">
+              <div class="m-phase-card-name" style="color:var(--amber)">All Bills (Construction)</div>
+              <div class="m-phase-card-meta">
+                <span>View and scan all construction receipts</span>
+              </div>
+            </div>
+            <span class="m-phase-card-chev" style="color:var(--amber)">›</span>
+          </button>
           <button class="m-phase-card" onclick="App.showAddPhaseModal('construction')" style="border:1.5px dashed var(--amber-border); background:var(--amber-light-bg)">
             <span class="m-phase-card-icon" style="color:var(--amber)">${Icons.render('plus', 22)}</span>
             <div class="m-phase-card-body">
@@ -688,7 +668,6 @@ const App = (() => {
             </div>
             <span class="m-phase-card-chev" style="color:var(--amber)">›</span>
           </button>
-          ${allBillsConstrHtml}
         </div>
       </div>`;
     AI.setWatching?.('Construction Trades');
@@ -743,33 +722,6 @@ const App = (() => {
       return;
     }
 
-    // ── "All Bills (Interior)" card — distinct style, always at bottom ──
-    // Aggregates scanned bills + entry-bill photos from all interior section
-    // phases (20-27 + custom interior phases). Rendered after the "Add New
-    // Interior Phase" card so it sits at the very bottom of the hub.
-    const interiorBills = [];
-    (proj.phases || []).forEach(ph => {
-      if (ph.isInterior) {
-        (State.getBills(ph.id) || []).forEach(b => interiorBills.push(b));
-      }
-    });
-    const interiorBillsTotal = interiorBills.reduce((s, b) => s + (parseFloat(b.totalAmount) || 0), 0);
-    const allBillsInteriorHtml = `
-      <button class="m-all-bills-card" onclick="App.showInteriorBills()">
-        <span class="m-all-bills-card-icon">${Icons.render('fileText', 22)}</span>
-        <div class="m-all-bills-card-body">
-          <div class="m-all-bills-card-title-row">
-            <span class="m-all-bills-card-name">All Bills (Interior)</span>
-            <span class="m-all-bills-card-badge">${Icons.render('bot',10)} AI Scanner</span>
-          </div>
-          <div class="m-all-bills-card-meta">
-            <span>${interiorBills.length} bill${interiorBills.length!==1?'s':''} scanned across all interior sections</span>
-            ${interiorBillsTotal > 0 ? `<span>·</span><span class="m-all-bills-card-cost">${Financial.fmt(interiorBillsTotal)}</span>` : ''}
-          </div>
-        </div>
-        <span class="m-all-bills-card-chev">›</span>
-      </button>`;
-
     content.innerHTML = `
       <div class="phase-workspace active">
         <div class="m-hero-card">
@@ -788,7 +740,6 @@ const App = (() => {
             </div>
             <span class="m-phase-card-chev" style="color:var(--amber)">›</span>
           </button>
-          ${allBillsInteriorHtml}
         </div>
       </div>`;
     content.scrollTop = 0;
@@ -1011,8 +962,7 @@ const App = (() => {
     syncSidebarActiveState(currentHub, currentView, currentLedgerTab);
   }
   function showPhaseBills(phaseId) {
-    // H-03: 'interior' is a valid string alias — don't coerce it to NaN.
-    phaseId = (phaseId === 'construction' || phaseId === 'interior') ? phaseId : Number(phaseId);
+    phaseId = (phaseId === 'construction') ? phaseId : Number(phaseId);
     if (!_isNavigatingBack) {
       _pushNav({ type: 'phase-hub', phaseId: currentPhase });
     }
@@ -1053,28 +1003,6 @@ const App = (() => {
     }
     content.scrollTop = 0;
     AI.setWatching?.(`Construction · Bills`);
-    syncSidebarActiveState(currentHub, currentView, currentLedgerTab);
-  }
-
-  function showInteriorBills() {
-    if (!_isNavigatingBack) {
-      _pushNav({ type: 'hub', name: 'interior' });
-    }
-    currentHub = 'interior'; currentPhase = 'interior'; currentCategory = 'bills';
-    currentView = 'interior-bills';
-    const content = document.getElementById('content-area'); if (!content) return;
-    const back = `App.showHub('interior')`;
-    if (typeof BillScanner !== 'undefined' && BillScanner.renderBillsHub) {
-      content.innerHTML = `<div class="phase-workspace active">
-        <button class="back-to-hub" onclick="${back}">← Back</button>
-        ${BillScanner.renderBillsHub('interior')}</div>`;
-    } else {
-      content.innerHTML = `<div class="phase-workspace active">
-        <button class="back-to-hub" onclick="${back}">← Back</button>
-        <div class="m-empty"><div class="m-empty-title">Bills module not loaded</div><div class="m-empty-desc">Try refreshing the page.</div></div></div>`;
-    }
-    content.scrollTop = 0;
-    AI.setWatching?.(`Interior · Bills`);
     syncSidebarActiveState(currentHub, currentView, currentLedgerTab);
   }
 
@@ -1209,9 +1137,9 @@ const App = (() => {
 
         <div class="m-section-title">Help</div>
         <div class="m-list-group">
-          <button class="m-list-row" onclick="App.startWalkthrough()">
+          <button class="m-list-row" onclick="App.showTutorial()">
             <span class="icon">${Icons.render('help', 18)}</span>
-            <div class="body"><div class="label">App Tutorial</div><div class="desc">Guided walkthrough of all features</div></div>
+            <div class="body"><div class="label">App Tutorial</div><div class="desc">Replay the onboarding walkthrough</div></div>
             <span class="chev">›</span>
           </button>
         </div>
@@ -1786,48 +1714,6 @@ const App = (() => {
     if (m) { m.classList.add('hidden'); m.style.display = 'none'; }
   }
 
-  // ── Global loading overlay ─────────────────────────────
-  // Smooth, non-blocking full-screen loader for cloud sync / data sending /
-  // project connection. Fades in 220ms, fades out 180ms. Stacked calls are
-  // reference-counted so multiple async operations can share the overlay.
-  let _loadingDepth = 0;
-  let _loadingHideTimer = null;
-  let _loadingSafetyTimer = null;  // H-09: hard cap so a stuck promise doesn't trap the user.
-  function showLoading(message, sub) {
-    const overlay = document.getElementById('arconza-loading-overlay');
-    if (!overlay) return;
-    const msgEl = document.getElementById('arconza-loading-message');
-    const subEl = document.getElementById('arconza-loading-sub');
-    if (msgEl && message) msgEl.textContent = message;
-    if (subEl) {
-      if (sub) { subEl.textContent = sub; subEl.style.display = ''; }
-      else { subEl.style.display = 'none'; }
-    }
-    _loadingDepth++;
-    // Cancel any pending hide (avoids flicker when one op ends and another starts)
-    if (_loadingHideTimer) { clearTimeout(_loadingHideTimer); _loadingHideTimer = null; }
-    // H-09: safety timeout — if a caller forgets to call hideLoading, force-close after 30s.
-    if (_loadingSafetyTimer) clearTimeout(_loadingSafetyTimer);
-    _loadingSafetyTimer = setTimeout(() => { _loadingDepth = 0; hideLoading(true); }, 30000);
-    overlay.classList.add('is-visible');
-    overlay.setAttribute('aria-hidden', 'false');
-  }
-  function hideLoading(immediate) {
-    const overlay = document.getElementById('arconza-loading-overlay');
-    if (!overlay) return;
-    _loadingDepth = Math.max(0, _loadingDepth - 1);
-    if (_loadingDepth > 0) return; // still other ops in flight
-    // H-09: clear safety timer once the overlay is actually closing.
-    if (_loadingSafetyTimer) { clearTimeout(_loadingSafetyTimer); _loadingSafetyTimer = null; }
-    const doHide = function () {
-      overlay.classList.remove('is-visible');
-      overlay.setAttribute('aria-hidden', 'true');
-      _loadingHideTimer = null;
-    };
-    if (immediate) { doHide(); }
-    else { _loadingHideTimer = setTimeout(doHide, 160); } // tiny delay so fast ops don't flicker
-  }
-
   // ── Confirm modal ──────────────────────────────────────
   let _confirmAction = null, _confirmRequired = null;
   function showConfirmModal({ icon, title, body, confirmLabel='Delete', confirmRequired=null, onConfirm }) {
@@ -1932,123 +1818,8 @@ const App = (() => {
     if (delBtn) delBtn.style.display = State.getCurrentProject() ? 'block' : 'none';
     dd.classList.toggle('hidden');
     if (!dd.classList.contains('hidden')) {
-      // Load profile data into the menu
-      _loadProfileIntoMenu();
       document.removeEventListener('click', _closeMenuOnOutsideClick);
       setTimeout(() => document.addEventListener('click', _closeMenuOnOutsideClick), 0);
-    }
-  }
-
-  async function _loadProfileIntoMenu() {
-    try {
-      if (typeof SupabaseClient === 'undefined') return;
-      const user = SupabaseClient.getUser();
-      if (!user) return;
-      // Email
-      const emailEl = document.getElementById('user-email-display');
-      if (emailEl) emailEl.textContent = user.email || '';
-      // Load profile from Supabase (cached in SupabaseClient._profile)
-      let profile = SupabaseClient.getProfile();
-      if (!profile && SupabaseClient.loadProfile) {
-        profile = await SupabaseClient.loadProfile();
-      }
-      // Name
-      const nameEl = document.getElementById('user-name-display');
-      if (nameEl) {
-        const name = profile?.full_name || user.user_metadata?.full_name || user.email?.split('@')[0] || 'User';
-        nameEl.textContent = name;
-      }
-      // Avatar
-      const avatarEl = document.getElementById('user-avatar-display');
-      if (avatarEl && profile?.avatar_url) {
-        avatarEl.innerHTML = `<img src="${profile.avatar_url}" style="width:100%;height:100%;object-fit:cover">`;
-      }
-    } catch (_) {}
-  }
-
-  function openAccountSettings() {
-    // Close the user dropdown
-    document.getElementById('user-dropdown')?.classList.add('hidden');
-    // Render account settings as a modal
-    const profile = (typeof SupabaseClient !== 'undefined' && SupabaseClient.getProfile?.()) || {};
-    const user = (typeof SupabaseClient !== 'undefined' && SupabaseClient.getUser?.()) || {};
-    const name = profile.full_name || user.user_metadata?.full_name || '';
-    const role = profile.role || '';
-    const phone = profile.phone || '';
-    const company = profile.company || '';
-    const avatarUrl = profile.avatar_url || '';
-
-    App.showModal(`
-      <h3 class="modal-title">${Icons.render('settings', 16)} Account Settings</h3>
-      <div style="display:flex;flex-direction:column;align-items:center;gap:12px;margin-bottom:20px">
-        <div id="acct-avatar-preview" style="width:80px;height:80px;border-radius:50%;background:var(--amber-glow);border:2px solid var(--amber-border);display:flex;align-items:center;justify-content:center;overflow:hidden;cursor:pointer;position:relative" onclick="document.getElementById('acct-avatar-file').click()">
-          ${avatarUrl ? `<img src="${avatarUrl}" style="width:100%;height:100%;object-fit:cover">` : '<svg viewBox="0 0 24 24" width="32" height="32" fill="none" stroke="var(--amber)" stroke-width="1.5"><circle cx="12" cy="8" r="4"/><path d="M4 21c1.5-4 5-6 8-6s6.5 2 8 6"/></svg>'}
-          <div style="position:absolute;bottom:0;right:0;background:var(--amber);border-radius:50%;width:24px;height:24px;display:flex;align-items:center;justify-content:center;cursor:pointer">
-            <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="#fff" stroke-width="2.5"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/></svg>
-          </div>
-        </div>
-        <input type="file" id="acct-avatar-file" accept="image/*" style="display:none" onchange="App._handleAcctAvatar(event)">
-        <p style="font-size:11px;color:var(--text-muted)">${user.email || ''}</p>
-      </div>
-      <div style="margin-bottom:12px">
-        <label class="modal-label">Full Name</label>
-        <input class="modal-input" id="acct-name" value="${escapeAttr(name)}" placeholder="Your name">
-      </div>
-      <div style="margin-bottom:12px">
-        <label class="modal-label">Role</label>
-        <select class="modal-input" id="acct-role" style="appearance:auto">
-          <option value="">Select role...</option>
-          ${['Owner / Builder','Contractor','Architect','Site Engineer','Project Manager','Interior Designer','Supplier','Other'].map(r => `<option value="${r}" ${role === r ? 'selected' : ''}>${r}</option>`).join('')}
-        </select>
-      </div>
-      <div style="margin-bottom:12px">
-        <label class="modal-label">Phone</label>
-        <input class="modal-input" id="acct-phone" value="${escapeAttr(phone)}" placeholder="10-digit number" style="font-family:var(--font-mono)">
-      </div>
-      <div style="margin-bottom:20px">
-        <label class="modal-label">Company</label>
-        <input class="modal-input" id="acct-company" value="${escapeAttr(company)}" placeholder="Your company name">
-      </div>
-      <div style="display:flex;gap:12px">
-        <button onclick="App.closeModal()" class="modal-btn-cancel" style="flex:1;padding:11px;border-radius:10px;border:1px solid var(--charcoal-border);background:none;color:var(--text-secondary);cursor:pointer;font-family:inherit;font-weight:600">Cancel</button>
-        <button onclick="App._saveAccountSettings()" class="modal-btn-primary" style="flex:1;padding:11px;border-radius:10px;border:none;background:var(--amber);color:#fff;cursor:pointer;font-family:inherit;font-weight:600">Save Changes</button>
-      </div>
-    `);
-  }
-
-  let _acctAvatarDataUrl = '';
-  function _handleAcctAvatar(e) {
-    const file = e.target.files[0];
-    if (!file) return;
-    if (file.size > 2 * 1024 * 1024) { toast('Image must be under 2MB', 'error'); return; }
-    const reader = new FileReader();
-    reader.onload = (ev) => {
-      _acctAvatarDataUrl = ev.target.result;
-      const preview = document.getElementById('acct-avatar-preview');
-      if (preview) preview.innerHTML = `<img src="${_acctAvatarDataUrl}" style="width:100%;height:100%;object-fit:cover">`;
-    };
-    reader.readAsDataURL(file);
-  }
-
-  async function _saveAccountSettings() {
-    const fullName = document.getElementById('acct-name')?.value.trim() || '';
-    const role = document.getElementById('acct-role')?.value || '';
-    const phone = document.getElementById('acct-phone')?.value.trim() || '';
-    const company = document.getElementById('acct-company')?.value.trim() || '';
-    showLoading('Saving profile…');
-    try {
-      const updates = { fullName, role, phone, company };
-      if (_acctAvatarDataUrl) updates.avatarUrl = _acctAvatarDataUrl;
-      await SupabaseClient.updateProfile(updates);
-      _acctAvatarDataUrl = '';
-      hideLoading();
-      closeModal();
-      toast('Profile updated!', 'success');
-      // Refresh the user menu
-      _loadProfileIntoMenu();
-    } catch (err) {
-      hideLoading();
-      toast('Failed to save: ' + (err.message || 'Unknown error'), 'error');
     }
   }
 
@@ -2222,29 +1993,25 @@ const App = (() => {
     if (_navStack.length > 0) {
       const prev = _navStack.pop();
       _isNavigatingBack = true;
-      // H-01: ensure _isNavigatingBack is cleared even if a restore handler throws.
-      try {
-        if (prev.type === 'hub') {
-          showHub(prev.name);
-          if (prev.ledgerTab) setLedgerTab(prev.ledgerTab);
-        } else if (prev.type === 'phase-hub') {
-          showPhaseHub(prev.phaseId);
-        } else if (prev.type === 'category') {
-          showPhaseCategory(prev.phaseId, prev.categoryId);
-        } else if (prev.type === 'input-card') {
-          showInputCard(prev.phaseId, prev.cardId);
-        } else if (prev.type === 'more-back') {
-          showHub('more');
-        } else if (prev.type === 'flat-sales') {
-          showFlatSales();
-        } else if (prev.type === 'quick-leads') {
-          showQuickLeads();
-        } else if (prev.type === 'site-photos') {
-          showSitePhotos();
-        }
-      } finally {
-        _isNavigatingBack = false;
+      if (prev.type === 'hub') {
+        showHub(prev.name);
+        if (prev.ledgerTab) setLedgerTab(prev.ledgerTab);
+      } else if (prev.type === 'phase-hub') {
+        showPhaseHub(prev.phaseId);
+      } else if (prev.type === 'category') {
+        showPhaseCategory(prev.phaseId, prev.categoryId);
+      } else if (prev.type === 'input-card') {
+        showInputCard(prev.phaseId, prev.cardId);
+      } else if (prev.type === 'more-back') {
+        showHub('more');
+      } else if (prev.type === 'flat-sales') {
+        showFlatSales();
+      } else if (prev.type === 'quick-leads') {
+        showQuickLeads();
+      } else if (prev.type === 'site-photos') {
+        showSitePhotos();
       }
+      _isNavigatingBack = false;
       return;
     }
 
@@ -2425,19 +2192,16 @@ const App = (() => {
       return syncProjectToCloud(proj.id);
     }
 
-    showLoading('Syncing with cloud…', 'Pulling latest changes');
     toast('Syncing with cloud...', 'info');
     // Mark that we want a toast for this sync cycle — the syncend handler
     // will consume this flag and show the appropriate completion toast.
     _syncToastShown = true;
     try {
       await State.forceSync();
-      hideLoading();
       // NOTE: Do NOT show a second toast here — the syncend event handler
       // will show "Cloud sync complete!" or "Sync paused..." based on the result.
       // (Previously this showed a duplicate "Sync complete!" toast.)
     } catch (err) {
-      hideLoading();
       _syncToastShown = false; // Consume flag so syncend doesn't also toast
       console.error('[App] Force sync failed:', err);
       toast('Sync failed: ' + (err.message || 'Unknown error'), 'error');
@@ -2456,7 +2220,7 @@ const App = (() => {
     }
 
     // Ensure state is saved before tab close
-    window.addEventListener('beforeunload', () => State.saveLocalNow && State.saveLocalNow());
+    window.addEventListener('beforeunload', () => State.save());
     _setupBackButton();
     init();
 
@@ -2529,8 +2293,6 @@ const App = (() => {
       if (currentView === 'material-cards') showMaterialCards(currentPhase);
       else if (currentView === 'labor-cards') showLaborCards(currentPhase);
       else if (currentView === 'entry-form') showEntryForm(currentPhase, currentCategory);
-      // M-06: dashboard cost-breakdown depends on phase data — refresh if it's showing.
-      else if (currentView === 'overview' || currentView === 'dashboard') refreshDashboard();
     });
 
     // Initial sync status check and auto-replay
@@ -2577,11 +2339,9 @@ const App = (() => {
       toast('Cannot sync project: You are currently offline.', 'warning');
       return;
     }
-    showLoading('Syncing to cloud…', 'Uploading your project data');
     toast('Syncing project to cloud...', 'info');
     try {
       await State.syncProjectToCloud(projectId);
-      hideLoading();
       toast('Project synced to cloud successfully!', 'success');
       // Redraw screen
       const projects = State.getProjects();
@@ -2592,7 +2352,6 @@ const App = (() => {
         showWelcomeWithProjects(projects);
       }
     } catch (err) {
-      hideLoading();
       console.error('[App] Sync to cloud failed:', err);
       const msg = err.message || '';
       if (msg.includes('phases_phase_number_check')) {
@@ -2658,284 +2417,6 @@ const App = (() => {
       }
     }
   });
-
-  // ════════════════════════════════════════════════════════════════
-  // WALKTHROUGH TOOLTIP ENGINE — ARCONZA
-  // Guides the user through the app's key sections with a spotlight
-  // overlay + floating tooltip card. Steps navigate the user to each
-  // tab/feature and explain what it does.
-  // ════════════════════════════════════════════════════════════════
-  let _wtActive = false;
-  let _wtStep = 0;
-  let _wtResizeHandler = null;
-
-  // Walkthrough step definitions. Each step has:
-  //   selector: CSS selector for the element to spotlight
-  //   title: tooltip heading
-  //   desc: tooltip body text
-  //   nav: optional function to call BEFORE showing the tooltip
-  //        (e.g. navigate to a tab so the target element is visible)
-  //   wait: optional ms to wait after nav before finding the element
-  //         (gives the view transition time to render)
-  const WALKTHROUGH_STEPS = [
-    {
-      title: 'Welcome to ARCONZA!',
-      desc: 'This is your construction command center. Let\'s take a quick tour of the key features. Tap "Next" to continue.',
-      selector: '#main-app .m-appbar, .m-appbar, body',
-      nav: () => { showHub('dashboard'); },
-      wait: 300,
-    },
-    {
-      title: 'Dashboard',
-      desc: 'Your project overview — total cost, budget vs actual, phase completion and net position. Everything at a glance.',
-      selector: '#main-app .m-hero-card, .m-hero-card',
-      nav: () => { showHub('dashboard'); },
-      wait: 300,
-    },
-    {
-      title: 'Construction Tab',
-      desc: 'Tap here to see all construction phases — Civil, Tiles, Painting, Electrical, Plumbing, POP, Lift, Electrical Supply, Water Supply and more. Each phase has its own Material, Labour and Bills tracking.',
-      selector: '[data-tab="construction"], .m-bottomnav [data-tab="construction"], .ds-nav-item[data-tab="construction"]',
-      nav: () => { showHub('construction'); },
-      wait: 300,
-    },
-    {
-      title: 'Construction Phases',
-      desc: 'Each card is a construction phase. Tap any phase to log material costs, labour payments, and scan bills. The "All Bills" card at the bottom opens the AI bill scanner for that tab.',
-      selector: '#main-app .m-phase-grid, .m-phase-grid',
-      nav: () => { showHub('construction'); },
-      wait: 300,
-    },
-    {
-      title: 'Interior Sections',
-      desc: 'The Interior tab works just like Construction — Flooring, Painting, Doors, Cabinetry, Trim, Closets, Glass and Fixtures. Each section has its own material + labour tracking.',
-      selector: '[data-tab="interior"], .m-bottomnav [data-tab="interior"], .ds-nav-item[data-tab="interior"]',
-      nav: () => { showHub('interior'); },
-      wait: 300,
-    },
-    {
-      title: 'Ledgers — Workers, Vendors & Stock',
-      desc: 'Track worker attendance (Hajiri), vendor udhaar (Khata) with total/paid/remaining amounts, and site inventory stock in/out — all in the Ledgers tab.',
-      selector: '[data-tab="ledgers"], .m-bottomnav [data-tab="ledgers"], .ds-nav-item[data-tab="ledgers-labour"]',
-      nav: () => { showHub('ledgers'); setLedgerTab('labour'); },
-      wait: 300,
-    },
-    {
-      title: 'More — Photos, Sales, RA Bills & Export',
-      desc: 'The More tab has Site Photos & Videos (with share), Flat/Shop Purchaser, Quick Leads CRM, RA Bills, Subcontractors, PDF/CSV export, and the AI Build Assistant.',
-      selector: '[data-tab="more"], .m-bottomnav [data-tab="more"], .ds-nav-item[data-tab="more"]',
-      nav: () => { showHub('more'); },
-      wait: 300,
-    },
-    {
-      title: 'AI Build Assistant',
-      desc: 'Your smart sidekick — ask about cost estimates, material alternatives, risk checks and more. It knows your full project context. Tap the AI icon in the top bar anytime to open it.',
-      selector: '#ai-toggle-btn, [onclick*="toggleAI"], .m-appbar [onclick*="AI"]',
-      nav: () => { showHub('dashboard'); },
-      wait: 300,
-    },
-    {
-      title: 'You\'re all set!',
-      desc: 'That\'s the tour! Start by creating a project from the Dashboard, or explore each tab to see everything ARCONZA can do. You can replay this tour anytime from More → App Tutorial.',
-      selector: 'body',
-      nav: () => { showHub('dashboard'); },
-      wait: 300,
-    },
-  ];
-
-  function _wtFindTarget(selector) {
-    // Try a comma-separated list of selectors; return the first match that's visible
-    const parts = selector.split(',').map(s => s.trim());
-    for (const sel of parts) {
-      try {
-        const el = document.querySelector(sel);
-        if (el && el.offsetParent !== null) return el;
-        // Also accept elements with 0 offset but non-zero size (fixed positioned)
-        if (el) {
-          const r = el.getBoundingClientRect();
-          if (r.width > 0 && r.height > 0) return el;
-        }
-      } catch (_) {}
-    }
-    // Fallback: body element
-    return document.body;
-  }
-
-  function _wtPositionPanels(targetRect) {
-    const pad = 6; // padding around the spotlight
-    const top = document.getElementById('wt-panel-top');
-    const bottom = document.getElementById('wt-panel-bottom');
-    const left = document.getElementById('wt-panel-left');
-    const right = document.getElementById('wt-panel-right');
-    const spotlight = document.getElementById('wt-spotlight');
-    if (top) {
-      top.style.height = (targetRect.top - pad) + 'px';
-    }
-    if (bottom) {
-      bottom.style.height = (window.innerHeight - targetRect.bottom - pad) + 'px';
-    }
-    if (left) {
-      top && (top.style.left = '0', top.style.right = '0');
-      left.style.top = (targetRect.top - pad) + 'px';
-      left.style.height = (targetRect.height + pad * 2) + 'px';
-      left.style.width = (targetRect.left - pad) + 'px';
-    }
-    if (right) {
-      right.style.top = (targetRect.top - pad) + 'px';
-      right.style.height = (targetRect.height + pad * 2) + 'px';
-      right.style.width = (window.innerWidth - targetRect.right - pad) + 'px';
-    }
-    if (spotlight) {
-      spotlight.style.top = (targetRect.top - pad) + 'px';
-      spotlight.style.left = (targetRect.left - pad) + 'px';
-      spotlight.style.width = (targetRect.width + pad * 2) + 'px';
-      spotlight.style.height = (targetRect.height + pad * 2) + 'px';
-    }
-  }
-
-  function _wtPositionTooltip(targetRect) {
-    const tooltip = document.getElementById('wt-tooltip');
-    if (!tooltip) return;
-    const ttRect = tooltip.getBoundingClientRect();
-    const margin = 16;
-    const vpW = window.innerWidth;
-    const vpH = window.innerHeight;
-    // Decide: place tooltip below the target if there's room, else above
-    const spaceBelow = vpH - targetRect.bottom;
-    const spaceAbove = targetRect.top;
-    let placeBelow = spaceBelow > (ttRect.height + margin + 20) || spaceBelow > spaceAbove;
-    tooltip.classList.toggle('wt-below', placeBelow);
-    tooltip.classList.toggle('wt-above', !placeBelow);
-    // Horizontal: center relative to target, clamped to viewport
-    let left = targetRect.left + (targetRect.width / 2) - (ttRect.width / 2);
-    left = Math.max(margin, Math.min(vpW - ttRect.width - margin, left));
-    let top;
-    if (placeBelow) {
-      top = targetRect.bottom + margin;
-    } else {
-      top = targetRect.top - ttRect.height - margin;
-    }
-    top = Math.max(margin, Math.min(vpH - ttRect.height - margin, top));
-    tooltip.style.left = left + 'px';
-    tooltip.style.top = top + 'px';
-  }
-
-  function _wtRenderStep() {
-    const step = WALKTHROUGH_STEPS[_wtStep];
-    if (!step) { stopWalkthrough(); return; }
-    // Update tooltip content
-    const badgeEl = document.getElementById('wt-step-badge');
-    const titleEl = document.getElementById('wt-title');
-    const descEl = document.getElementById('wt-desc');
-    const nextBtn = document.getElementById('wt-next');
-    const backBtn = document.getElementById('wt-back');
-    if (badgeEl) badgeEl.textContent = 'Step ' + (_wtStep + 1) + ' of ' + WALKTHROUGH_STEPS.length;
-    if (titleEl) titleEl.textContent = step.title;
-    if (descEl) descEl.textContent = step.desc;
-    if (nextBtn) nextBtn.textContent = (_wtStep === WALKTHROUGH_STEPS.length - 1) ? 'Finish' : 'Next';
-    if (backBtn) backBtn.style.display = (_wtStep > 0) ? '' : 'none';
-    // Find the target element
-    const target = _wtFindTarget(step.selector);
-    if (target) {
-      const rect = target.getBoundingClientRect();
-      _wtPositionPanels(rect);
-      _wtPositionTooltip(rect);
-      // Scroll the target into view if it's off-screen
-      if (rect.top < 0 || rect.bottom > window.innerHeight || rect.left < 0 || rect.right > window.innerWidth) {
-        target.scrollIntoView({ behavior: 'smooth', block: 'center', inline: 'center' });
-        // Re-measure after scroll settles
-        setTimeout(() => {
-          const r2 = target.getBoundingClientRect();
-          _wtPositionPanels(r2);
-          _wtPositionTooltip(r2);
-        }, 350);
-      }
-    }
-  }
-
-  function _wtNext() {
-    if (_wtStep < WALKTHROUGH_STEPS.length - 1) {
-      _wtStep++;
-      const step = WALKTHROUGH_STEPS[_wtStep];
-      if (step.nav) { try { step.nav(); } catch (_) {} }
-      const wait = step.wait || 300;
-      setTimeout(_wtRenderStep, wait);
-    } else {
-      stopWalkthrough();
-    }
-  }
-
-  function _wtBack() {
-    if (_wtStep > 0) {
-      _wtStep--;
-      const step = WALKTHROUGH_STEPS[_wtStep];
-      if (step.nav) { try { step.nav(); } catch (_) {} }
-      const wait = step.wait || 300;
-      setTimeout(_wtRenderStep, wait);
-    }
-  }
-
-  function startWalkthrough() {
-    if (_wtActive) return;
-    _wtActive = true;
-    _wtStep = 0;
-    const overlay = document.getElementById('walkthrough-overlay');
-    if (!overlay) return;
-    overlay.classList.add('is-active');
-    overlay.setAttribute('aria-hidden', 'false');
-    // Wire up controls (guard against double-bind)
-    const nextBtn = document.getElementById('wt-next');
-    const backBtn = document.getElementById('wt-back');
-    const skipBtn = document.getElementById('wt-skip');
-    if (nextBtn && !nextBtn._wtWired) {
-      nextBtn._wtWired = true;
-      nextBtn.addEventListener('click', _wtNext);
-    }
-    if (backBtn && !backBtn._wtWired) {
-      backBtn._wtWired = true;
-      backBtn.addEventListener('click', _wtBack);
-    }
-    if (skipBtn && !skipBtn._wtWired) {
-      skipBtn._wtWired = true;
-      skipBtn.addEventListener('click', stopWalkthrough);
-    }
-    // Reposition on viewport resize/scroll
-    _wtResizeHandler = () => {
-      if (!_wtActive) return;
-      const step = WALKTHROUGH_STEPS[_wtStep];
-      if (!step) return;
-      const target = _wtFindTarget(step.selector);
-      if (target) {
-        const r = target.getBoundingClientRect();
-        _wtPositionPanels(r);
-        _wtPositionTooltip(r);
-      }
-    };
-    window.addEventListener('resize', _wtResizeHandler);
-    window.addEventListener('scroll', _wtResizeHandler, true);
-    // Navigate to the first step's view and render
-    const firstStep = WALKTHROUGH_STEPS[0];
-    if (firstStep.nav) { try { firstStep.nav(); } catch (_) {} }
-    setTimeout(_wtRenderStep, firstStep.wait || 300);
-    toast('Starting walkthrough — tap "Skip tour" anytime to exit', 'info');
-  }
-
-  function stopWalkthrough() {
-    if (!_wtActive) return;
-    _wtActive = false;
-    _wtStep = 0;
-    const overlay = document.getElementById('walkthrough-overlay');
-    if (overlay) {
-      overlay.classList.remove('is-active');
-      overlay.setAttribute('aria-hidden', 'true');
-    }
-    if (_wtResizeHandler) {
-      window.removeEventListener('resize', _wtResizeHandler);
-      window.removeEventListener('scroll', _wtResizeHandler, true);
-      _wtResizeHandler = null;
-    }
-    toast('Walkthrough complete — explore ARCONZA!', 'success');
-  }
 
   // completions:updated — fired after recalcAllCompletions
   on('completions:updated', () => {
@@ -3012,13 +2493,11 @@ const App = (() => {
     showHub, setLedgerTab,
     // phase routes
     showPhase, showPhaseHub, showInteriorHub, showPhaseCategory, showInputCard,
-    showMaterialCards, showLaborCards, showExtraCards, showEntryForm, showPhaseBills, showConstructionBills, showInteriorBills,
+    showMaterialCards, showLaborCards, showExtraCards, showEntryForm, showPhaseBills, showConstructionBills,
     // more routes
     showRaBillsHub, showSubLedger, showFlatSales, showFlatSalesBuyer, showQuickLeads, showLeadDetail, showSitePhotos, showSitePhotoDetail, showTools,
     // custom phase helpers (Task 2)
     showAddPhaseModal, _saveCustomPhase, _deleteCustomPhase,
-    // walkthrough / tutorial
-    startWalkthrough, stopWalkthrough,
     // legacy aliases
     showLabourHub, showVendorHub, showInventoryHub, showOverview, showDashboard,
     refreshDashboard,
@@ -3030,8 +2509,6 @@ const App = (() => {
     exportPDF, exportExcel,
     // user / modals
     toggleUserMenu, signOut, toast, showModal, closeModal,
-    openAccountSettings, _handleAcctAvatar, _saveAccountSettings,
-    showLoading, hideLoading,
     showConfirmModal, closeConfirmModal, onConfirmInput, executeConfirmAction,
     handleBack,
     showTutorial: window.showTutorial || function(){},

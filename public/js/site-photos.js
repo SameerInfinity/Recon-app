@@ -111,16 +111,13 @@ const SitePhotos = (() => {
    */
   function _captureVideoThumbnail(videoDataUrl) {
     return new Promise((resolve) => {
-      let resolved = false;
-      const done = (val) => { if (!resolved) { resolved = true; clearTimeout(timeout); resolve(val); } };
-      // H-02 fix: 5s timeout fallback — prevents indefinite hang on corrupt/codec-issue videos
-      const timeout = setTimeout(() => done(''), 5000);
       const v = document.createElement('video');
       v.muted = true;
       v.playsInline = true;
       v.preload = 'metadata';
       v.onloadeddata = () => {
         try {
+          // Seek slightly past 0 to avoid black first-frame on some codecs
           v.currentTime = Math.min(0.5, (v.duration || 1) / 2);
         } catch (_) { /* ignore */ }
       };
@@ -137,12 +134,12 @@ const SitePhotos = (() => {
           canvas.height = h;
           const ctx = canvas.getContext('2d');
           ctx.drawImage(v, 0, 0, w, h);
-          done(canvas.toDataURL('image/jpeg', 0.6));
+          resolve(canvas.toDataURL('image/jpeg', 0.6));
         } catch (e) {
-          done('');
+          resolve('');
         }
       };
-      v.onerror = () => done('');
+      v.onerror = () => resolve('');
       v.src = videoDataUrl;
     });
   }
@@ -331,8 +328,7 @@ const SitePhotos = (() => {
         const thumbKey = 'sitevideo_thumb_' + Date.now();
         const thumbDataUrl = await _captureVideoThumbnail(dataUrl);
 
-        const videoOk = await State.saveLocalImage(videoKey, dataUrl);
-        if (!videoOk) { App.toast('Storage full — could not save video. Try a smaller file.', 'error'); return; }
+        await State.saveLocalImage(videoKey, dataUrl);
         if (thumbDataUrl) await State.saveLocalImage(thumbKey, thumbDataUrl);
 
         const videoUrl = 'local-video://' + videoKey;
@@ -349,11 +345,10 @@ const SitePhotos = (() => {
         const photoKey = 'sitephoto_' + Date.now();
         const thumbKey = 'sitephoto_thumb_' + Date.now();
 
-        const [photoOk, thumbOk] = await Promise.all([
+        await Promise.all([
           State.saveLocalImage(photoKey, fullImage),
           State.saveLocalImage(thumbKey, thumbnail),
         ]);
-        if (!photoOk) { App.toast('Storage full — could not save photo.', 'error'); return; }
 
         const imageUrl = 'local-image://' + photoKey;
         const thumbnailUrl = 'local-image://' + thumbKey;
@@ -369,7 +364,7 @@ const SitePhotos = (() => {
   // ── Add Photo Modal (works for image AND video) ──
   function showAddPhotoModal(imageUrl, thumbnailUrl, editId, videoUrl) {
     const isEdit = !!editId;
-    let photo = { imageUrl, thumbnail: thumbnailUrl, videoUrl };
+    let photo = { imageUrl, thumbnailUrl, videoUrl };
     if (isEdit) {
       const photos = State.getSitePhotos ? State.getSitePhotos() : [];
       photo = photos.find(p => String(p.id) === String(editId)) || {};
@@ -411,7 +406,7 @@ const SitePhotos = (() => {
       </div>
       <div style="display:flex;gap:12px">
         <button onclick="App.closeModal()" class="modal-btn-cancel" style="flex:1;padding:11px;border-radius:8px;border:1px solid var(--charcoal-border);background:none;color:var(--text-secondary);cursor:pointer;font-family:inherit;font-weight:600">Cancel</button>
-        <button onclick="SitePhotos.savePhoto(${isEdit ? `'${escapeAttr(editId)}'` : 'null'},'${escapeAttr(photo.imageUrl || '')}','${escapeAttr(photo.thumbnail || '')}','${escapeAttr(photo.videoUrl || '')}')" class="modal-btn-primary" style="flex:1;padding:11px;border-radius:8px;border:none;background:var(--amber);color:#fff;cursor:pointer;font-family:inherit;font-weight:600">${isEdit ? 'Update' : (isVideo ? 'Save Video' : 'Save Photo')}</button>
+        <button onclick="SitePhotos.savePhoto(${isEdit ? `'${escapeAttr(editId)}'` : 'null'},'${escapeAttr(photo.imageUrl || '')}','${escapeAttr(photo.thumbnailUrl || '')}','${escapeAttr(photo.videoUrl || '')}')" class="modal-btn-primary" style="flex:1;padding:11px;border-radius:8px;border:none;background:var(--amber);color:#fff;cursor:pointer;font-family:inherit;font-weight:600">${isEdit ? 'Update' : (isVideo ? 'Save Video' : 'Save Photo')}</button>
       </div>
     `);
   }
@@ -426,7 +421,7 @@ const SitePhotos = (() => {
       description: document.getElementById('sp-description')?.value?.trim() || '',
       category: document.getElementById('sp-category')?.value || '',
       imageUrl: imageUrl || '',
-      thumbnail: thumbnailUrl || '',
+      thumbnailUrl: thumbnailUrl || '',
       videoUrl: videoUrl || '',
     };
 
