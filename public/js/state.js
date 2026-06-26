@@ -5,7 +5,7 @@
 
 const State = (() => {
   // Legacy localStorage key — kept unchanged to avoid orphaning
-  // existing project data. (RECON was previously called "build manager".)
+  // existing project data. (ARCONZA was previously called "build manager" / "RECON".)
   const STORAGE_KEY = 'buildmanager_v2';
   const SAVE_DEBOUNCE = 800; // ms
 
@@ -65,26 +65,31 @@ const State = (() => {
   }
 
   function parseJsonIfNeeded(val) {
+    // L-01: cap recursion at 3 iterations to prevent runaway loops on
+    // malformed strings. Returns the original val (or {}) on parse error.
     if (typeof val === 'string') {
-      try {
-        let parsed = val;
-        while (typeof parsed === 'string') {
+      let parsed = val;
+      let iterations = 0;
+      while (typeof parsed === 'string' && iterations < 3) {
+        iterations++;
+        try {
           parsed = JSON.parse(parsed);
+        } catch (e) {
+          return val || {};
         }
-        return parsed || {};
-      } catch (e) {
-        return {};
       }
+      return parsed || {};
     }
     return val || {};
   }
 
   // Construction trade phases (1-9) + Interior (#10, legacy container) +
-  // Electrical Supply (#11) + Interior section phases (#20-27).
+  // Electrical Supply (#11) + Water Supply (#12) + Interior section phases (#20-27).
   // The 9 trades reflect the standard Indian contractor workflow:
   // civil structure, tiles, paint, electrical, fabrication, plumbing,
   // POP/false ceiling, lift/elevator, and a misc catch-all.
   // Phase 11 = Electrical Supply (transformer, cables, panels, supply demand charge).
+  // Phase 12 = Water Supply (main pipes, labour, water demand charges).
   // Phases 20-27 = interior finish sections (flooring, painting, doors, cabinetry,
   // trim, closets, glass, fixtures) — these are tagged `isInterior:true` so the
   // Interior tab picks them up exactly like Construction picks up 1-9.
@@ -100,6 +105,7 @@ const State = (() => {
     { id: 9,  name: 'Other (Misc.)',             icon: 'listChecks', completion: 0, data: {} },
     { id: 10, name: 'Interior (Legacy)',         icon: 'sofa',       completion: 0, data: {}, hidden: true },
     { id: 11, name: 'Electrical Supply',         icon: 'zap',        completion: 0, data: {} },
+    { id: 12, name: 'Water Supply',              icon: 'droplet',    completion: 0, data: {} },
     { id: 20, name: 'Interior Flooring',         icon: 'ruler',      completion: 0, data: {}, isInterior: true },
     { id: 21, name: 'Interior Painting',         icon: 'paintbrush', completion: 0, data: {}, isInterior: true },
     { id: 22, name: 'Interior Doors & Hardware', icon: 'door',       completion: 0, data: {}, isInterior: true },
@@ -122,6 +128,7 @@ const State = (() => {
     { phase_number: 9,  name: 'Other (Misc.)',             icon: 'listChecks' },
     { phase_number: 10, name: 'Interior (Legacy)',         icon: 'sofa', hidden: true },
     { phase_number: 11, name: 'Electrical Supply',         icon: 'zap' },
+    { phase_number: 12, name: 'Water Supply',              icon: 'droplet' },
     { phase_number: 20, name: 'Interior Flooring',         icon: 'ruler',      isInterior: true },
     { phase_number: 21, name: 'Interior Painting',         icon: 'paintbrush', isInterior: true },
     { phase_number: 22, name: 'Interior Doors & Hardware', icon: 'door',       isInterior: true },
@@ -417,7 +424,16 @@ const State = (() => {
     try {
       localStorage.setItem(SYNC_QUEUE_KEY, JSON.stringify(queue));
     } catch(e) {
-      console.error('[Sync] Queue save error:', e);
+      // M-14: surface quota errors to the user. The previous silent
+      // console.error meant update coalescing could silently drop
+      // mutations when localStorage was full, leading to data loss
+      // that only surfaced on the next device.
+      console.error('[State] Sync queue save failed (quota?):', e);
+      if (typeof App !== 'undefined' && App.toast) {
+        try {
+          App.toast('Storage full — some changes may not sync. Consider clearing old data.', 'error');
+        } catch (_) {}
+      }
     }
   }
 
@@ -516,12 +532,20 @@ const State = (() => {
     let requestCount = 0;
 
     try {
-      // Serialize buyers into Phase 10's JSON data (if buyers are dirty or phase 10 is dirty)
+      // Serialize buyers, customCards, estimation into Phase 10's JSON data
+      // (if any of those are dirty or phase 10 is dirty).
+      // C-01: customCards + estimation previously never synced to Supabase —
+      // they were stored only on the project object, which isn't persisted
+      // to any cloud column. Phase 10 is the hidden legacy interior phase
+      // that already carries buyers in its JSONB `data`, so we co-locate
+      // customCards + estimation there as well.
       if (Array.isArray(proj.phases) && (_dirty.phases.has(10) || _dirty.project)) {
         const phase10 = proj.phases.find(ph => ph.id === 10);
         if (phase10) {
           phase10.data = phase10.data || {};
           phase10.data.buyers = proj.buyers || [];
+          phase10.data.customCards = proj.customCards || {};
+          phase10.data.estimation = proj.estimation || {};
         }
       }
 
@@ -566,6 +590,15 @@ const State = (() => {
 
           const currentPhaseHash = _computePhaseHash(phase);
           try {
+            // C-03: budget / budgetMaterial / budgetLabor are top-level
+            // phase properties and therefore NOT inside phase.data. The
+            // Supabase `phases` table has no dedicated columns for them,
+            // so we mirror them into the JSONB `data` blob under _-prefixed
+            // keys and restore them on load.
+            const phaseData = phase.data || {};
+            if (phase.budget !== undefined && phase.budget !== null) phaseData._budget = phase.budget;
+            if (phase.budgetMaterial !== undefined && phase.budgetMaterial !== null) phaseData._budgetMaterial = phase.budgetMaterial;
+            if (phase.budgetLabor !== undefined && phase.budgetLabor !== null) phaseData._budgetLabor = phase.budgetLabor;
             const { data: upserted, error: phaseErr } = await client.from('phases').upsert({
               id: phase._dbId || undefined,
               project_id: proj.id,
@@ -573,7 +606,7 @@ const State = (() => {
               name: phase.name,
               icon: phase.icon,
               completion: phase.completion || 0,
-              data: phase.data || {},
+              data: phaseData,
             }, { onConflict: 'project_id,phase_number' }).select('id').single();
             requestCount++;
             if (phaseErr) {
@@ -608,10 +641,23 @@ const State = (() => {
     // Flush any debounced save timer
     clearTimeout(_saveTimer);
 
-    // Wait for any in-flight save to finish
+    // Wait for any in-flight save to finish.
+    // M-01: cap the wait at 30s so a stuck `_syncInProgress` flag
+    // (e.g. a hung fetch with no network error) can't lock the user
+    // out of the Sync button forever. After the cap we proceed anyway
+    // — the in-flight sync will eventually resolve or fail on its own.
     if (_syncInProgress) {
       await new Promise(resolve => {
-        const check = () => { if (!_syncInProgress) resolve(); else setTimeout(check, 200); };
+        let waited = 0;
+        const check = () => {
+          if (!_syncInProgress || waited >= 30000) {
+            if (waited >= 30000) console.warn('[Sync] forceSync gave up waiting for in-flight sync after 30s');
+            resolve();
+          } else {
+            waited += 200;
+            setTimeout(check, 200);
+          }
+        };
         check();
       });
     }
@@ -889,6 +935,27 @@ const State = (() => {
             if (!p.buyers) p.buyers = [];
             if (!p.leads) p.leads = [];
             if (!p.sitePhotos) p.sitePhotos = [];
+            // C-02: restore customCards + estimation from Phase 10's JSON data
+            // (they were serialized there by _syncDirtyToSupabase so that they
+            // survive a Supabase round-trip). Falls back gracefully when the
+            // keys are absent (legacy localStorage projects).
+            const _phase10Local = p.phases.find(ph => ph.id === 10);
+            if (_phase10Local && _phase10Local.data) {
+              if (_phase10Local.data.customCards && !p.customCards) p.customCards = _phase10Local.data.customCards;
+              if (_phase10Local.data.estimation && !p.estimation) p.estimation = _phase10Local.data.estimation;
+            }
+            // C-03: restore per-phase budgets from phase.data._budget* fields.
+            // Budgets live as top-level phase props locally but ride inside the
+            // JSONB `data` column when persisted to Supabase.
+            if (Array.isArray(p.phases)) {
+              p.phases.forEach(ph => {
+                if (ph && ph.data) {
+                  if (ph.data._budget !== undefined && ph.budget === undefined) ph.budget = ph.data._budget;
+                  if (ph.data._budgetMaterial !== undefined && ph.budgetMaterial === undefined) ph.budgetMaterial = ph.data._budgetMaterial;
+                  if (ph.data._budgetLabor !== undefined && ph.budgetLabor === undefined) ph.budgetLabor = ph.data._budgetLabor;
+                }
+              });
+            }
           });
         }
         const normalized = normalizePhaseIcons(store.projects);
@@ -941,14 +1008,23 @@ const State = (() => {
       ]);
 
       // Map Supabase format → app format
-      const phases = (phasesRes.data || []).map(p => ({
-        id: p.phase_number,
-        _dbId: p.id,
-        name: p.name,
-        icon: p.icon,
-        completion: p.completion || 0,
-        data: parseJsonIfNeeded(p.data),
-      }));
+      // C-03: also restore per-phase budgets that ride inside the JSONB `data`
+      // blob under _-prefixed keys (budget / budgetMaterial / budgetLabor).
+      const phases = (phasesRes.data || []).map(p => {
+        const phData = parseJsonIfNeeded(p.data);
+        const phase = {
+          id: p.phase_number,
+          _dbId: p.id,
+          name: p.name,
+          icon: p.icon,
+          completion: p.completion || 0,
+          data: phData,
+        };
+        if (phData._budget !== undefined) phase.budget = phData._budget;
+        if (phData._budgetMaterial !== undefined) phase.budgetMaterial = phData._budgetMaterial;
+        if (phData._budgetLabor !== undefined) phase.budgetLabor = phData._budgetLabor;
+        return phase;
+      });
 
       // Fill missing standard phases (1-27, skipping reserved 12-19)
       DEFAULT_PHASE_META.forEach(meta => {
@@ -971,9 +1047,13 @@ const State = (() => {
       phases.sort((a, b) => a.id - b.id);
       normalizePhaseIcons(phases);
 
-      // Load flat sales buyers from Phase 10 JSON data
+      // Load flat sales buyers + customCards + estimation from Phase 10 JSON data
+      // C-02: customCards and estimation are persisted into Phase 10's JSONB
+      // blob (no dedicated columns exist) so they need to be restored here.
       const phase10 = phases.find(ph => ph.id === 10);
       const buyers = phase10?.data?.buyers || [];
+      const customCards = phase10?.data?.customCards || {};
+      const estimation = phase10?.data?.estimation || {};
 
       fullProjects.push({
         id: proj.id,
@@ -1065,6 +1145,9 @@ const State = (() => {
           videoUrl: p.video_url || '',
           takenAt: p.taken_at, createdAt: p.created_at,
         })),
+        // C-02: restored from Phase 10 JSONB above
+        customCards,
+        estimation,
         invoices: [],
       });
     }
@@ -1073,6 +1156,9 @@ const State = (() => {
     if (store.projects.length > 0 && !store.currentProjectId) {
       store.currentProjectId = store.projects[0].id;
     }
+    // M-15: also migrate any orphaned `general`-section data into the
+    // correct sub-sections after a cloud load (mirrors the local load path).
+    migrateOrphanedData();
     saveLocal();
     await preLoadProjectImages();
   }
@@ -1387,6 +1473,18 @@ const State = (() => {
 
     console.log('[State] Syncing project to cloud:', proj.name);
 
+    // C-07: snapshot the project *before* rewriting any local IDs. The
+    // ID rewriting below mutates `proj` in place, so if any subsequent
+    // insert fails we'd be left with a half-migrated project: child
+    // items already have UUID IDs but the project itself still has its
+    // local ID. On reload the localOnly fallback would then refuse to
+    // sync (because child IDs look like UUIDs) and the project would be
+    // orphaned. The backup lets us restore the original pre-migration
+    // state on failure so the user can retry cleanly.
+    const backupKey = 'buildmanager_migration_backup_' + proj.id;
+    try { localStorage.setItem(backupKey, JSON.stringify(proj)); } catch (_) {}
+
+    try {
     // 1. Generate new UUIDs for all child items that need them, and map old local IDs to new UUIDs
     const idMap = {};
 
@@ -1769,7 +1867,26 @@ const State = (() => {
     _notifySynced();
 
     console.log('[State] Project successfully synced to cloud:', newProjectId);
+    // Migration succeeded — clean up the backup.
+    try { localStorage.removeItem(backupKey); } catch (_) {}
     return newProjectId;
+    } catch (err) {
+      // C-07: migration failed — restore the original project from the
+      // snapshot so local IDs are not left in a half-rewritten state.
+      // We look up by `proj.id` (which may still be the original local
+      // id if the failure happened before the `proj.id = newProjectId`
+      // line at the end of the try block).
+      try {
+        const backup = JSON.parse(localStorage.getItem(backupKey) || 'null');
+        if (backup) {
+          const idx = store.projects.findIndex(p => String(p.id) === String(proj.id));
+          if (idx >= 0) store.projects[idx] = backup;
+          saveLocal();
+        }
+      } catch (_) {}
+      try { localStorage.removeItem(backupKey); } catch (_) {}
+      throw err;
+    }
   }
 
   function getCurrentProject() {
@@ -1794,10 +1911,15 @@ const State = (() => {
     return store.projects.filter(p => !p.archived && (!p.userId || String(p.userId) === String(uid)));
   }
 
-  function setCurrentProject(id) {
+  // M-02: now async — awaits preLoadProjectImages() before returning so
+  // listeners that fire off setCurrentProject see a project whose local
+  // image references have already been hydrated from IndexedDB. Without
+  // the await, switching projects would briefly render broken image
+  // thumbnails for one frame.
+  async function setCurrentProject(id) {
     store.currentProjectId = id;
     saveLocal();
-    preLoadProjectImages();
+    await preLoadProjectImages();
   }
 
   function updatePhaseData(phaseId, sectionKey, data) {
@@ -2211,7 +2333,10 @@ const State = (() => {
       } else {
         delta = -(parseFloat(txn.amount) || 0);
       }
-      const newBalance = Math.max(0, (parseFloat(vendor.balance) || 0) + delta);
+      // H-06: do NOT clamp — allow negative balances for credit (overpayment)
+      // scenarios. The previous Math.max(0, ...) silently ate overpayments and
+      // caused the vendor's ledger to disagree with the transaction history.
+      const newBalance = (parseFloat(vendor.balance) || 0) + delta;
       await updateVendor(vendor.id, { balance: newBalance });
     }
 
@@ -3012,7 +3137,7 @@ const State = (() => {
     if (!proj) return null;
     if (!proj.customCards) proj.customCards = {};
     if (!proj.customCards[phaseId]) proj.customCards[phaseId] = [];
-    if (!cardSpec.id) cardSpec.id = 'custom_' + Date.now().toString(36) + Math.random().toString(36).slice(2,5);
+    if (!cardSpec.id) cardSpec.id = 'custom_' + generateId();  // L-02: use crypto UUID
     proj.customCards[phaseId].push(cardSpec);
     markDirty('project');
     save();
@@ -3057,6 +3182,11 @@ const State = (() => {
       ...(isInterior ? { isInterior: true } : {}),
     };
     proj.phases.push(phase);
+    // C-01: new custom phase row needs to be upserted to Supabase. Without
+    // this markDirty('phase', id) the new phase would exist locally but
+    // never sync to the cloud (the dirty-tracking loop only upserts phases
+    // whose IDs are in _dirty.phases).
+    markDirty('phase', id);
     // Also register an estimation trade so budgets can flow into the new phase.
     if (!proj.estimation) proj.estimation = { land: {}, constr: {} };
     if (!proj.estimation.constr) proj.estimation.constr = {};
@@ -3078,6 +3208,12 @@ const State = (() => {
     if (!proj || !proj.phases) return;
     const ph = proj.phases.find(p => Number(p.id) === Number(phaseId));
     if (!ph || !ph.isCustom) return; // never delete a standard phase
+    // H-05: capture the Supabase row ID before removing the phase locally
+    // so we can also issue a delete against the `phases` table. Phases are
+    // upserted with their `_dbId` set to the Supabase UUID after first sync,
+    // so this is the authoritative row identifier — `phaseId` itself is a
+    // local numeric id (e.g. 30, 31) and would never match a Supabase row.
+    const phaseDbId = ph._dbId;
     proj.phases = proj.phases.filter(p => Number(p.id) !== Number(phaseId));
     // Also remove the linked estimation custom trade (if any)
     if (proj.estimation?.constr?.customTrades) {
@@ -3086,6 +3222,13 @@ const State = (() => {
     // And drop any customCards registered against it
     if (proj.customCards && proj.customCards[phaseId]) {
       delete proj.customCards[phaseId];
+    }
+    // H-05: queue a Supabase delete so the custom phase doesn't linger in
+    // the cloud after local removal. We use enqueueMutation so the delete
+    // survives transient network errors and is retried by the sync queue.
+    const client = sb();
+    if (_useSupabase && client && isUUID(String(phaseDbId))) {
+      enqueueMutation('delete', 'phases', String(phaseDbId), null);
     }
     markDirty('project');
     save();
@@ -3117,7 +3260,7 @@ const State = (() => {
     updateProjectInfo, deleteProject, archivedProject: archiveProject,
     getLocalImage, saveLocalImage, deleteLocalImage, preLoadProjectImages,
     replaySyncQueue, hasUnsyncedChanges, forceSync,
-    markDirty, clearDirty, isDirty, saveLocalOnly,
+    markDirty, clearDirty, isDirty, saveLocalOnly, saveLocalNow,
     getSyncQueue,
     get store() { return store; },
     get isCloud() { return _useSupabase; },

@@ -26,7 +26,7 @@ const Estimation = (() => {
   const F = Financial;
 
   /* ── Construction trade definitions ─────────────────────── */
-  // Standard trades map to phases 1-9 + Electrical Supply (11).
+  // Standard trades map to phases 1-9 + Electrical Supply (11) + Water Supply (12).
   // Interior section phases (20-27) are also estimatable so budgets can flow into them.
   const TRADES = [
     { key: 'civil',             label: 'Civil Work',              icon: 'foundation', phaseId: 1  },
@@ -39,6 +39,7 @@ const Estimation = (() => {
     { key: 'lift',              label: 'Lift / Elevator',         icon: 'stairs',     phaseId: 8  },
     { key: 'other',             label: 'Other / Misc.',           icon: 'blocks',     phaseId: 9  },
     { key: 'electrical_supply', label: 'Electrical Supply',       icon: 'zap',        phaseId: 11 },
+    { key: 'water_supply',      label: 'Water Supply',            icon: 'droplet',    phaseId: 12 },
     { key: 'int_flooring',      label: 'Interior Flooring',       icon: 'ruler',      phaseId: 20, isInterior: true },
     { key: 'int_painting',      label: 'Interior Painting',       icon: 'paintbrush', phaseId: 21, isInterior: true },
     { key: 'int_doors',         label: 'Interior Doors & Hardware', icon: 'door',     phaseId: 22, isInterior: true },
@@ -505,8 +506,24 @@ const Estimation = (() => {
   }
 
   /* ── Clear all estimation data ──────────────────────────── */
+  // M-10: use the in-app confirm modal instead of the blocking native confirm().
   function clearAll() {
-    if (!confirm('Clear all estimation values? This cannot be undone.')) return;
+    if (typeof App === 'undefined' || typeof App.showConfirmModal !== 'function') {
+      // Fallback for very early calls (shouldn't happen in practice).
+      if (!confirm('Clear all estimation values? This cannot be undone.')) return;
+      _doClearAll();
+      return;
+    }
+    App.showConfirmModal({
+      icon: Icons.render('trash', 24),
+      title: 'Clear all estimation values?',
+      body: 'This will erase every trade and custom item you have entered for this project. This cannot be undone.',
+      confirmLabel: 'Clear All',
+      onConfirm: () => _doClearAll(),
+    });
+  }
+
+  function _doClearAll() {
     const proj = State.getCurrentProject();
     if (!proj) return;
     proj.estimation = {};
@@ -563,12 +580,13 @@ const Estimation = (() => {
 
   /* ── Map Estimation trades to Phase IDs ─────────────────── */
   // Static map for the 9 standard construction trades + Electrical Supply (11)
-  // + the 8 interior section phases (20-27). Custom user-added trades are
-  // stored on proj.estimation.constr.customTrades with their own phaseId.
+  // + Water Supply (12) + the 8 interior section phases (20-27). Custom user-added
+  // trades are stored on proj.estimation.constr.customTrades with their own phaseId.
   const TRADE_PHASE_MAP = {
     civil: 1, tiles: 2, painting: 3, electrical: 4,
     fabrication: 5, plumbing: 6, pop: 7, lift: 8, other: 9,
     electrical_supply: 11,
+    water_supply: 12,
     int_flooring: 20, int_painting: 21, int_doors: 22, int_cabinetry: 23,
     int_trim: 24, int_closets: 25, int_glass: 26, int_fixtures: 27,
   };

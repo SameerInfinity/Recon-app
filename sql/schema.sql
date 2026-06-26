@@ -10,10 +10,16 @@ CREATE TABLE IF NOT EXISTS public.profiles (
   full_name   TEXT DEFAULT '',
   company     TEXT DEFAULT '',
   phone       TEXT DEFAULT '',
+  role        TEXT DEFAULT '',
   avatar_url  TEXT DEFAULT '',
+  onboarding_complete BOOLEAN DEFAULT FALSE,
   created_at  TIMESTAMPTZ DEFAULT NOW(),
   updated_at  TIMESTAMPTZ DEFAULT NOW()
 );
+
+-- v2.3 migration: add role + onboarding_complete columns to existing profiles tables
+ALTER TABLE public.profiles ADD COLUMN IF NOT EXISTS role TEXT DEFAULT '';
+ALTER TABLE public.profiles ADD COLUMN IF NOT EXISTS onboarding_complete BOOLEAN DEFAULT FALSE;
 
 CREATE OR REPLACE FUNCTION public.handle_new_user()
 RETURNS TRIGGER AS $$
@@ -55,7 +61,9 @@ CREATE INDEX IF NOT EXISTS idx_projects_user_id ON public.projects(user_id);
 
 
 -- ── 3. PHASES ──────────────────────────────────────
--- phase_number: 1–9 = nine trade phases, 10 = Interior
+-- phase_number: 1–9 = nine trade phases, 10 = Interior (legacy/hidden),
+--               11 = Electrical Supply, 12 = Water Supply,
+--               20-27 = interior section phases, ≥30 = custom user-added phases
 -- data: JSONB blob — stores all line items for the phase.
 -- NOTE: The app serialises data via JSON.stringify() before
 --       sending to Supabase. The default here is the literal
@@ -77,9 +85,11 @@ CREATE TABLE IF NOT EXISTS public.phases (
 CREATE INDEX IF NOT EXISTS idx_phases_project_id ON public.phases(project_id);
 
 -- v2.2 migration: phase_number range widened from 1..12 → 1..200 so the new
--- Electrical Supply phase (#11) + 8 interior section phases (#20-27) +
--- custom user-added phases (#30+) all fit.
+-- Electrical Supply phase (#11) + Water Supply phase (#12) + 8 interior section
+-- phases (#20-27) + custom user-added phases (#30+) all fit.
 ALTER TABLE public.phases DROP CONSTRAINT IF EXISTS phases_phase_number_check;
+-- C-12: re-add the CHECK constraint with the widened 1..200 range.
+ALTER TABLE public.phases ADD CONSTRAINT phases_phase_number_check CHECK (phase_number BETWEEN 1 AND 200);
 
 
 -- ── 4. SUBCONTRACTORS ──────────────────────────────
@@ -216,6 +226,16 @@ DROP TRIGGER IF EXISTS set_updated_at ON public.subcontractors;
 CREATE TRIGGER set_updated_at BEFORE UPDATE ON public.subcontractors
   FOR EACH ROW EXECUTE FUNCTION public.update_updated_at();
 
+-- H-25: invoices + punch_items need updated_at too (were missing).
+ALTER TABLE public.invoices ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ DEFAULT NOW();
+ALTER TABLE public.punch_items ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ DEFAULT NOW();
+DROP TRIGGER IF EXISTS set_updated_at ON public.invoices;
+CREATE TRIGGER set_updated_at BEFORE UPDATE ON public.invoices
+  FOR EACH ROW EXECUTE FUNCTION public.update_updated_at();
+DROP TRIGGER IF EXISTS set_updated_at ON public.punch_items;
+CREATE TRIGGER set_updated_at BEFORE UPDATE ON public.punch_items
+  FOR EACH ROW EXECUTE FUNCTION public.update_updated_at();
+
 -- ── 7. LABOUR (Hajiri) ───────────────────────────────
 CREATE TABLE IF NOT EXISTS public.labour (
   id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -306,6 +326,14 @@ ALTER TABLE public.vendors ADD COLUMN IF NOT EXISTS opening_balance NUMERIC DEFA
 ALTER TABLE public.vendor_transactions ADD COLUMN IF NOT EXISTS total_amount NUMERIC NOT NULL DEFAULT 0;
 ALTER TABLE public.vendor_transactions ADD COLUMN IF NOT EXISTS paid_amount NUMERIC NOT NULL DEFAULT 0;
 ALTER TABLE public.vendor_transactions ADD COLUMN IF NOT EXISTS remaining_amount NUMERIC NOT NULL DEFAULT 0;
+
+-- H-28: make the vendor amount columns NOT NULL (safe: backfill NULLs first).
+UPDATE public.vendors SET total_amount = 0 WHERE total_amount IS NULL;
+UPDATE public.vendors SET paid_amount = 0 WHERE paid_amount IS NULL;
+UPDATE public.vendors SET opening_balance = 0 WHERE opening_balance IS NULL;
+ALTER TABLE public.vendors ALTER COLUMN total_amount SET NOT NULL;
+ALTER TABLE public.vendors ALTER COLUMN paid_amount SET NOT NULL;
+ALTER TABLE public.vendors ALTER COLUMN opening_balance SET NOT NULL;
 
 ALTER TABLE public.vendors              ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.vendor_transactions  ENABLE ROW LEVEL SECURITY;
@@ -466,3 +494,40 @@ CREATE POLICY "site_photos_all" ON public.site_photos FOR ALL USING (
 DROP TRIGGER IF EXISTS set_updated_at ON public.site_photos;
 CREATE TRIGGER set_updated_at BEFORE UPDATE ON public.site_photos
   FOR EACH ROW EXECUTE FUNCTION public.update_updated_at();
+
+
+-- ═══════════════════════════════════════════════════
+-- H-26: CHECK CONSTRAINTS (data integrity safety net)
+-- PostgreSQL doesn't support ADD CONSTRAINT IF NOT EXISTS for table
+-- constraints natively, so we wrap each in a DO block that swallows the
+-- duplicate_object error — safe to re-run.
+-- ═══════════════════════════════════════════════════
+DO $$ BEGIN
+  ALTER TABLE public.projects ADD CONSTRAINT projects_type_check CHECK (type IN ('residential','commercial','industrial','renovation','other'));
+EXCEPTION WHEN duplicate_object THEN null; END $$;
+
+DO $$ BEGIN
+  ALTER TABLE public.labour_logs ADD CONSTRAINT labour_logs_status_check CHECK (status IN ('full','half','absent'));
+EXCEPTION WHEN duplicate_object THEN null; END $$;
+
+DO $$ BEGIN
+  ALTER TABLE public.vendor_transactions ADD CONSTRAINT vendor_txns_type_check CHECK (type IN ('debit','credit'));
+EXCEPTION WHEN duplicate_object THEN null; END $$;
+
+DO $$ BEGIN
+  ALTER TABLE public.leads ADD CONSTRAINT leads_status_check CHECK (status IN ('new','contacted','qualified','won','lost'));
+EXCEPTION WHEN duplicate_object THEN null; END $$;
+
+
+-- ═══════════════════════════════════════════════════
+-- H-27: PERFORMANCE INDEXES (compound + status lookups)
+-- ═══════════════════════════════════════════════════
+CREATE INDEX IF NOT EXISTS idx_labour_logs_project_date ON public.labour_logs(project_id, log_date);
+CREATE INDEX IF NOT EXISTS idx_vendor_txns_project_date ON public.vendor_transactions(project_id, txn_date);
+CREATE INDEX IF NOT EXISTS idx_material_logs_project_date ON public.material_logs(project_id, log_date);
+CREATE INDEX IF NOT EXISTS idx_invoices_status ON public.invoices(status);
+CREATE INDEX IF NOT EXISTS idx_punch_items_status ON public.punch_items(status);
+CREATE INDEX IF NOT EXISTS idx_ra_bills_status ON public.ra_bills(status);
+CREATE INDEX IF NOT EXISTS idx_leads_status ON public.leads(status);
+CREATE INDEX IF NOT EXISTS idx_site_photos_taken_at ON public.site_photos(taken_at);
+CREATE INDEX IF NOT EXISTS idx_projects_archived ON public.projects(archived);

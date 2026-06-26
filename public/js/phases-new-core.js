@@ -207,6 +207,27 @@
       </button>`;
     }).join('') : '';
 
+    // ── "All Bills & Receipts" card — visually distinct, always at the bottom ──
+    // Spans full width of the grid (grid-column: 1 / -1 via .all-bills-card CSS).
+    // Renders bill count + total amount, and links to the BillScanner gallery.
+    const phaseBills = (State.getBills(phase.id) || []);
+    const billsCardHtml = `
+      <button class="all-bills-card" onclick="App.showPhaseBills(${phase.id})">
+        <span class="all-bills-card-icon">${Phases.iconFor('fileText',22)}</span>
+        <div class="all-bills-card-body">
+          <div class="all-bills-card-title-row">
+            <span class="all-bills-card-name">All Bills &amp; Receipts</span>
+            <span class="all-bills-card-badge">${Icons.render('bot',10)} AI Scanner</span>
+          </div>
+          <div class="all-bills-card-desc">Scan kachha bills with AI to auto-extract items, or browse all receipts and entry-photos saved under this phase.</div>
+          <div class="all-bills-card-meta">
+            <span class="all-bills-card-count" id="hub-bill-count-${phase.id}">${phaseBills.length} bill${phaseBills.length!==1?'s':''} scanned</span>
+            ${billTotal > 0 ? `<span>·</span><span class="all-bills-card-cost" id="hub-bill-total-${phase.id}">${F.fmt(billTotal)}</span>` : `<span class="all-bills-card-cost" id="hub-bill-total-${phase.id}" style="display:none"></span>`}
+          </div>
+        </div>
+        <span class="all-bills-card-chev">›</span>
+      </button>`;
+
     return `
     <div class="breadcrumb" style="margin-bottom:12px">
       <a onclick="App.showOverview()" style="cursor:pointer">Overview</a>
@@ -248,6 +269,9 @@
 
       <!-- Card 3 (optional): Supply Demand Charge or other "extra" cards -->
       ${extraHubHtml}
+
+      <!-- All Bills & Receipts (always at the bottom, full-width, distinct style) -->
+      ${billsCardHtml}
 
     </div>
     
@@ -471,7 +495,7 @@
 
         <!-- Save button -->
         <div style="display:flex;justify-content:flex-end;margin-top:16px">
-          <button onclick="Phases._saveEntryForm('${phase.id}','${card.id}',${JSON.stringify(card.fields).replace(/"/g,'&quot;')})"
+          <button onclick="Phases._saveEntryForm('${phase.id}','${card.id}',${JSON.stringify(card.fields).replace(/"/g,'&quot;').replace(/'/g,'&#39;')})"
             style="background:var(--amber);color:var(--charcoal-dark);border:none;padding:12px 28px;border-radius:8px;font-size:14px;font-weight:700;cursor:pointer;display:flex;align-items:center;gap:8px">
             ${Phases.iconFor('check',14)} Save Entry
           </button>
@@ -709,7 +733,9 @@
     if (el && cost >= 0) { el.value = cost || ''; }
   };
 
-  Phases._saveEntryForm = function(phaseId, cardId, fieldsSpec) {
+  // C-05: async so we can await State.saveLocalImage (was fire-and-forget,
+  // causing the form to close before the image was persisted to localStorage).
+  Phases._saveEntryForm = async function(phaseId, cardId, fieldsSpec) {
     const dateEl = document.getElementById('ef-entry-date');
     const totalEl = document.getElementById('ef-total');
     const notesEl = document.getElementById('ef-notes');
@@ -771,7 +797,7 @@
       if (rawBillPhoto.startsWith('data:image')) {
         const key = entryId + '_bill';
         if (typeof State !== 'undefined' && State.saveLocalImage) {
-          State.saveLocalImage(key, rawBillPhoto);
+          await State.saveLocalImage(key, rawBillPhoto);
         }
         billPhotoUrl = 'local-image://' + key;
       } else {
@@ -786,7 +812,7 @@
       if (rawProofPhoto.startsWith('data:image')) {
         const key = entryId + '_proof';
         if (typeof State !== 'undefined' && State.saveLocalImage) {
-          State.saveLocalImage(key, rawProofPhoto);
+          await State.saveLocalImage(key, rawProofPhoto);
         }
         paymentProofUrl = 'local-image://' + key;
       } else {
@@ -1026,12 +1052,14 @@
   const LABOR_IDS = ['thekedar','tile_labor','painter_labor','electrician_labor',
     'fab_labor','plumber_labor','pop_labor','lift_install','floor-prep','paint-prep',
     'elec_supply_labor',                                     // phase 11 (Electrical Supply)
+    'water_supply_labor',                                    // phase 12 (Water Supply)
     'int_floor_labor','int_paint_labor','int_door_labor','int_cab_labor',
     'int_trim_labor','int_closet_labor','int_glass_labor','int_fixture_labor']; // phases 20-27
 
   // "Extra" cards (neither material nor labour) — e.g. the Supply Demand Charge card
-  // on the Electrical Supply phase. Rendered as a 3rd hub card.
-  const EXTRA_CARD_IDS = ['supply_demand_charge'];
+  // on the Electrical Supply phase, and the Water Demand Charge on Water Supply.
+  // Rendered as a 3rd hub card.
+  const EXTRA_CARD_IDS = ['supply_demand_charge', 'water_demand_charge'];
 
   function getStaticCardsForPhase(phaseId) {
     // NOTE: This function must NOT inline the card arrays as a static object literal
@@ -1050,6 +1078,7 @@
       case 9:  return MISC_CARDS_REF;
       case 10: return INTERIOR_CARDS_REF; // legacy (hidden in UI but kept for backward-compat data)
       case 11: return ELEC_SUPPLY_CARDS_REF;
+      case 12: return WATER_SUPPLY_CARDS_REF;
       case 20: return INT_FLOOR_CARDS_REF;
       case 21: return INT_PAINT_CARDS_REF;
       case 22: return INT_DOOR_CARDS_REF;
@@ -1632,6 +1661,43 @@
   ];
 
   // ═══════════════════════════════════════════════════════════════
+  // PHASE 12 — WATER SUPPLY
+  // Material: pipes (+ auto "Add New" via Task 1)
+  // Labour: water_supply_labor
+  // Extra (3rd hub card): water_demand_charge (water board / municipal charges)
+  // ═══════════════════════════════════════════════════════════════
+  const WATER_SUPPLY_CARDS_REF = [
+    { id:'ws_pipes', name:'Pipes', icon:'pipe', desc:'Main water supply pipes — GI, PVC, CPVC, HDPE, copper — by size and length.',
+      fields:[
+        { key:'type', label:'Pipe Type', type:'select', options:['GI','PVC','CPVC','HDPE','Copper','MS','SS'] },
+        { key:'size', label:'Size (mm)', type:'select', options:['15','20','25','32','40','50','63','75','90','110','160','200','250'] },
+        { key:'brand', label:'Brand', type:'select', options:['Supreme','Astral','Finolex','Prince','Jain','AquaGold','Local'] },
+        { key:'qty_mtr', label:'Qty (metres)', type:'number' },
+        { key:'rate_per_mtr', label:'Rate (₹/m)', type:'number' },
+        { key:'vendor', label:'Vendor', type:'text' }
+      ],
+      costFn: d => qrC(d,'qty_mtr','rate_per_mtr') },
+    { id:'water_demand_charge', name:'Water Demand Charge', icon:'droplet', desc:'One-time water board / municipal charges — connection fee, meter installation, security deposit, development charge.',
+      fields:[
+        { key:'date', label:'Date', type:'date' },
+        { key:'item', label:'Charge / Fee Head', type:'text', placeholder:'e.g. New Connection Fee' },
+        { key:'authority', label:'Authority / Board', type:'text', placeholder:'e.g. Municipal Corp / Water Works Dept' },
+        { key:'amount', label:'Amount (₹)', type:'number' },
+        { key:'mode', label:'Mode', type:'select', options:['Cash','UPI','Cheque','DD','NEFT'] }
+      ],
+      costFn: d => amtC(d,'amount') },
+    { id:'water_supply_labor', name:'Water Supply Labour', icon:'userCircle', desc:'Payouts to plumber / contractor — trenching, pipe laying, jointing, pressure testing, commissioning.',
+      fields:[
+        { key:'date', label:'Date', type:'date' },
+        { key:'payee', label:'Contractor / Crew', type:'text' },
+        { key:'work', label:'Work Description', type:'text' },
+        { key:'amount', label:'Amount (₹)', type:'number' },
+        { key:'mode', label:'Mode', type:'select', options:['Cash','UPI','Cheque','NEFT'] }
+      ],
+      costFn: d => amtC(d,'amount') },
+  ];
+
+  // ═══════════════════════════════════════════════════════════════
   // PHASES 20-27 — INTERIOR SECTION PHASES
   // Each section = a self-contained mini phase with its own material cards
   // and exactly one labour card (so labour cost is tracked per section,
@@ -1892,7 +1958,7 @@
     ];
   }
   const PHASE_CARD_MAP = {};
-  [1,2,3,4,5,6,7,8,9,10,11,20,21,22,23,24,25,26,27].forEach(pid => {
+  [1,2,3,4,5,6,7,8,9,10,11,12,20,21,22,23,24,25,26,27].forEach(pid => {
     const [m, l, x] = _phaseCards(pid);
     PHASE_CARD_MAP[pid] = [m, l, x];
   });
@@ -1918,7 +1984,7 @@
   };
 
   // Override renderTradePhaseN for all standard phases
-  [1,2,3,4,5,6,7,8,9,10,11,20,21,22,23,24,25,26,27].forEach(pid => {
+  [1,2,3,4,5,6,7,8,9,10,11,12,20,21,22,23,24,25,26,27].forEach(pid => {
     Phases['renderTradePhase' + pid] = makeTradeRenderer(pid);
   });
 
@@ -1933,7 +1999,7 @@
         if (card) {
           let groupLabel = 'Material Costs';
           if (LABOR_IDS.includes(cardId)) groupLabel = 'Labor Costing';
-          else if (EXTRA_CARD_IDS.includes(cardId)) groupLabel = 'Supply Demand Charge';
+          else if (EXTRA_CARD_IDS.includes(cardId)) groupLabel = card.name || 'Extra Charges';
           Phases.showCardEntryForm(phaseId, cardId, groupLabel);
           return;
         }
@@ -1969,7 +2035,17 @@
     updateEl(`hub-material-count-${phaseId}`, matCount + ' entries');
     updateEl(`hub-labor-count-${phaseId}`,    labCount + ' entries');
     updateEl(`hub-bill-count-${phaseId}`,     bills.length + ' bill' + (bills.length !== 1 ? 's' : '') + ' scanned');
-    updateEl(`hub-bill-total-${phaseId}`,     F.fmt(billTotal));
+    // For the bill total: show/hide the span depending on whether total > 0
+    // (matches the conditional render in renderTradeHubNew).
+    const billTotalEl = document.getElementById(`hub-bill-total-${phaseId}`);
+    if (billTotalEl) {
+      if (billTotal > 0) {
+        billTotalEl.textContent = F.fmt(billTotal);
+        billTotalEl.style.display = '';
+      } else {
+        billTotalEl.style.display = 'none';
+      }
+    }
     // Update extra card counts/totals too
     extra.forEach(c => {
       const tot = sumEntries(phaseId, c.id);
@@ -2023,7 +2099,8 @@
       label = 'Labor Costing';
     } else if (v === 'extra') {
       cards = all.filter(c => EXTRA_CARD_IDS.includes(c.id));
-      label = 'Supply Demand Charge';
+      // Use the first extra card's name as the section label, or fall back.
+      label = cards.length ? cards[0].name : 'Extra Charges';
     } else {
       cards = all.filter(c => !LABOR_IDS.includes(c.id) && !EXTRA_CARD_IDS.includes(c.id));
       label = 'Material Costs';
@@ -2204,7 +2281,7 @@
     if (!card) return '<div style="padding:24px">Card not found</div>';
     let groupLabel = 'Material Costs';
     if (LABOR_IDS.includes(cardId)) groupLabel = 'Labor Costing';
-    else if (EXTRA_CARD_IDS.includes(cardId)) groupLabel = 'Supply Demand Charge';
+    else if (EXTRA_CARD_IDS.includes(cardId)) groupLabel = card.name || 'Extra Charges';
     Phases._entryTotalOverride = false;
     return renderEntryForm(phase, card, groupLabel);
   };
@@ -2247,6 +2324,19 @@
     if (hubMatCount) hubMatCount.textContent = matCount + ' entries';
     const hubLabCount = document.getElementById('hub-labor-count-' + phaseId);
     if (hubLabCount) hubLabCount.textContent = labCount + ' entries';
+    // All Bills card count + total
+    const bills = State.getBills(phaseId) || [];
+    const hubBillCount = document.getElementById('hub-bill-count-' + phaseId);
+    if (hubBillCount) hubBillCount.textContent = bills.length + ' bill' + (bills.length !== 1 ? 's' : '') + ' scanned';
+    const hubBillTotal = document.getElementById('hub-bill-total-' + phaseId);
+    if (hubBillTotal) {
+      if (billTotal > 0) {
+        hubBillTotal.textContent = F.fmt(billTotal);
+        hubBillTotal.style.display = '';
+      } else {
+        hubBillTotal.style.display = 'none';
+      }
+    }
   }
 
   Phases._updateHubCosts = _updateHubCosts;

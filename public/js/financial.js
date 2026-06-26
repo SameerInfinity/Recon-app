@@ -395,7 +395,8 @@ const Financial = (() => {
     let materialTotal = 0, laborTotal = 0, equipTotal = 0;
 
     // Real labor card IDs per phase — these are actual payout/labor cards, rest are materials.
-    // Includes the new phase 11 (Electrical Supply) + phases 20-27 (interior sections) labour cards.
+    // Includes the new phase 11 (Electrical Supply), phase 12 (Water Supply)
+    // + phases 20-27 (interior sections) labour cards.
     const LABOR_CARD_IDS = new Set([
       'thekedar',          // Civil labor
       'tile_labor',        // Tiling labor
@@ -405,10 +406,11 @@ const Financial = (() => {
       'plumber_labor',     // Plumber labor
       'pop_labor',         // POP contractor labor
       'lift_install',      // Lift installation crew
-      'misc_expenses',     // Misc site expenses (treat as other/equipment)
+      // H-10: 'misc_expenses' removed — it's a material/expense card, not labor.
       'floor-prep',        // Phase 10 subfloor prep labor (legacy)
       'paint-prep',        // Phase 10 paint prep labor (legacy)
       'elec_supply_labor', // Phase 11 (Electrical Supply) labour
+      'water_supply_labor',// Phase 12 (Water Supply) labour
       'int_floor_labor',   // Phase 20 (Interior Flooring) labour
       'int_paint_labor',   // Phase 21 (Interior Painting) labour
       'int_door_labor',    // Phase 22 (Interior Doors & Hardware) labour
@@ -418,9 +420,10 @@ const Financial = (() => {
       'int_glass_labor',   // Phase 26 (Interior Glass & Mirror) labour
       'int_fixture_labor', // Phase 27 (Interior Fixtures) labour
     ]);
-    // "Extra" cards (neither material nor labour) — e.g. supply_demand_charge.
+    // "Extra" cards (neither material nor labour) — e.g. supply_demand_charge
+    // on Electrical Supply, water_demand_charge on Water Supply.
     // Counted separately so they don't get bundled into the 60/40 estimate.
-    const EXTRA_CARD_IDS = new Set(['supply_demand_charge']);
+    const EXTRA_CARD_IDS = new Set(['supply_demand_charge', 'water_demand_charge']);
 
     proj.phases.forEach(phase => {
       const pid = Number(phase.id);

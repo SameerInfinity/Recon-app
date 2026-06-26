@@ -453,6 +453,11 @@ const VendorKhata = (() => {
       remainingAmount = Math.max(0, totalAmount - paidAmount);
       amount = totalAmount; // legacy single-amount field — used by running-balance & backward-compat
       if (!totalAmount || totalAmount <= 0) { App.toast('Enter a valid total amount', 'error'); return; }
+      // M-03: don't let users record a payment larger than the bill they're recording.
+      if (paidAmount > totalAmount) {
+        App.toast('Paid amount cannot exceed total amount', 'warning');
+        return;
+      }
     } else {
       amount = parseFloat(document.getElementById('txn-amount').value);
       if (!amount || amount <= 0) { App.toast('Enter a valid amount', 'error'); return; }
