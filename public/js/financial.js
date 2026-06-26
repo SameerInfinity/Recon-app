@@ -394,7 +394,9 @@ const Financial = (() => {
     let projectTotal = 0;
     let materialTotal = 0, laborTotal = 0, equipTotal = 0;
 
-    // Real labor card IDs per phase — these are actual payout/labor cards, rest are materials
+    // Real labor card IDs per phase — these are actual payout/labor cards, rest are materials.
+    // Includes the new phase 11 (Electrical Supply), phase 12 (Water Supply)
+    // + phases 20-27 (interior sections) labour cards.
     const LABOR_CARD_IDS = new Set([
       'thekedar',          // Civil labor
       'tile_labor',        // Tiling labor
@@ -404,21 +406,52 @@ const Financial = (() => {
       'plumber_labor',     // Plumber labor
       'pop_labor',         // POP contractor labor
       'lift_install',      // Lift installation crew
-      'misc_expenses',     // Misc site expenses (treat as other/equipment)
-      'floor-prep',        // Phase 10 subfloor prep labor
-      'paint-prep',        // Phase 10 paint prep labor
+      // H-10: 'misc_expenses' removed — it's a material/expense card, not labor.
+      'floor-prep',        // Phase 10 subfloor prep labor (legacy)
+      'paint-prep',        // Phase 10 paint prep labor (legacy)
+      'elec_supply_labor', // Phase 11 (Electrical Supply) labour
+      'water_supply_labor',// Phase 12 (Water Supply) labour
+      'int_floor_labor',   // Phase 20 (Interior Flooring) labour
+      'int_paint_labor',   // Phase 21 (Interior Painting) labour
+      'int_door_labor',    // Phase 22 (Interior Doors & Hardware) labour
+      'int_cab_labor',     // Phase 23 (Interior Cabinetry) labour
+      'int_trim_labor',    // Phase 24 (Interior Trim & Staircase) labour
+      'int_closet_labor',  // Phase 25 (Interior Closets) labour
+      'int_glass_labor',   // Phase 26 (Interior Glass & Mirror) labour
+      'int_fixture_labor', // Phase 27 (Interior Fixtures) labour
     ]);
+    // "Extra" cards (neither material nor labour) — e.g. supply_demand_charge
+    // on Electrical Supply, water_demand_charge on Water Supply.
+    // Counted separately so they don't get bundled into the 60/40 estimate.
+    const EXTRA_CARD_IDS = new Set(['supply_demand_charge', 'water_demand_charge']);
 
     proj.phases.forEach(phase => {
       const pid = Number(phase.id);
       const phTotal = computePhaseTotal(phase);
       projectTotal += phTotal;
 
-      // Build real material vs labor split from card-level data (phases 1–10)
-      if (pid >= 1 && pid <= 10) {
+      // Build real material vs labor split from card-level data (phases 1-200)
+      if (pid >= 1 && pid <= 200) {
         const entriesMap = phase.data?.entries || {};
-        const registry = (typeof Phases !== 'undefined' && Phases.CATEGORY_REGISTRY || {})[pid] || [];
-        registry.forEach(cat => {
+        // Prefer the live getAllCardsForPhase from phases-new-core (which also
+        // picks up project-scoped custom cards). Fall back to CATEGORY_REGISTRY
+        // for legacy phases if Phases module isn't fully loaded yet.
+        let cards = [];
+        if (typeof Phases !== 'undefined' && typeof Phases.getAllCardsForPhase === 'function') {
+          try { cards = Phases.getAllCardsForPhase(pid) || []; } catch { cards = []; }
+        }
+        if (cards.length === 0) {
+          const registry = (typeof Phases !== 'undefined' && Phases.CATEGORY_REGISTRY || {})[pid] || [];
+          cards = registry;
+        }
+        // Also include dynamically-registered custom labour/extra IDs (added at runtime via "Add New")
+        if (typeof Phases !== 'undefined' && Array.isArray(Phases._dynamicLaborIds)) {
+          Phases._dynamicLaborIds.forEach(id => LABOR_CARD_IDS.add(id));
+        }
+        if (typeof Phases !== 'undefined' && Array.isArray(Phases._dynamicExtraIds)) {
+          Phases._dynamicExtraIds.forEach(id => EXTRA_CARD_IDS.add(id));
+        }
+        cards.forEach(cat => {
           let cardCost = 0;
           const arr = entriesMap[cat.id];
           if (Array.isArray(arr)) {
@@ -426,6 +459,9 @@ const Financial = (() => {
           }
           if (LABOR_CARD_IDS.has(cat.id)) {
             laborTotal += cardCost;
+          } else if (EXTRA_CARD_IDS.has(cat.id)) {
+            // Supply demand charge is a fee/charge — count as material (it's not labour)
+            materialTotal += cardCost;
           } else {
             materialTotal += cardCost;
           }

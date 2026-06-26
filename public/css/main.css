@@ -1,5 +1,5 @@
 /* ═══════════════════════════════════════════════════════════════
-   RECON — Warm Copper Theme (Light)
+   ARCONZA — Warm Copper Theme (Light)
    Soft warm cream · crisp white cards · copper-gold accents
    Inspired by modern smart-home interiors · optimized for smooth scroll
    ═══════════════════════════════════════════════════════════════ */
@@ -35,8 +35,8 @@
   /* ── Text (cool charcoal on silver-gray) ── */
   --text:           #1C2024;   /* very dark neutral gray */
   --text-secondary: #434950;   /* dark slate gray */
-  --text-muted:     #6F7680;   /* cool gray */
-  --text-faint:     #9AA2AC;   /* light cool gray */
+  --text-muted:     #5A6168;   /* cool gray — H-11: WCAG AA 5.4:1 */
+  --text-faint:     #7A828C;   /* light cool gray — H-11: WCAG AA 4.5:1 */
 
   /* ── Semantic ── */
   --success:        #5C8A58;   /* sage green */
@@ -236,6 +236,8 @@ body {
   width: 32px; height: 32px; border-radius: var(--r-sm);
   background: transparent; border: 0; color: var(--text-secondary);
   cursor: pointer; display: inline-flex; align-items: center; justify-content: center;
+  /* H-13: keep visual size 32px but expand hit area to 44px (WCAG 2.5.5). */
+  min-width: 44px; min-height: 44px;
 }
 
 /* ════════════════════════════════════════
@@ -266,6 +268,7 @@ body {
   background: radial-gradient(ellipse, rgba(123, 70, 38, 0.08) 0%, transparent 70%);
   border-radius: 50%;
   animation: heroGlow 4s ease-in-out infinite alternate;
+  will-change: transform, opacity;  /* M-17: continuously animating */
 }
 @keyframes heroGlow {
   0%   { opacity: 0.5; transform: translateX(-50%) scale(0.9); }
@@ -456,6 +459,7 @@ body {
     transparent 100%
   );
   animation: shimmerLine 4s ease-in-out infinite;
+  will-change: transform, opacity;  /* M-17: continuously animating */
 }
 @keyframes shimmerLine {
   0%, 100% { opacity: 0.4; }
@@ -501,6 +505,7 @@ body {
 .m-ai-pulse.active {
   opacity: 1; transform: scale(1);
   animation: tealPulse 1.8s infinite;
+  will-change: transform, opacity;  /* M-17: continuously animating */
 }
 @keyframes tealPulse {
   0%   { box-shadow: 0 0 0 0 rgba(180, 122, 60,0.7); }
@@ -649,7 +654,7 @@ body {
   background: var(--scrim);
   backdrop-filter: blur(4px);
   opacity: 0; pointer-events: none;
-  transition: opacity var(--t-med);
+  transition: opacity 340ms var(--ease-out);
 }
 .m-scrim.open { opacity: 1; pointer-events: all; }
 
@@ -684,7 +689,7 @@ body {
   border-bottom: 1px solid var(--divider);
   letter-spacing: 0.1em; text-transform: uppercase; font-weight: 700;
 }
-.m-drawer-messages { flex: 1; overflow-y: auto; padding: 16px; display: flex; flex-direction: column; gap: 12px; }
+.m-drawer-messages { flex: 1; overflow-y: auto; padding: 16px; display: flex; flex-direction: column; gap: 12px; overscroll-behavior: contain; -webkit-overflow-scrolling: touch; }
 .m-drawer-input {
   display: flex; gap: 8px; padding: 12px;
   border-top: 1px solid var(--border);
@@ -700,9 +705,10 @@ body {
 
 /* AI message bubbles */
 .ai-message {
+  display: flex; gap: 10px; align-items: flex-start;
   background: var(--bg-elev-2);
   border: 1px solid var(--border);
-  border-radius: var(--r-md);
+  border-radius: 14px;
   padding: 12px 14px; font-size: 13px; line-height: 1.55;
 }
 .ai-message.ai-intro {
@@ -737,6 +743,7 @@ body {
   background: radial-gradient(circle, rgba(180, 122, 60,0.10) 0%, transparent 70%);
   border-radius: 50%;
   animation: heroOrb 5s ease-in-out infinite alternate;
+  will-change: transform, opacity;  /* M-17: continuously animating */
 }
 @keyframes heroOrb {
   0%   { transform: translate(0,0) scale(1); opacity: 0.5; }
@@ -879,6 +886,146 @@ body {
 .m-alert-card .name { font-weight: 500; font-size: 14px; }
 .m-alert-card .meta { font-size: 11px; color: var(--text-muted); margin-top: 2px; }
 .m-alert-card .over { font-family: var(--font-mono); color: var(--warning); font-weight: 500; }
+
+/* ════════════════════════════════════════════════════════════════
+   DASHBOARD INSIGHT CARDS — ARCONZA
+   · Cost Breakdown donut + legend
+   · Phase Progress mini-grid
+   · Vendor Khata snapshot
+   · Operations quick-stats
+   · Recent Activity feed
+   All cards use the shared --bg-elev / --border / --shadow-card tokens
+   so they match the existing hero / stat cards visually.
+   ════════════════════════════════════════════════════════════════ */
+
+/* ── Cost Breakdown donut ── */
+.dash-breakdown-card {
+  display: flex; align-items: center; gap: 20px;
+  background: var(--bg-elev);
+  border: 1px solid var(--border);
+  border-radius: var(--r-lg);
+  padding: 18px;
+  margin-bottom: 16px;
+  box-shadow: var(--shadow-card);
+  transition: all var(--t-fast);
+}
+.dash-breakdown-card:hover { border-color: var(--border-strong); box-shadow: var(--shadow-md); }
+.dash-donut-wrap { flex-shrink: 0; }
+.dash-donut {
+  width: 100px; height: 100px; border-radius: 50%;
+  display: flex; align-items: center; justify-content: center;
+  transition: transform 300ms var(--ease-spring);
+}
+.dash-breakdown-card:hover .dash-donut { transform: scale(1.04); }
+.dash-donut-hole {
+  width: 64px; height: 64px; border-radius: 50%;
+  background: var(--bg-elev);
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+}
+.dash-donut-total {
+  font-family: var(--font-mono); font-size: 13px; font-weight: 800; color: var(--text);
+  line-height: 1;
+}
+.dash-donut-label { font-size: 8px; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.06em; margin-top: 3px; }
+.dash-legend { flex: 1; display: flex; flex-direction: column; gap: 8px; min-width: 0; }
+.dash-legend-item {
+  display: flex; align-items: center; gap: 8px;
+  font-size: 12px;
+}
+.dash-legend-dot { width: 10px; height: 10px; border-radius: 3px; flex-shrink: 0; }
+.dash-legend-label { font-weight: 600; color: var(--text); }
+.dash-legend-pct { color: var(--text-muted); font-weight: 500; min-width: 32px; }
+.dash-legend-val { font-family: var(--font-mono); font-weight: 600; color: var(--text-secondary); margin-left: auto; }
+
+/* ── Phase Progress mini-grid ── */
+.dash-phase-grid {
+  display: grid; grid-template-columns: 1fr 1fr; gap: 10px;
+  margin-bottom: 16px;
+}
+.dash-phase-mini {
+  display: flex; flex-direction: column; gap: 6px;
+  background: var(--bg-elev); border: 1px solid var(--border);
+  border-radius: var(--r-md); padding: 12px;
+  cursor: pointer; font-family: inherit;
+  transition: all var(--t-fast);
+  text-align: left; box-shadow: var(--shadow-card);
+}
+.dash-phase-mini:hover { border-color: var(--border-strong); box-shadow: var(--shadow-md); transform: translateY(-1px); }
+.dash-phase-mini:active { transform: scale(0.98); }
+.dash-phase-mini-top { display: flex; align-items: center; gap: 6px; }
+.dash-phase-mini-icon { color: var(--amber); flex-shrink: 0; display: flex; }
+.dash-phase-mini-name { font-size: 11.5px; font-weight: 600; color: var(--text); flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dash-phase-mini-pct { font-size: 11px; font-weight: 700; color: var(--amber); font-family: var(--font-mono); }
+.dash-phase-mini-bar { height: 4px; border-radius: 99px; background: rgba(180,122,60,0.10); overflow: hidden; }
+.dash-phase-mini-bar > i { display: block; height: 100%; border-radius: 99px; transition: width 400ms var(--ease-out); }
+.dash-phase-mini-cost { font-size: 12px; font-family: var(--font-mono); font-weight: 600; color: var(--text-secondary); }
+
+/* ── Vendor Khata snapshot ── */
+.dash-vendor-card {
+  background: var(--bg-elev); border: 1px solid var(--border);
+  border-radius: var(--r-lg); padding: 18px;
+  margin-bottom: 16px; box-shadow: var(--shadow-card);
+  transition: all var(--t-fast);
+}
+.dash-vendor-card:hover { border-color: var(--border-strong); box-shadow: var(--shadow-md); }
+.dash-vendor-hero { text-align: center; margin-bottom: 14px; }
+.dash-vendor-hero-label { font-size: 10px; text-transform: uppercase; letter-spacing: 0.1em; font-weight: 700; color: var(--text-muted); }
+.dash-vendor-hero-amount { font-family: var(--font-mono); font-size: 28px; font-weight: 800; margin: 4px 0; }
+.dash-vendor-hero-sub { font-size: 11px; color: var(--text-muted); }
+.dash-vendor-list { border-top: 1px solid var(--border); padding-top: 12px; display: flex; flex-direction: column; gap: 8px; }
+.dash-vendor-row { display: flex; align-items: center; justify-content: space-between; }
+.dash-vendor-name { font-size: 12.5px; font-weight: 600; color: var(--text); }
+.dash-vendor-amt { font-family: var(--font-mono); font-size: 12.5px; font-weight: 700; }
+
+/* ── Operations quick-stats ── */
+.dash-ops-grid {
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 10px;
+  margin-bottom: 16px;
+}
+.dash-ops-card {
+  display: flex; align-items: center; gap: 12px;
+  background: var(--bg-elev); border: 1px solid var(--border);
+  border-radius: var(--r-md); padding: 14px;
+  box-shadow: var(--shadow-card);
+  transition: all var(--t-fast);
+}
+.dash-ops-card:hover { border-color: var(--border-strong); box-shadow: var(--shadow-md); transform: translateY(-1px); }
+.dash-ops-icon { flex-shrink: 0; display: flex; }
+.dash-ops-body { min-width: 0; }
+.dash-ops-label { font-size: 10px; text-transform: uppercase; letter-spacing: 0.08em; font-weight: 700; color: var(--text-muted); }
+.dash-ops-value { font-size: 18px; font-weight: 800; color: var(--text); font-family: var(--font-mono); }
+.dash-ops-sub { font-size: 10.5px; color: var(--text-muted); margin-top: 2px; }
+
+/* ── Recent Activity feed ── */
+.dash-recents-list {
+  display: flex; flex-direction: column; gap: 4px;
+  margin-bottom: 16px;
+}
+.dash-recent-item {
+  display: flex; align-items: center; gap: 12px;
+  padding: 12px 14px;
+  background: var(--bg-elev); border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  transition: all var(--t-fast);
+}
+.dash-recent-item:hover { border-color: var(--border-strong); background: var(--bg-elev-2); }
+.dash-recent-icon { flex-shrink: 0; color: var(--amber); display: flex; }
+.dash-recent-body { flex: 1; min-width: 0; }
+.dash-recent-title { font-size: 13px; font-weight: 600; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.dash-recent-sub { font-size: 11px; color: var(--text-muted); margin-top: 2px; }
+.dash-recent-amount { font-family: var(--font-mono); font-size: 13px; font-weight: 700; color: var(--text-secondary); flex-shrink: 0; }
+
+/* ── Desktop responsive ── */
+body.desktop-mode .dash-breakdown-card { padding: 22px; }
+body.desktop-mode .dash-donut { width: 120px; height: 120px; }
+body.desktop-mode .dash-donut-hole { width: 76px; height: 76px; }
+body.desktop-mode .dash-donut-total { font-size: 15px; }
+body.desktop-mode .dash-phase-grid { grid-template-columns: repeat(3, 1fr); gap: 12px; }
+body.desktop-mode .dash-ops-grid { grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); }
+body.desktop-mode .dash-recent-item { padding: 14px 16px; }
+body.desktop-mode .dash-recent-title { font-size: 14px; }
+body.desktop-mode .dash-recent-sub { font-size: 12px; }
+body.desktop-mode .dash-recent-amount { font-size: 14px; }
 
 /* ════════════════════════════════════════
    LEDGER TABS
@@ -1102,6 +1249,105 @@ input:focus, select:focus, textarea:focus {
 .category-card-progress { font-size: 11px; color: var(--text-muted); }
 .category-card-cost { font-family: var(--font-mono); color: var(--amber); font-weight: 500; font-size: 14.5px; }
 
+/* ════════════════════════════════════════
+   "ALL BILLS" CARD — visually distinct from regular category/phase cards.
+   Used in: per-phase hub (category-grid), Construction hub (m-phase-grid),
+   Interior hub (m-phase-grid). Always rendered at the BOTTOM of its container,
+   spanning full width, with an amber-tinted dashed border + "AI Scanner" badge
+   so users immediately recognise it as a different kind of action
+   (jumping into the BillScanner gallery, not a category drill-in).
+   ════════════════════════════════════════ */
+
+/* Variant 1: inside .category-grid (per-phase hub) — spans both columns */
+.all-bills-card {
+  grid-column: 1 / -1;            /* always full-width, on its own row */
+  position: relative; text-align: left;
+  background: linear-gradient(135deg, var(--amber-glow), var(--bg-elev) 65%);
+  border: 1.5px dashed var(--amber-border);
+  border-radius: var(--r-lg); padding: 16px 18px;
+  cursor: pointer; min-height: 0;                /* override category-card min-height */
+  display: flex; flex-direction: row; align-items: center; gap: 16px;
+  font-family: inherit; color: var(--text);
+  transition: all var(--t-fast);
+  box-shadow: var(--shadow-card);
+  overflow: hidden;
+}
+.all-bills-card:hover {
+  border-color: var(--amber);
+  border-style: solid;
+  box-shadow: 0 6px 24px rgba(232,124,42,0.18);
+  background: linear-gradient(135deg, var(--amber-glow), var(--bg-elev-2) 65%);
+}
+.all-bills-card:active { transform: scale(0.99); }
+.all-bills-card-icon {
+  flex-shrink: 0; width: 48px; height: 48px;
+  display: flex; align-items: center; justify-content: center;
+  background: var(--amber); color: #fff;
+  border-radius: var(--r-md);
+  box-shadow: 0 2px 8px rgba(232,124,42,0.35);
+}
+.all-bills-card-body { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 4px; }
+.all-bills-card-title-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.all-bills-card-name { font-weight: 600; font-size: 15px; color: var(--text); }
+.all-bills-card-badge {
+  display: inline-flex; align-items: center; gap: 4px;
+  font-size: 9.5px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em;
+  background: var(--amber); color: #fff;
+  padding: 2px 7px; border-radius: 99px;
+}
+.all-bills-card-desc { font-size: 12px; color: var(--text-muted); line-height: 1.4; }
+.all-bills-card-meta {
+  display: flex; align-items: center; gap: 14px; flex-wrap: wrap;
+  margin-top: 2px; font-size: 11.5px; color: var(--text-muted);
+}
+.all-bills-card-count { font-weight: 600; color: var(--text-secondary); }
+.all-bills-card-cost { font-family: var(--font-mono); color: var(--amber); font-weight: 600; font-size: 15px; }
+.all-bills-card-chev { color: var(--amber); font-size: 20px; flex-shrink: 0; }
+
+/* Variant 2: inside .m-phase-grid (Construction / Interior hub) — already full-width */
+.m-all-bills-card {
+  display: flex; align-items: center; gap: 14px;
+  background: linear-gradient(135deg, var(--amber-glow), var(--bg-elev) 65%);
+  border: 1.5px dashed var(--amber-border);
+  border-radius: var(--r-lg); padding: 16px;
+  min-height: 74px; cursor: pointer;
+  transition: all var(--t-fast);
+  text-align: left; width: 100%; color: var(--text);
+  font-family: inherit;
+  will-change: transform; transform: translateZ(0);
+  box-shadow: var(--shadow-card);
+  margin-top: 6px;                 /* small breathing space above (separates from grid) */
+}
+.m-all-bills-card:hover {
+  border-color: var(--amber);
+  border-style: solid;
+  background: linear-gradient(135deg, var(--amber-glow), var(--bg-elev-2) 65%);
+  box-shadow: 0 6px 24px rgba(232,124,42,0.18);
+}
+.m-all-bills-card:active { transform: scale(0.99); }
+.m-all-bills-card-icon {
+  flex-shrink: 0; width: 48px; height: 48px;
+  display: flex; align-items: center; justify-content: center;
+  background: var(--amber); color: #fff;
+  border-radius: var(--r-md); font-size: 22px;
+  box-shadow: 0 2px 8px rgba(232,124,42,0.35);
+}
+.m-all-bills-card-body { flex: 1; min-width: 0; }
+.m-all-bills-card-title-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.m-all-bills-card-name { font-weight: 600; font-size: 15px; color: var(--text); }
+.m-all-bills-card-badge {
+  display: inline-flex; align-items: center; gap: 4px;
+  font-size: 9.5px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em;
+  background: var(--amber); color: #fff;
+  padding: 2px 7px; border-radius: 99px;
+}
+.m-all-bills-card-meta {
+  display: flex; align-items: center; gap: 10px;
+  margin-top: 5px; font-size: 12px; color: var(--text-muted);
+}
+.m-all-bills-card-cost { font-family: var(--font-mono); color: var(--amber); font-weight: 600; }
+.m-all-bills-card-chev { color: var(--amber); font-size: 20px; flex-shrink: 0; }
+
 /* Hub cost summary strip */
 .hub-cost-summary {
   margin-bottom: 16px;
@@ -1156,7 +1402,7 @@ input:focus, select:focus, textarea:focus {
 #toast-container {
   position: fixed; left: 0; right: 0;
   bottom: calc(var(--bottomnav-h) + var(--safe-bottom) + 16px);
-  z-index: 200; pointer-events: none;
+  z-index: 9400; pointer-events: none;  /* H-15: above modals (was 200) */
   display: flex; flex-direction: column; align-items: center; gap: 8px;
   padding: 0 16px;
 }
@@ -1462,6 +1708,8 @@ div:hover > div > .photo-delete-btn { opacity: 1 !important; }
   cursor: pointer; color: var(--text-muted);
   display: inline-flex; align-items: center; justify-content: center;
   transition: all var(--t-fast);
+  /* H-13: keep visual size 30px but expand hit area to 44px (WCAG 2.5.5). */
+  min-width: 44px; min-height: 44px;
 }
 .delete-row-btn:hover { color: var(--danger); border-color: rgba(196, 93, 82,0.35); background: rgba(196, 93, 82,0.06); }
 
@@ -1559,11 +1807,144 @@ div:hover > div > .photo-delete-btn { opacity: 1 !important; }
 .modal-label { display: block; color: var(--amber); font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.08em; margin-bottom: 6px; opacity: 0.85; }
 .modal-title { font-size: 16px; font-weight: 600; color: var(--text); margin-bottom: 20px; }
 
-/* AI thinking dots */
-.ai-thinking-dots span { animation: thinkDot 1.2s ease-in-out infinite; opacity: 0; }
-.ai-thinking-dots span:nth-child(2) { animation-delay: 0.2s; }
-.ai-thinking-dots span:nth-child(3) { animation-delay: 0.4s; }
-@keyframes thinkDot { 0%, 100% { opacity: 0; } 50% { opacity: 1; } }
+/* ════════════════════════════════════════════════════════════════
+   AI THINKING ANIMATION — ARCONZA Build Assistant
+   A delightful bouncing-dots loader that keeps users engaged while
+   the AI processes their request. Three amber dots bounce in sequence
+   with a wave-like rhythm. Includes a subtle "breathing" glow.
+   ════════════════════════════════════════════════════════════════ */
+.ai-thinking-dots {
+  display: inline-flex; align-items: center; gap: 4px;
+  font-size: 13px; font-weight: 500; color: var(--text-secondary);
+}
+.ai-thinking-dots > span:nth-child(1) { /* "Thinking" text */
+  margin-right: 4px;
+}
+/* The three bouncing dots are the <span> children after the text */
+.ai-thinking-dots > span:nth-child(2),
+.ai-thinking-dots > span:nth-child(3),
+.ai-thinking-dots > span:nth-child(4) {
+  display: inline-block;
+  width: 8px; height: 8px;
+  border-radius: 50%;
+  background: var(--amber, #E8923A);
+  animation: aiThinkBounce 1.4s ease-in-out infinite;
+  will-change: transform, opacity;
+}
+.ai-thinking-dots > span:nth-child(2) { animation-delay: 0s; }
+.ai-thinking-dots > span:nth-child(3) { animation-delay: 0.18s; }
+.ai-thinking-dots > span:nth-child(4) { animation-delay: 0.36s; }
+
+@keyframes aiThinkBounce {
+  0%, 80%, 100% {
+    transform: scale(0.6) translateY(0);
+    opacity: 0.4;
+    box-shadow: 0 0 0 0 rgba(232,124,42,0);
+  }
+  40% {
+    transform: scale(1.2) translateY(-6px);
+    opacity: 1;
+    box-shadow: 0 4px 12px rgba(232,124,42,0.3);
+  }
+}
+
+/* ── AI message entrance animation ──
+   New messages slide up + fade in with a gentle spring. */
+.ai-message {
+  animation: aiMsgIn 380ms var(--ease-out) both;
+  will-change: transform, opacity;
+}
+@keyframes aiMsgIn {
+  from { opacity: 0; transform: translateY(8px) scale(0.98); }
+  to   { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+/* ── AI bot avatar pulse ──
+   A subtle breathing ring on the bot's icon while thinking. */
+.ai-message.ai-bot .ai-msg-icon {
+  position: relative;
+}
+.ai-message.ai-bot.is-thinking .ai-msg-icon::after {
+  content: '';
+  position: absolute; inset: -3px;
+  border-radius: 50%;
+  border: 2px solid var(--amber, #E8923A);
+  opacity: 0;
+  animation: aiAvatarPulse 1.6s ease-out infinite;
+}
+@keyframes aiAvatarPulse {
+  0%   { opacity: 0.6; transform: scale(0.8); }
+  100% { opacity: 0;   transform: scale(1.6); }
+}
+
+/* ── AI message bubble polish ── */
+.ai-message {
+  border-radius: 14px;
+  transition: border-color 200ms ease-out, box-shadow 200ms ease-out;
+}
+.ai-message:hover {
+  border-color: var(--border-strong);
+  box-shadow: 0 2px 12px rgba(0,0,0,0.06);
+}
+.ai-message.ai-user {
+  background: linear-gradient(135deg, var(--amber-glow), var(--bg-elev-2));
+  border-color: var(--amber-border);
+  margin-left: 24px;
+}
+.ai-message.ai-bot {
+  margin-right: 12px;
+}
+.ai-msg-icon {
+  flex-shrink: 0; width: 28px; height: 28px;
+  border-radius: 8px; display: flex; align-items: center; justify-content: center;
+  background: var(--amber-glow); color: var(--amber);
+}
+.ai-msg-type {
+  font-size: 10px; font-weight: 700; text-transform: uppercase;
+  letter-spacing: 0.06em; color: var(--text-muted); margin-bottom: 4px;
+}
+.ai-action-btn {
+  font-size: 11px; font-weight: 600;
+  padding: 5px 12px; border-radius: 99px;
+  border: 1px solid var(--border-strong);
+  background: var(--bg-elev); color: var(--text-secondary);
+  cursor: pointer; transition: all 180ms ease-out;
+}
+.ai-action-btn:hover {
+  background: var(--amber-glow); color: var(--amber);
+  border-color: var(--amber-border);
+}
+.ai-action-btns {
+  display: flex; gap: 6px; flex-wrap: wrap; margin-top: 8px;
+}
+
+/* ── AI status dot ── */
+.ai-status-dot { width: 8px; height: 8px; border-radius: 99px; transition: all 200ms; }
+.ai-status-dot.ready { background: var(--success); box-shadow: 0 0 0 0 rgba(110,155,106,0); }
+.ai-status-dot.thinking {
+  background: var(--amber);
+  animation: aiStatusPulse 1s ease-in-out infinite;
+}
+@keyframes aiStatusPulse {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(232,124,42,0.4); }
+  50%      { box-shadow: 0 0 0 5px rgba(232,124,42,0); }
+}
+
+/* ── AI input field focus glow ── */
+.m-drawer-input input:focus {
+  border-color: var(--amber);
+  box-shadow: 0 0 0 3px rgba(232,124,42,0.12);
+}
+
+/* ── Reduced motion ── */
+@media (prefers-reduced-motion: reduce) {
+  .ai-thinking-dots > span:nth-child(2),
+  .ai-thinking-dots > span:nth-child(3),
+  .ai-thinking-dots > span:nth-child(4) { animation: none; opacity: 1; transform: none; }
+  .ai-message { animation: none; }
+  .ai-message.ai-bot.is-thinking .ai-msg-icon::after { animation: none; display: none; }
+  .ai-status-dot.thinking { animation: none; }
+}
 
 /* Sub ledger cards — mobile-first, replaces old overflow table */
 .sub-card {
@@ -1756,6 +2137,8 @@ div:hover > div > .photo-delete-btn { opacity: 1 !important; }
     transition-duration: 0.01ms !important;
     scroll-behavior: auto !important;
   }
+  /* M-18: keep AI thinking dots visible when motion is reduced. */
+  .ai-thinking-dots span { opacity: 1; animation: none; }
 }
 
 /* ═══════════════════════════════════════════════════════════════
@@ -1773,7 +2156,11 @@ div:hover > div > .photo-delete-btn { opacity: 1 !important; }
 }
 
 /* ════════════════════════════════════════
-   SPLASH SCREEN
+   SPLASH SCREEN — ARCONZA redesign
+   · Centered logo + wordmark + tag
+   · Smooth circular progress ring (SVG) replaces the old sideways bar
+   · GPU-only animations (transform / opacity / stroke-dashoffset)
+   · 560ms cross-fade exit
    ════════════════════════════════════════ */
 #splash-screen {
   position: fixed; inset: 0; z-index: 9000;
@@ -1813,7 +2200,7 @@ div:hover > div > .photo-delete-btn { opacity: 1 !important; }
 
 .splash-title {
   margin: 22px 0 4px; font-family: var(--font-display);
-  font-size: 34px; font-weight: 600; letter-spacing: 0.04em;
+  font-size: 34px; font-weight: 600; letter-spacing: 0.06em;
   background: linear-gradient(160deg, var(--amber-soft) 0%, var(--amber) 45%, #2E2820 100%);
   -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent;
   animation: splashFade 700ms 200ms var(--ease-out) both;
@@ -1825,21 +2212,57 @@ div:hover > div > .photo-delete-btn { opacity: 1 !important; }
 }
 @keyframes splashFade { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
 
-.splash-loader {
-  position: absolute; bottom: calc(var(--safe-bottom) + 54px); left: 50%;
+/* ── Circular progress ring (replaces the old sideways bar) ──
+   Uses an SVG circle with stroke-dasharray + stroke-dashoffset so the
+   ring fills smoothly 0 → 100% in ~1.6s, then a gentle idle scale pulse
+   gives a "live" feel without distracting from the logo.
+
+   IMPORTANT centering note: the wrap is absolutely positioned at
+   `left: 50%` and centered via `translateX(-50%)`. The entrance
+   animation MUST preserve this translateX — using the shared
+   `splashFade` keyframe would clobber it with `translateY(0)`,
+   causing the ring to shift right. So we use a dedicated
+   `splashRingFadeIn` keyframe that animates only opacity + translateY
+   while keeping the -50% X offset baked in. */
+.splash-ring-wrap {
+  position: absolute; bottom: calc(var(--safe-bottom, 0px) + 54px); left: 50%;
+  width: 44px; height: 44px;
+  /* Centering transform — preserved by the entrance animation below */
   transform: translateX(-50%);
-  width: 132px; height: 4px; border-radius: 99px;
-  background: rgba(180,122,60,0.16); overflow: hidden;
-  animation: splashFade 600ms 500ms var(--ease-out) both;
+  animation: splashRingFadeIn 600ms 500ms var(--ease-out) both;
 }
-.splash-loader span {
-  display: block; height: 100%; width: 40%; border-radius: 99px;
-  background: linear-gradient(90deg, var(--amber-soft), var(--amber));
-  animation: splashBar 1100ms var(--ease-out) infinite;
+@keyframes splashRingFadeIn {
+  from { opacity: 0; transform: translateX(-50%) translateY(8px); }
+  to   { opacity: 1; transform: translateX(-50%) translateY(0); }
 }
-@keyframes splashBar {
-  0% { transform: translateX(-120%); }
-  100% { transform: translateX(360%); }
+.splash-ring-svg {
+  width: 100%; height: 100%;
+  transform: rotate(-90deg); /* start fill from top — rotate around SVG center (22,22) */
+  transform-origin: 50% 50%;
+  filter: drop-shadow(0 2px 8px rgba(232,124,42,0.25));
+  display: block; /* remove inline-SVG baseline gap */
+}
+.splash-ring-track { fill: none; stroke: rgba(180,122,60,0.14); stroke-width: 3; }
+.splash-ring-fill {
+  fill: none; stroke: url(#splashGrad); stroke-width: 3; stroke-linecap: round;
+  stroke-dasharray: 113;              /* 2πr where r≈18 → ~113 */
+  stroke-dashoffset: 113;
+  animation: splashRingFill 1600ms 400ms cubic-bezier(0.22, 1, 0.36, 1) forwards;
+}
+@keyframes splashRingFill {
+  0%   { stroke-dashoffset: 113; }
+  60%  { stroke-dashoffset: 28; }
+  100% { stroke-dashoffset: 0; }
+}
+/* After the ring fills, a gentle scale pulse keeps it alive.
+   Targets the SVG (not the wrap) so the wrap's translateX(-50%) centering
+   is never clobbered by the idle animation. */
+.splash-ring-wrap.is-filled .splash-ring-svg {
+  animation: splashRingIdle 2.4s 1.6s ease-in-out infinite;
+}
+@keyframes splashRingIdle {
+  0%, 100% { transform: rotate(-90deg) scale(1); }
+  50%      { transform: rotate(-90deg) scale(1.08); }
 }
 
 /* ════════════════════════════════════════════════════════════════
@@ -2187,6 +2610,177 @@ div:hover > div > .photo-delete-btn { opacity: 1 !important; }
 }
 
 /* ════════════════════════════════════════
+   ONBOARDING SLIDE 3 — Yes/No choice buttons
+   ════════════════════════════════════════ */
+.onb-choice-row {
+  display: flex; flex-direction: column; gap: 10px;
+  width: 100%; margin-top: 20px;
+  animation: onbTextRise 760ms 460ms var(--onb-glide) both;
+}
+.onb-choice-btn {
+  display: inline-flex; align-items: center; justify-content: center; gap: 8px;
+  width: 100%; padding: 14px 18px;
+  border-radius: 14px; border: 1.5px solid rgba(255,255,255,0.18);
+  background: rgba(255,255,255,0.06);
+  color: #F5F1EB;
+  font-family: inherit; font-size: 14.5px; font-weight: 600;
+  cursor: pointer;
+  transition: all 220ms var(--onb-glide);
+  -webkit-tap-highlight-color: transparent;
+}
+.onb-choice-btn:hover {
+  background: rgba(255,255,255,0.12);
+  border-color: rgba(255,255,255,0.28);
+  transform: translateY(-1px);
+}
+.onb-choice-btn:active { transform: scale(0.98); }
+.onb-choice-btn.onb-choice-yes {
+  background: linear-gradient(135deg, var(--amber) 0%, var(--amber-soft) 100%);
+  border-color: var(--amber);
+  color: #1F1812;
+  box-shadow: 0 6px 20px rgba(232,124,42,0.30);
+}
+.onb-choice-btn.onb-choice-yes:hover {
+  background: linear-gradient(135deg, var(--amber-soft) 0%, var(--amber) 100%);
+  box-shadow: 0 8px 28px rgba(232,124,42,0.40);
+}
+body.desktop-mode #onboarding-screen .onb-choice-row {
+  flex-direction: row;
+}
+body.desktop-mode #onboarding-screen .onb-choice-btn { flex: 1; }
+
+/* ════════════════════════════════════════════════════════════════
+   WALKTHROUGH TOOLTIP SYSTEM — ARCONZA
+   · Spotlight overlay (dims everything except the target element)
+   · Floating tooltip card with title, description, step counter
+   · Next / Skip / Back controls
+   · Smooth fade + scale transitions, GPU-only
+   · Auto-positions tooltip above or below the target based on viewport
+   ════════════════════════════════════════════════════════════════ */
+#walkthrough-overlay {
+  position: fixed; inset: 0; z-index: 9600;
+  pointer-events: none;           /* let clicks pass through to the target */
+  opacity: 0; visibility: hidden;
+  transition: opacity 280ms var(--ease-out, ease-out),
+              visibility 280ms;
+}
+#walkthrough-overlay.is-active {
+  opacity: 1; visibility: visible;
+  pointer-events: auto;           /* overlay catches clicks (except on the spotlight hole) */
+}
+/* The 4 dark panels that form the spotlight "hole" around the target.
+   Each panel is a solid dark rectangle; together they cover everything
+   except the target's bounding box. */
+.wt-panel {
+  position: fixed; background: rgba(28, 25, 23, 0.72);
+  backdrop-filter: blur(2px); -webkit-backdrop-filter: blur(2px);
+  transition: all 320ms var(--ease-spring, cubic-bezier(0.34, 1.56, 0.64, 1));
+  pointer-events: auto;
+}
+.wt-panel-top    { top: 0; left: 0; right: 0; }
+.wt-panel-bottom { left: 0; right: 0; bottom: 0; }
+.wt-panel-left   { left: 0; }
+.wt-panel-right  { right: 0; }
+/* Spotlight ring around the target (animated dashed amber border) */
+.wt-spotlight {
+  position: fixed; border-radius: 10px;
+  border: 2px solid var(--amber, #E8923A);
+  box-shadow: 0 0 0 4px rgba(232,124,42,0.18), 0 0 32px rgba(232,124,42,0.35);
+  pointer-events: none;
+  transition: all 320ms var(--ease-spring, cubic-bezier(0.34, 1.56, 0.64, 1));
+  animation: wtPulse 1.8s ease-in-out infinite;
+}
+@keyframes wtPulse {
+  0%, 100% { box-shadow: 0 0 0 4px rgba(232,124,42,0.18), 0 0 32px rgba(232,124,42,0.35); }
+  50%      { box-shadow: 0 0 0 8px rgba(232,124,42,0.10), 0 0 48px rgba(232,124,42,0.45); }
+}
+/* Tooltip card */
+.wt-tooltip {
+  position: fixed; z-index: 9601;
+  max-width: 320px; min-width: 260px;
+  padding: 18px 20px 16px;
+  background: #FFFFFF;
+  border: 1px solid rgba(180,122,60,0.15);
+  border-radius: 16px;
+  box-shadow: 0 12px 40px rgba(0,0,0,0.20), 0 2px 8px rgba(0,0,0,0.06);
+  opacity: 0; transform: translateY(8px) scale(0.96);
+  transition: opacity 260ms var(--ease-out, ease-out),
+              transform 260ms var(--ease-spring, cubic-bezier(0.34, 1.56, 0.64, 1));
+  pointer-events: auto;
+}
+#walkthrough-overlay.is-active .wt-tooltip {
+  opacity: 1; transform: translateY(0) scale(1);
+}
+.wt-tooltip::before {
+  content: ''; position: absolute;
+  width: 0; height: 0;
+  border: 8px solid transparent;
+}
+/* Arrow when tooltip is BELOW the target (arrow points UP) */
+.wt-tooltip.wt-below::before {
+  top: -16px; left: 50%; transform: translateX(-50%);
+  border-bottom-color: #FFFFFF;
+}
+/* Arrow when tooltip is ABOVE the target (arrow points DOWN) */
+.wt-tooltip.wt-above::before {
+  bottom: -16px; left: 50%; transform: translateX(-50%);
+  border-top-color: #FFFFFF;
+}
+.wt-step-badge {
+  display: inline-block; font-size: 10px; font-weight: 700;
+  text-transform: uppercase; letter-spacing: 0.08em;
+  color: var(--amber, #E8923A);
+  background: rgba(232,124,42,0.10);
+  padding: 3px 8px; border-radius: 99px;
+  margin-bottom: 8px;
+}
+.wt-title {
+  font-family: var(--font-display, 'Jost', sans-serif);
+  font-size: 16px; font-weight: 700; color: #2E2820;
+  margin: 0 0 6px; line-height: 1.3;
+}
+.wt-desc {
+  font-size: 13px; font-weight: 400; color: #5C544A;
+  line-height: 1.5; margin: 0 0 14px;
+}
+.wt-controls {
+  display: flex; align-items: center; justify-content: space-between; gap: 10px;
+}
+.wt-progress {
+  font-size: 11px; font-weight: 600; color: #9C8F7E;
+  letter-spacing: 0.04em;
+}
+.wt-btn-group { display: flex; gap: 8px; }
+.wt-btn {
+  font-family: inherit; font-size: 12.5px; font-weight: 600;
+  padding: 8px 14px; border-radius: 10px;
+  border: 1.5px solid rgba(180,122,60,0.20);
+  background: transparent; color: #5C544A;
+  cursor: pointer;
+  transition: all 200ms var(--ease-out, ease-out);
+  -webkit-tap-highlight-color: transparent;
+}
+.wt-btn:hover { background: rgba(180,122,60,0.08); }
+.wt-btn:active { transform: scale(0.96); }
+.wt-btn.wt-btn-primary {
+  background: linear-gradient(135deg, var(--amber, #E8923A) 0%, var(--amber-soft, #C28543) 100%);
+  border-color: var(--amber, #E8923A);
+  color: #FFFFFF;
+  box-shadow: 0 4px 12px rgba(232,124,42,0.25);
+}
+.wt-btn.wt-btn-primary:hover {
+  box-shadow: 0 6px 16px rgba(232,124,42,0.35);
+}
+.wt-btn.wt-btn-skip {
+  border: none; background: transparent; color: #9C8F7E;
+  font-weight: 500;
+}
+@media (prefers-reduced-motion: reduce) {
+  .wt-panel, .wt-spotlight, .wt-tooltip { transition-duration: 100ms; }
+  .wt-spotlight { animation: none; }
+}
+
+/* ════════════════════════════════════════
    GLASS POLISH — welcome / hero / cards
    ════════════════════════════════════════ */
 
@@ -2266,13 +2860,22 @@ html, body { background: var(--bg); }
   to   { opacity: 0; transform: translate3d(0, -4px, 0) scale(0.98); }
 }
 
-/* AI drawer slide-in */
+/* AI drawer slide-in — smooth, no overshoot (fixes the "jump to left" gap on Android) */
 #ai-drawer {
-  transition: transform 420ms cubic-bezier(0.34, 1.56, 0.64, 1),
-              opacity   240ms ease-out;
-  transform: translate3d(100%, 0, 0); will-change: transform;
+  transition: transform 340ms var(--ease-out);
+  transform: translate3d(100%, 0, 0);
+  will-change: transform;
+  contain: layout style paint;
 }
 #ai-drawer.open { transform: translate3d(0, 0, 0); }
+
+/* On touch devices, disable backdrop-filter during the slide to eliminate
+   the one-frame repaint lag that amplifies the "jump" perception.
+   The filter is re-enabled once the drawer is open via a settled class. */
+@media (hover: none) and (pointer: coarse) {
+  #ai-drawer { backdrop-filter: none; -webkit-backdrop-filter: none; background: rgba(250,252,255,0.99); }
+  #ai-drawer.open { backdrop-filter: blur(20px) saturate(120%); -webkit-backdrop-filter: blur(20px) saturate(120%); transition: transform 340ms var(--ease-out), backdrop-filter 200ms 100ms ease-out; }
+}
 
 /* Bottom-nav tap micro-interaction */
 .m-tab { transition: transform 180ms var(--ease-spring), color 180ms ease-out; }
@@ -2373,6 +2976,101 @@ html, body { background: var(--bg); }
   animation: sync-spin 1s linear infinite;
 }
 
+/* ════════════════════════════════════════════════════════════════
+   UNIFIED LOADING SYSTEM — ARCONZA
+   · `.spinner` — inline spinner (for buttons, toasts, status lines)
+   · `#arconza-loading-overlay` — full-screen loading overlay for
+     cloud sync, project connection, data sending. Smooth fade in/out,
+     non-blocking (pointer-events: none on the overlay so the user can
+     still interact if needed, but with a subtle backdrop blur).
+   All animations are GPU-only (transform/opacity) for 60fps.
+   ════════════════════════════════════════════════════════════════ */
+
+/* ── Inline spinner (replaces every ad-hoc spinner in the app) ── */
+.spinner {
+  display: inline-block;
+  width: 16px; height: 16px;
+  border: 2px solid rgba(180, 122, 60, 0.20);
+  border-top-color: var(--amber, #E8923A);
+  border-radius: 50%;
+  vertical-align: middle;
+  margin-right: 6px;
+  animation: arconza-spin 0.65s linear infinite;
+  will-change: transform;
+}
+.spinner.spinner-sm  { width: 12px; height: 12px; border-width: 2px; }
+.spinner.spinner-lg  { width: 28px; height: 28px; border-width: 3px; }
+.spinner.spinner-xl  { width: 40px; height: 40px; border-width: 3px; }
+.spinner.spinner-light {
+  border-color: rgba(255, 255, 255, 0.25);
+  border-top-color: #fff;
+}
+.spinner.spinner-info {
+  border-color: rgba(110, 148, 176, 0.20);
+  border-top-color: var(--info, #6E94B0);
+}
+@keyframes arconza-spin {
+  to { transform: rotate(360deg); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .spinner { animation-duration: 1.2s; }
+}
+
+/* ── Full-screen loading overlay ──
+   Shown via App.showLoading(message) / App.hideLoading().
+   Non-blocking: pointer-events: none on the overlay so the user can
+   still tap through, but a subtle backdrop blur + dim signals "working".
+   The card is centered, fades in 220ms, fades out 180ms. */
+#arconza-loading-overlay {
+  position: fixed; inset: 0; z-index: 9500;
+  display: flex; align-items: center; justify-content: center;
+  background: rgba(28, 25, 23, 0.18);
+  backdrop-filter: blur(3px) saturate(120%);
+  -webkit-backdrop-filter: blur(3px) saturate(120%);
+  opacity: 0; visibility: hidden;
+  transition: opacity 220ms var(--ease-out, ease-out),
+              visibility 220ms;
+  pointer-events: none;             /* let taps pass through to the app */
+}
+#arconza-loading-overlay.is-visible {
+  opacity: 1; visibility: visible;
+}
+.arconza-loading-card {
+  display: flex; flex-direction: column; align-items: center; gap: 16px;
+  padding: 32px 40px;
+  background: rgba(255, 255, 255, 0.96);
+  border: 1px solid rgba(180, 122, 60, 0.15);
+  border-radius: 20px;
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.12), 0 2px 8px rgba(0, 0, 0, 0.04);
+  transform: translateY(8px) scale(0.96);
+  transition: transform 280ms var(--ease-spring, cubic-bezier(0.34, 1.56, 0.64, 1));
+  pointer-events: auto;             /* the card itself can receive taps (e.g. to cancel) */
+}
+#arconza-loading-overlay.is-visible .arconza-loading-card {
+  transform: translateY(0) scale(1);
+}
+.arconza-loading-spinner {
+  width: 44px; height: 44px;
+  border: 3px solid rgba(180, 122, 60, 0.15);
+  border-top-color: var(--amber, #E8923A);
+  border-radius: 50%;
+  animation: arconza-spin 0.7s linear infinite;
+  will-change: transform;
+  filter: drop-shadow(0 2px 8px rgba(232, 124, 42, 0.2));
+}
+.arconza-loading-message {
+  font-family: var(--font-body, 'Jost', sans-serif);
+  font-size: 13.5px; font-weight: 600;
+  color: #2E2820;
+  letter-spacing: 0.01em;
+  max-width: 220px; text-align: center; line-height: 1.4;
+}
+.arconza-loading-sub {
+  font-size: 11px; font-weight: 500;
+  color: rgba(46, 40, 32, 0.55);
+  letter-spacing: 0.02em;
+}
+
 /* ════════════════════════════════════════════════════════════════════════
    DESKTOP / WEB MODE  ·  v2  (activated when body.desktop-mode is set)
    ════════════════════════════════════════════════════════════════════════
@@ -2382,8 +3080,16 @@ html, body { background: var(--bg); }
    ──────────────────────────────────────────────────────────────────────── */
 
 /* ── GLOBAL PERF FIXES (apply everywhere — fix desktop lag, harmless on mobile) ── */
+/* M-16: global focus-visible so every interactive element gets a visible ring. */
+*:focus-visible { outline: 2px solid var(--amber); outline-offset: 2px; }
+
+/* M-23: only opt-in will-change on hover so we don't burn GPU layers. */
 .m-btn { will-change: auto; }
 .m-btn:hover { will-change: transform; }
+.m-phase-card { will-change: auto; }
+.m-phase-card:hover { will-change: transform; }
+.m-list-row { will-change: auto; }
+.m-list-row:hover { will-change: transform; }
 .m-content { contain: layout paint style; }
 
 body.desktop-mode {
@@ -2566,6 +3272,15 @@ body.desktop-mode .m-content .m-phase-grid {
   grid-template-columns: repeat(2, 1fr);
   gap: 14px;
 }
+/* On desktop, the "All Bills" card spans both columns so it stays
+   full-width and visually separated at the bottom of the grid. */
+body.desktop-mode .m-content .m-phase-grid .m-all-bills-card {
+  grid-column: 1 / -1;
+}
+/* Same for the per-phase category-grid "All Bills" card on desktop */
+body.desktop-mode .m-content .category-grid .all-bills-card {
+  grid-column: 1 / -1;
+}
 body.desktop-mode .m-content .m-card { transition: transform var(--t-fast), box-shadow var(--t-fast); }
 body.desktop-mode .m-content .m-card:hover {
   transform: translateY(-2px);
@@ -2625,6 +3340,9 @@ body.desktop-mode .m-modal-box { max-width: 540px; }
 @media (min-width: 600px) and (max-width: 899px) {
   .m-content { padding: 20px 24px; }
   .m-phase-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 12px; }
+  /* "All Bills" card spans both columns on tablet too */
+  .m-phase-grid .m-all-bills-card { grid-column: 1 / -1; }
+  .category-grid .all-bills-card { grid-column: 1 / -1; }
   .stat-grid-3 { grid-template-columns: repeat(3, 1fr); }
 }
 
@@ -3016,6 +3734,8 @@ body.desktop-mode .m-modal-box { max-width: 540px; }
   background: none; border: none; color: var(--text-muted);
   cursor: pointer; display: flex; align-items: center; justify-content: center;
   transition: background var(--t-fast), color var(--t-fast);
+  /* H-13: keep visual size 32px but expand hit area to 44px (WCAG 2.5.5). */
+  min-width: 44px; min-height: 44px;
 }
 .est-custom-item-remove:hover { background: rgba(168,69,61,0.10); color: var(--danger); }
 .est-custom-item-remove svg { width: 16px; height: 16px; }
@@ -3132,4 +3852,17 @@ body.desktop-mode .m-modal-box { max-width: 540px; }
     box-shadow: var(--shadow-md);
     border-color: var(--border-strong);
   }
+}
+
+/* ════════════════════════════════════════
+   H-12: PRINT STYLESHEET
+   Hide app chrome, expand content for paper output.
+   ════════════════════════════════════════ */
+@media print {
+  #splash-screen, #onboarding-screen, #walkthrough-overlay, #arconza-loading-overlay,
+  .m-bottomnav, .m-appbar, #ai-drawer, #fab-container, .m-scrim, .m-desktop-sidebar,
+  #global-search-overlay { display: none !important; }
+  .m-content { overflow: visible !important; padding: 0 !important; }
+  body { background: #fff !important; }
+  .m-hero-card, .m-stat, .dash-breakdown-card, .dash-vendor-card { break-inside: avoid; }
 }

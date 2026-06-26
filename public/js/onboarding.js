@@ -1,5 +1,5 @@
 /* ═══════════════════════════════════════════════════════════════
-   RECON · ONBOARDING.JS  (Aura redesign)
+   ARCONZA · ONBOARDING.JS  (Aura redesign)
    Stacked-slide controller · morphing background · spring feel.
    Same images, same IDs, same boot contract.
    ═══════════════════════════════════════════════════════════════ */
@@ -38,6 +38,15 @@
       then && then();
     }, 580);
   }
+
+  // After the progress ring fills (~2s), add the "is-filled" class so the
+  // gentle idle scale-pulse animation kicks in. This keeps the ring visually
+  // alive without distracting from the logo while the app boots.
+  (function _primeSplashRing() {
+    var ringWrap = document.getElementById('splash-ring-wrap');
+    if (!ringWrap) return;
+    setTimeout(function () { ringWrap.classList.add('is-filled'); }, 2000);
+  })();
 
   function initOnboarding() {
     if (!onb) return;
@@ -88,17 +97,27 @@
     // ── CTA label morph ──
     function paintCta(i) {
       if (!nextBtn || !nextLabel) return;
-      var finalLabel = _tutorialMode ? 'Done' : 'Get Started';
-      var label = (i === total - 1) ? finalLabel : 'Next';
+      // On the last slide (slide 3 — "Want a walkthrough?"), we hide the
+      // Next button entirely because the Yes/No choice buttons replace it.
+      var isLast = (i === total - 1);
+      if (isLast) {
+        nextBtn.style.display = 'none';
+        // Show the Yes/No choice buttons (they live inside slide 3)
+        var choiceRow = onb.querySelector('.onb-choice-row');
+        if (choiceRow) choiceRow.style.display = '';
+        return;
+      }
+      // Non-last slides: show Next button, hide choice row
+      nextBtn.style.display = '';
+      var label = 'Next';
       if (nextLabel.textContent === label) return;
-
       nextLabel.classList.remove('onb-label-swap');
-      // restart animation
       void nextLabel.offsetWidth;
       nextLabel.textContent = label;
       nextLabel.classList.add('onb-label-swap');
-
-      nextBtn.classList.toggle('is-morph', i === total - 1);
+      nextBtn.classList.remove('is-morph');
+      var choiceRow2 = onb.querySelector('.onb-choice-row');
+      if (choiceRow2) choiceRow2.style.display = 'none';
     }
 
     // ── Slide swap with morphing exit/enter ──
@@ -185,9 +204,69 @@
       });
       skipBtn && skipBtn.addEventListener('click', function () { finish(false); });
       attachSwipe();
+
+      // ── Slide 3 Yes/No choice buttons ──
+      // "Yes, show me around" → finish onboarding + start the in-app walkthrough
+      // "I'll explore on my own" → finish onboarding (no walkthrough)
+      var yesBtn = document.getElementById('onb-walkthrough-yes');
+      var noBtn  = document.getElementById('onb-walkthrough-no');
+      if (yesBtn && !yesBtn._wtWired) {
+        yesBtn._wtWired = true;
+        yesBtn.addEventListener('click', function () {
+          finishWithWalkthrough(true);
+        });
+      }
+      if (noBtn && !noBtn._wtWired) {
+        noBtn._wtWired = true;
+        noBtn.addEventListener('click', function () {
+          finish(false);
+        });
+      }
     }
 
     setActiveInitial(0);
+  }
+
+  // ── Finish onboarding and optionally start the in-app walkthrough ──
+  // If startTour=true, hides onboarding, marks onboarded, then triggers
+  // App.startWalkthrough() once the app shell is visible.
+  function finishWithWalkthrough(startTour) {
+    if (!_tutorialMode) markOnboarded();
+    var wasTutorial = _tutorialMode;
+    _tutorialMode = false;
+    if (!onb) {
+      if (startTour) _triggerWalkthrough();
+      return;
+    }
+    onb.classList.add('onb-hide');
+    setTimeout(function () {
+      onb.style.display = 'none';
+      if (startTour) {
+        _triggerWalkthrough();
+      } else if (!wasTutorial && !isAuthed()) {
+        window.location.href = '/auth.html';
+      }
+    }, 480);
+  }
+
+  // Trigger the walkthrough via the App module if available.
+  // Falls back to a direct call if App hasn't bootstrapped yet (retry up to 20×).
+  // M-12: surface a toast after retries are exhausted so failures aren't silent.
+  function _triggerWalkthrough() {
+    var attempts = 0;
+    function tryStart() {
+      attempts++;
+      if (typeof App !== 'undefined' && typeof App.startWalkthrough === 'function') {
+        App.startWalkthrough();
+      } else if (attempts < 20) {
+        setTimeout(tryStart, 150);
+      } else {
+        if (typeof App !== 'undefined' && App.toast) {
+          App.toast('Walkthrough could not start. Try again from More → App Tutorial.', 'info');
+        }
+      }
+    }
+    tryStart();
   }
 
   function finish(toAuth) {
@@ -204,14 +283,26 @@
     }, 480);
   }
 
+  // "App Tutorial" from the More hub — now triggers the in-app walkthrough
+  // directly (instead of re-playing the 3-slide intro). The 3-slide intro
+  // is only shown to first-time users.
+  // M-11: bound the retry count so a missing App module doesn't spin forever.
   window.showTutorial = function () {
-    _tutorialMode = true;
-    if (!onb) return;
-    var skipBtn = document.getElementById('onb-skip');
-    if (skipBtn) skipBtn.textContent = 'Close';
-    onb.style.display = 'flex';
-    initOnboarding();
-    requestAnimationFrame(function () { onb.classList.add('onb-show'); });
+    if (typeof App !== 'undefined' && typeof App.startWalkthrough === 'function') {
+      window._showTutorialRetries = 0;
+      App.startWalkthrough();
+    } else {
+      if (!window._showTutorialRetries) window._showTutorialRetries = 0;
+      if (window._showTutorialRetries < 20) {
+        window._showTutorialRetries++;
+        setTimeout(window.showTutorial, 200);
+      } else {
+        window._showTutorialRetries = 0;
+        if (typeof App !== 'undefined' && App.toast) {
+          App.toast('Walkthrough could not start. Try again from More → App Tutorial.', 'info');
+        }
+      }
+    }
   };
 
   function run() {

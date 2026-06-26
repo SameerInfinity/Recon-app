@@ -1,6 +1,6 @@
 {
-  "name": "RECON Build Manager",
-  "short_name": "RECON",
+  "name": "ARCONZA Build Manager",
+  "short_name": "ARCONZA",
   "description": "Construction management tailored for Indian contractors.",
   "start_url": "/?source=pwa",
   "display": "standalone",

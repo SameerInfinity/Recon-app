@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
 /**
- * RECON — Live Reload Setup for Capacitor Android
+ * ARCONZA — Live Reload Setup for Capacitor Android
  * 
  * This script:
  * 1. Detects your local network IP address
@@ -102,7 +102,7 @@ function main() {
 
   console.log('');
   console.log('  ╔══════════════════════════════════════════════╗');
-  console.log('  ║   RECON — Live Reload Setup         ║');
+  console.log('  ║   ARCONZA — Live Reload Setup         ║');
   console.log('  ╠══════════════════════════════════════════════╣');
   console.log(`  ║   ADB Reverse:  ${(useAdbReverse ? 'Enabled (USB)' : 'Disabled').padEnd(27)}║`);
   console.log(`  ║   IP detected:  ${localIP.padEnd(27)}║`);

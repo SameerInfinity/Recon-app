@@ -149,8 +149,11 @@ const AI = (() => {
 
     const safeBody = isHtml ? String(body || '') : escapeHtml(String(body || '')).replace(/\n/g, '<br>');
 
+    // Map internal types to CSS classes for styling
+    const cssClass = type === 'user' ? 'ai-user' : (type === 'info' ? 'ai-bot' : '');
+
     const msg = document.createElement('div');
-    msg.className = `ai-message ${type}`;
+    msg.className = `ai-message ${cssClass}`;
     msg.innerHTML = `
       <div class="ai-msg-icon">${iconHtml}</div>
       <div class="ai-msg-body">
@@ -158,8 +161,12 @@ const AI = (() => {
         <p>${safeBody}</p>
         ${actionsHtml ? `<div class="ai-action-btns">${actionsHtml}</div>` : ''}
       </div>`;
+
+    // Smooth scroll to bottom with a gentle animation
     container.appendChild(msg);
-    container.scrollTop = container.scrollHeight;
+    requestAnimationFrame(() => {
+      container.scrollTo({ top: container.scrollHeight, behavior: 'smooth' });
+    });
   }
 
   function showAIPulse() {
@@ -194,6 +201,27 @@ const AI = (() => {
     const remaining = budget - total;
     const contingency = (proj.contingency || 0) / 100;
     const contingencyAmt = budget * contingency;
+
+    // ── USER PROFILE (so AI can personalize responses) ──
+    let userProfile = null;
+    try {
+      if (typeof SupabaseClient !== 'undefined') {
+        userProfile = SupabaseClient.getProfile?.() || null;
+        const user = SupabaseClient.getUser?.();
+        if (!userProfile && user) {
+          userProfile = {
+            full_name: user.user_metadata?.full_name || '',
+            role: '', company: '', phone: '',
+          };
+        }
+      }
+    } catch (_) {}
+    if (userProfile) {
+      lines.push(`═══ USER ═══`);
+      lines.push(`Name: ${userProfile.full_name || 'N/A'}`);
+      lines.push(`Role: ${userProfile.role || 'N/A'}`);
+      lines.push('');
+    }
 
     lines.push(`═══ PROJECT OVERVIEW ═══`);
     lines.push(`Name: ${proj.name}`);
@@ -321,8 +349,8 @@ const AI = (() => {
     const proj = State.getCurrentProject();
     const projContext = proj ? buildFullProjectContext(proj) : 'No project loaded.';
 
-    // Add user message to UI
-    addMessage('user', 'user', 'You', escapeHtml(text), []);
+    // Add user message to UI (pass raw text — addMessage escapes it)
+    addMessage('user', 'user', 'You', text, []);
     const container = document.getElementById('ai-messages');
     if (container) {
       const lastMsg = container.lastElementChild;
@@ -355,24 +383,46 @@ const AI = (() => {
     // Push user turn to history (trimmed for context only — no project data blob)
     conversationHistory.push({ role: 'user', parts: [{ text }] });
 
-    // Thinking indicator
+    // Thinking indicator — delightful bouncing dots animation
     const thinkId = 'think-' + Date.now() + '-' + Math.floor(Math.random() * 1e6);
-    addMessage('info', 'bot', 'Build Assistant', `<span id="${thinkId}" class="ai-thinking-dots">Thinking<span>.</span><span>.</span><span>.</span></span>`, []);
+    addMessage('info', 'bot', 'Build Assistant', `<span id="${thinkId}" class="ai-thinking-dots"><span>Thinking</span><span></span><span></span><span></span></span>`, [], true);
+
+    // Add is-thinking class to the message bubble for the avatar pulse animation
+    const thinkMsg = document.getElementById(thinkId)?.closest('.ai-message');
+    if (thinkMsg) thinkMsg.classList.add('is-thinking', 'ai-bot');
 
     try {
       // Call AI proxy. On native (Capacitor) this hits the Supabase Edge
       // Function; on web it hits the Render /api/ai/chat route. Either way
       // the API key stays server-side. Resolver lives in supabase-client.js.
       const chatApiUrl = SupabaseClient.getAiChatUrl();
+
+      // Build headers — on native (Supabase Edge Function), we need the
+      // Supabase anon key as 'apikey' header for the gateway to accept
+      // the request. On web (Render), only Content-Type is needed.
+      const aiHeaders = { 'Content-Type': 'application/json' };
+      const aiConfig = SupabaseClient.getConfig ? SupabaseClient.getConfig() : null;
+      if (aiConfig && aiConfig.supabaseAnonKey) {
+        aiHeaders['apikey'] = aiConfig.supabaseAnonKey;
+      }
+      // Also attach the user's JWT if available (for per-user rate limiting)
+      const aiUser = SupabaseClient.getUser ? SupabaseClient.getUser() : null;
+      if (aiUser && aiConfig) {
+        try {
+          const { data } = await SupabaseClient.getClient().auth.getSession();
+          if (data?.session?.access_token) {
+            aiHeaders['Authorization'] = `Bearer ${data.session.access_token}`;
+          }
+        } catch (_) {}
+      }
+
       const response = await fetch(chatApiUrl, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
+        headers: aiHeaders,
         body: JSON.stringify({
           systemInstruction: {
             parts: [{
-              text: `You are Build Assistant, an expert construction cost advisor embedded in RECON — a construction financial ledger app for Indian contractors and site builders.
+              text: `You are Build Assistant, an expert construction cost advisor embedded in ARCONZA — a construction financial ledger app for Indian contractors and site builders.
 
 You help with:
 - Cost estimation and budget management in INR

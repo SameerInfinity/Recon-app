@@ -1,5 +1,5 @@
 /* ═══════════════════════════════════════════
-   RECON — Express Backend Server
+   ARCONZA — Express Backend Server
    Serves static files, proxies Gemini AI,
    rate-limits via Upstash Redis
    ═══════════════════════════════════════════ */
@@ -40,6 +40,12 @@ app.use(helmet({
       ],
       imgSrc: ["'self'", "data:", "blob:", "https://*.supabase.co", "https://lh3.googleusercontent.com", "https://*.googleusercontent.com"],
       frameSrc: ["'none'"],
+      objectSrc: ["'none'"],
+      baseUri: ["'self'"],
+      formAction: ["'self'"],
+      workerSrc: ["'self'"],
+      manifestSrc: ["'self'"],
+      frameAncestors: ["'none'"],
       upgradeInsecureRequests: IS_PRODUCTION ? [] : null,
     },
   },
@@ -78,24 +84,26 @@ app.use(cors({
 // HTTPS redirect in production
 if (IS_PRODUCTION) {
   app.use((req, res, next) => {
-    if (req.headers['x-forwarded-proto'] !== 'https') {
+    if (req.protocol !== 'https') {
       return res.redirect(301, `https://${req.hostname}${req.url}`);
     }
     next();
   });
 }
 
-app.use(express.json({ limit: '1mb' }));
+app.use(express.json({ limit: '10mb' }));
 
 // Serve static frontend — set aggressive no-cache for code assets
 // Using setHeaders inside express.static ensures headers are applied before
 // the file is sent, unlike separate app.get() routes that run after static.
 app.use(express.static(path.join(__dirname, 'public'), {
   setHeaders: (res, filePath) => {
-    if (filePath.endsWith('sw.js') || filePath.endsWith('.js') || filePath.endsWith('.css') || filePath.endsWith('.html')) {
+    if (filePath.endsWith('sw.js') || filePath.endsWith('.html')) {
       res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
       res.setHeader('Pragma', 'no-cache');
       res.setHeader('Expires', '0');
+    } else if (filePath.endsWith('.js') || filePath.endsWith('.css')) {
+      res.setHeader('Cache-Control', 'public, max-age=86400');
     }
   }
 }));
@@ -217,12 +225,19 @@ app.post('/api/ai/chat', async (req, res) => {
     }
   }
 
-  try {
-    const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${geminiKey}`;
+  // H-24: validate inline image sizes (Gemini ~4MB limit per image; reject early)
+  for (const msg of contents) {
+    const imgLen = msg.parts?.reduce((sum, p) => sum + (p.inlineData?.data?.length || 0), 0) || 0;
+    if (imgLen > 4_000_000) {
+      return res.status(413).json({ error: 'Image too large', message: 'Image must be under 3MB. Please compress and retry.' });
+    }
+  }
 
-    const CHAT_SYSTEM_INSTRUCTION = {
-      parts: [{
-        text: `You are Build Assistant, an expert construction cost advisor embedded in RECON — a construction financial ledger app for Indian contractors and site builders.
+  const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${geminiKey}`;
+
+  const CHAT_SYSTEM_INSTRUCTION = {
+    parts: [{
+      text: `You are Build Assistant, an expert construction cost advisor embedded in ARCONZA — a construction financial ledger app for Indian contractors and site builders.
 
 You help with: Cost estimation and budget management in INR, Material selection and alternatives with local pricing, Construction best practices and ISI/BIS standards, Risk identification and mitigation, Phase-specific construction guidance, Subcontractor negotiation strategies.
 
@@ -232,12 +247,12 @@ Guidelines:
 - Quote exact figures from the data (use the ₹ symbol, lakhs/crores where appropriate).
 - Address the contractor directly as "you".
 - Respond concisely unless the user asked for a list/breakdown.`
-      }]
-    };
+    }]
+  };
 
-    const OCR_SYSTEM_INSTRUCTION = {
-      parts: [{
-        text: `You are an OCR and data extraction assistant for Indian construction bills ("Kachha" bills, GST invoices).
+  const OCR_SYSTEM_INSTRUCTION = {
+    parts: [{
+      text: `You are an OCR and data extraction assistant for Indian construction bills ("Kachha" bills, GST invoices).
 Extract the details from the uploaded bill image.
 Strictly return a JSON object (no markdown, no backticks, just raw JSON).
 Schema:
@@ -254,20 +269,25 @@ Schema:
     }
   ]
 }`
-      }]
-    };
+    }]
+  };
 
-    // Determine the system instruction to use
-    let serverSystemInstruction = CHAT_SYSTEM_INSTRUCTION;
-    const clientInstructionText = req.body.systemInstruction?.parts?.[0]?.text || '';
-    const hasImage = contents.some(msg => 
-      msg.parts?.some(part => part.inlineData)
-    );
+  // Determine the system instruction to use
+  let serverSystemInstruction = CHAT_SYSTEM_INSTRUCTION;
+  const clientInstructionText = req.body.systemInstruction?.parts?.[0]?.text || '';
+  const hasImage = contents.some(msg => 
+    msg.parts?.some(part => part.inlineData)
+  );
 
-    if (hasImage || clientInstructionText.includes('OCR') || clientInstructionText.includes('construction bills')) {
-      serverSystemInstruction = OCR_SYSTEM_INSTRUCTION;
-    }
+  if (hasImage || clientInstructionText.includes('OCR') || clientInstructionText.includes('construction bills')) {
+    serverSystemInstruction = OCR_SYSTEM_INSTRUCTION;
+  }
 
+  // C-09: timeout the upstream Gemini call so a stalled API doesn't hold a worker.
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 30000);
+  let data;
+  try {
     const response = await fetch(geminiUrl, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -279,35 +299,69 @@ Schema:
           maxOutputTokens: 2048,
           topP: 0.9,
         }
-      })
+      }),
+      signal: controller.signal,
     });
 
-    const data = await response.json();
+    data = await response.json();
 
     if (!response.ok) {
+      console.error('[Gemini API error]', data);
       return res.status(response.status).json({
         error: 'Gemini API error',
-        message: data.error?.message || `Status ${response.status}`,
+        message: IS_PRODUCTION ? 'AI service temporarily unavailable' : (data.error?.message || `Status ${response.status}`),
       });
     }
 
     return res.json(data);
-
-  } catch (err) {
-    console.error('[Gemini] Proxy error:', err.message);
+  } catch (fetchErr) {
+    if (fetchErr.name === 'AbortError') {
+      return res.status(504).json({
+        error: 'AI service timeout',
+        message: 'The AI service took too long to respond. Please try again.'
+      });
+    }
+    console.error('[Gemini] Proxy error:', fetchErr.message);
     return res.status(500).json({
       error: 'AI proxy error',
       message: 'Failed to reach Gemini API. Check server logs.'
     });
+  } finally {
+    clearTimeout(timeout);
   }
 });
 
 // ── Delete User Account (server-side, needs service key) ──
 app.post('/api/user/delete', async (req, res) => {
+  const authHeader = req.headers['authorization'];
+  if (!authHeader?.startsWith('Bearer ')) {
+    return res.status(401).json({ error: 'Unauthorized', message: 'Missing auth token' });
+  }
+
+  const userToken = authHeader.replace('Bearer ', '');
+
+  // M-27: rate-limit by the verified user id when possible (falls back to IP).
+  let deleteLimitId = null;
+  if (process.env.SUPABASE_URL) {
+    try {
+      const verifyRes = await fetch(`${process.env.SUPABASE_URL}/auth/v1/user`, {
+        headers: {
+          'Authorization': `Bearer ${userToken}`,
+          'apikey': process.env.SUPABASE_ANON_KEY,
+        }
+      });
+      if (verifyRes.ok) {
+        const u = await verifyRes.json();
+        if (u?.id) deleteLimitId = u.id;
+      }
+    } catch (e) { /* fall back to IP */ }
+  }
+  const deleteBucket = 'delete:' + (deleteLimitId || req.ip);
+
   // GAP-07: apply the same Upstash rate limiter to this destructive endpoint.
   if (ratelimit) {
     try {
-      const { success, reset } = await ratelimit.limit(`delete:${req.ip}`);
+      const { success, reset } = await ratelimit.limit(deleteBucket);
       if (!success) {
         return res.status(429).json({
           error: 'Rate limited',
@@ -317,13 +371,6 @@ app.post('/api/user/delete', async (req, res) => {
       }
     } catch (e) { /* fail open if redis is down */ }
   }
-
-  const authHeader = req.headers['authorization'];
-  if (!authHeader?.startsWith('Bearer ')) {
-    return res.status(401).json({ error: 'Unauthorized', message: 'Missing auth token' });
-  }
-
-  const userToken = authHeader.replace('Bearer ', '');
 
   const serviceKey = process.env.SUPABASE_SERVICE_KEY;
   const supabaseUrl = process.env.SUPABASE_URL;
@@ -375,12 +422,23 @@ app.post('/api/user/delete', async (req, res) => {
   }
 });
 
-// ── SPA Fallback ───────────────────────────
-app.get('*', (req, res) => {
-  // For any non-API, non-static route, serve index.html
-  if (!req.path.startsWith('/api/')) {
-    res.sendFile(path.join(__dirname, 'public', 'index.html'));
+// ── SPA Fallback + 404 handler ───────────────
+// L-11: API 404s return JSON instead of falling through to index.html.
+app.use((req, res) => {
+  if (req.path.startsWith('/api/')) {
+    return res.status(404).json({ error: 'API endpoint not found' });
   }
+  res.sendFile(path.join(__dirname, 'public', 'index.html'));
+});
+
+// ── Global Error Handler ─────────────────────
+// C-10: catch all unhandled errors so the app never leaks a stack trace.
+app.use((err, req, res, next) => {
+  console.error('[Unhandled Error]', err);
+  res.status(500).json({
+    error: 'Internal server error',
+    message: IS_PRODUCTION ? 'An error occurred' : err.message,
+  });
 });
 
 // ── Start ──────────────────────────────────
@@ -394,7 +452,7 @@ async function start() {
   app.listen(PORT, HOST, () => {
     console.log('');
     console.log('  ╔══════════════════════════════════════╗');
-    console.log('  ║   RECON — Server Running     ║');
+    console.log('  ║   ARCONZA — Server Running   ║');
     console.log(`  ║   http://localhost:${PORT}              ║`);
     console.log('  ╠══════════════════════════════════════╣');
     console.log(`  ║   Supabase:  ${process.env.SUPABASE_URL ? '✓ Connected' : '✗ Not configured'}        ║`);

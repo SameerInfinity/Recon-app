@@ -83,15 +83,39 @@ Schema:
     // Native → Supabase Edge Function, web → Render proxy. The API key
     // never reaches the client. See supabase-client.js getAiChatUrl().
     const chatApiUrl = SupabaseClient.getAiChatUrl();
+
+    // Build headers — on native (Supabase Edge Function), we need the
+    // Supabase anon key as 'apikey' header for the gateway to accept
+    // the request. Also attach user JWT for per-user rate limiting.
+    const scanHeaders = { 'Content-Type': 'application/json' };
+    const scanConfig = SupabaseClient.getConfig ? SupabaseClient.getConfig() : null;
+    if (scanConfig && scanConfig.supabaseAnonKey) {
+      scanHeaders['apikey'] = scanConfig.supabaseAnonKey;
+    }
+    try {
+      const { data } = await SupabaseClient.getClient().auth.getSession();
+      if (data?.session?.access_token) {
+        scanHeaders['Authorization'] = `Bearer ${data.session.access_token}`;
+      }
+    } catch (_) {}
+
     const res = await fetch(chatApiUrl, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: scanHeaders,
       body: JSON.stringify(payload)
     });
 
     if (!res.ok) {
-      const err = await res.json();
-      throw new Error(err.message || 'Failed to scan bill');
+      let errMsg = 'Failed to scan bill';
+      try {
+        const err = await res.json();
+        errMsg = err.message || errMsg;
+        if (res.status === 429) errMsg = 'Too many scans. Please wait a minute and try again.';
+        if (res.status === 503) errMsg = 'AI service not configured. Ask admin to set GEMINI_API_KEY.';
+        if (res.status === 504) errMsg = 'AI service timed out. Please try again.';
+        if (res.status === 413) errMsg = 'Image too large. Please take a clearer, smaller photo.';
+      } catch (_) {}
+      throw new Error(errMsg);
     }
 
     const data = await res.json();
@@ -113,7 +137,8 @@ Schema:
     if (!proj) return '';
 
     const isConstruction = (phaseId === 'construction');
-    if (!isConstruction) phaseId = Number(phaseId);
+    const isInterior = (phaseId === 'interior');
+    if (!isConstruction && !isInterior) phaseId = Number(phaseId);
     let phaseName = '';
     let phaseIcon = '';
     let bills = [];
@@ -121,13 +146,26 @@ Schema:
     if (isConstruction) {
       phaseName = "Construction Trades";
       phaseIcon = "blocks";
-      for (let pid = 1; pid <= 9; pid++) {
-        const pBills = State.getBills(pid) || [];
-        pBills.forEach(b => {
-          b._sourcePhase = pid;
-        });
+      // Include all standard construction phases: 1-9 + 11 (Electrical Supply) + 12 (Water Supply)
+      // + any custom non-interior phases (id ≥ 30, isCustom && !isInterior).
+      (proj.phases || []).forEach(ph => {
+        const pid = Number(ph.id);
+        const isConstrPhase = (pid >= 1 && pid <= 12 && pid !== 10) || (pid >= 30 && ph.isCustom && !ph.isInterior);
+        if (!isConstrPhase) return;
+        const pBills = State.getBills(ph.id) || [];
+        pBills.forEach(b => { b._sourcePhase = ph.id; });
         bills = bills.concat(pBills);
-      }
+      });
+    } else if (isInterior) {
+      phaseName = "Interior Sections";
+      phaseIcon = "sofa";
+      // Include all interior section phases: 20-27 + custom interior phases.
+      (proj.phases || []).forEach(ph => {
+        if (!ph.isInterior) return;
+        const pBills = State.getBills(ph.id) || [];
+        pBills.forEach(b => { b._sourcePhase = ph.id; });
+        bills = bills.concat(pBills);
+      });
     } else {
       const phase = proj.phases.find(p => Number(p.id) === Number(phaseId));
       if (!phase) return '';
@@ -140,11 +178,13 @@ Schema:
     const entryBills = [];
     (proj.phases || []).forEach(ph => {
       if (isConstruction) {
-        if (ph.id < 1 || ph.id > 9) return;
-      } else if (phaseId === 10) {
-        if (ph.id !== 10) return;
-      } else {
-        if (ph.id !== phaseId) return;
+        const pid = Number(ph.id);
+        const isConstrPhase = (pid >= 1 && pid <= 12 && pid !== 10) || (pid >= 30 && ph.isCustom && !ph.isInterior);
+        if (!isConstrPhase) return;
+      } else if (isInterior) {
+        if (!ph.isInterior) return;
+      } else if (Number(ph.id) !== Number(phaseId)) {
+        return;
       }
 
       if (!ph.data || !ph.data.entries) return;
@@ -258,9 +298,11 @@ Schema:
       <div class="breadcrumb">
         <a onclick="App.showOverview()">Overview</a>
         <span class="breadcrumb-sep">›</span>
-        ${isConstruction 
+        ${isConstruction
           ? `<a onclick="App.showHub('construction')">Construction</a>`
-          : `<a onclick="${phaseId === 10 ? 'App.showInteriorHub()' : `App.showPhaseHub(${escapeAttr(phaseId)})`}">${Phases.iconFor(phaseIcon, 11)} <span style="margin-left:6px">${escapeHtml(phaseName)}</span></a>`
+          : isInterior
+          ? `<a onclick="App.showHub('interior')">Interior Sections</a>`
+          : `<a onclick="App.showPhaseHub(${escapeAttr(phaseId)})">${Phases.iconFor(phaseIcon, 11)} <span style="margin-left:6px">${escapeHtml(phaseName)}</span></a>`
         }
         <span class="breadcrumb-sep">›</span>
         <span class="breadcrumb-current">${Icons.render('fileText', 14)} Bills & Receipts</span>
@@ -305,7 +347,7 @@ Schema:
       </div>
 
       <div id="scanner-status" style="display:none;background:var(--amber-light-bg);border:1px solid var(--amber-border);color:var(--amber);padding:12px;border-radius:8px;font-size:12px;margin-bottom:24px;font-weight:600">
-        <span class="spinner" style="width:12px;height:12px;border-top-color:var(--amber);border-width:2px;margin-right:8px"></span> Analyzing bill with AI...
+        <span class="spinner spinner-sm"></span> Analyzing bill with AI...
       </div>
 
       <div id="review-container" style="display:none;margin-bottom:24px"></div>
@@ -325,7 +367,7 @@ Schema:
     const statusEl = document.getElementById('scanner-status');
     const reviewEl = document.getElementById('review-container');
     if (statusEl) {
-      statusEl.innerHTML = `<span class="spinner" style="width:12px;height:12px;border-top-color:var(--amber);border-width:2px;margin-right:8px;display:inline-block"></span> Analyzing bill with AI…`;
+      statusEl.innerHTML = `<span class="spinner spinner-sm"></span> Analyzing bill with AI…`;
       statusEl.style.display = 'block';
     }
     if (reviewEl) reviewEl.style.display = 'none';
@@ -364,11 +406,16 @@ Schema:
 
     const proj = State.getCurrentProject();
     const isConstruction = (phaseId === 'construction');
-    const phaseSelectHtml = isConstruction ? `
+    const isInterior = (phaseId === 'interior');
+    const phaseSelectHtml = (isConstruction || isInterior) ? `
       <div class="field-group" style="margin-top:12px">
-        <label class="field-label" style="font-weight:700">Assign to Trade Phase *</label>
+        <label class="field-label" style="font-weight:700">Assign to ${isInterior ? 'Interior Section' : 'Trade'} Phase *</label>
         <select id="review-phase-id" class="field-input" style="background:var(--charcoal);border:1px solid var(--charcoal-border);color:var(--text-primary);padding:8px 10px;border-radius:6px;width:100%;box-sizing:border-box">
-          ${(proj?.phases || []).filter(p => p.id >= 1 && p.id <= 9).map(p => `
+          ${(proj?.phases || []).filter(p => {
+            if (isInterior) return !!p.isInterior;
+            const pid = Number(p.id);
+            return (pid >= 1 && pid <= 12 && pid !== 10) || (pid >= 30 && p.isCustom && !p.isInterior);
+          }).map(p => `
             <option value="${escapeAttr(p.id)}">${escapeHtml(p.name)}</option>
           `).join('')}
         </select>
@@ -435,6 +482,12 @@ Schema:
     const desc = (document.getElementById('manual-desc')?.value || '').trim();
     const targetPhaseId = parseInt(document.getElementById('review-phase-id')?.value) || parseInt(phaseId);
 
+    // H-07: guard against NaN phaseId (e.g. 'interior' string alias leaking through).
+    if (!Number.isFinite(targetPhaseId) || isNaN(targetPhaseId)) {
+      App.toast('Could not determine target phase. Please try again.', 'error');
+      return;
+    }
+
     if (!totalAmount || totalAmount <= 0) return App.toast('Enter a valid amount', 'error');
 
     if (btn) { btn.disabled = true; btn.textContent = 'Saving…'; }
@@ -446,6 +499,8 @@ Schema:
     App.toast('Bill saved!', 'success');
     if (phaseId === 'construction') {
       App.showConstructionBills();
+    } else if (phaseId === 'interior') {
+      App.showInteriorBills();
     } else {
       App.showPhaseBills(phaseId);
     }
@@ -475,11 +530,16 @@ Schema:
     `).join('');
 
     const isConstruction = (phaseId === 'construction');
-    const phaseSelectHtml = isConstruction ? `
+    const isInterior = (phaseId === 'interior');
+    const phaseSelectHtml = (isConstruction || isInterior) ? `
       <div class="field-group" style="margin-top:12px">
-        <label class="field-label" style="font-weight:700">Assign to Trade Phase *</label>
+        <label class="field-label" style="font-weight:700">Assign to ${isInterior ? 'Interior Section' : 'Trade'} Phase *</label>
         <select id="review-phase-id" class="field-input" style="background:var(--charcoal);border:1px solid var(--charcoal-border);color:var(--text-primary);padding:8px 10px;border-radius:6px;width:100%;box-sizing:border-box">
-          ${(proj?.phases || []).filter(p => p.id >= 1 && p.id <= 9).map(p => `
+          ${(proj?.phases || []).filter(p => {
+            if (isInterior) return !!p.isInterior;
+            const pid = Number(p.id);
+            return (pid >= 1 && pid <= 12 && pid !== 10) || (pid >= 30 && p.isCustom && !p.isInterior);
+          }).map(p => `
             <option value="${escapeAttr(p.id)}">${escapeHtml(p.name)}</option>
           `).join('')}
         </select>
@@ -560,6 +620,12 @@ Schema:
     });
 
     const targetPhaseId = parseInt(document.getElementById('review-phase-id').value) || parseInt(phaseId);
+    // H-07: guard against NaN phaseId (e.g. 'interior' string alias leaking through).
+    if (!Number.isFinite(targetPhaseId) || isNaN(targetPhaseId)) {
+      if (btn) { btn.disabled = false; btn.textContent = 'Save Bill to Ledger'; }
+      App.toast('Could not determine target phase. Please try again.', 'error');
+      return;
+    }
     const billObj = { vendor, date, totalAmount, items };
     await State.addBill(targetPhaseId, billObj);
     
@@ -568,6 +634,8 @@ Schema:
     // Re-render the view
     if (phaseId === 'construction') {
       App.showConstructionBills();
+    } else if (phaseId === 'interior') {
+      App.showInteriorBills();
     } else {
       App.showPhaseBills(phaseId);
     }
@@ -586,6 +654,8 @@ Schema:
         App.toast('Bill deleted', 'info');
         if (viewPhaseId === 'construction') {
           App.showConstructionBills();
+        } else if (viewPhaseId === 'interior') {
+          App.showInteriorBills();
         } else {
           App.showPhaseBills(viewPhaseId);
         }

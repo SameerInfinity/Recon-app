@@ -1,7 +1,7 @@
 {
-  "name": "recon-buildmanager",
+  "name": "arconza-buildmanager",
   "version": "2.0.0",
-  "description": "RECON — AI-Powered Construction Management & Dynamic Financial Ledger",
+  "description": "ARCONZA — AI-Powered Construction Management & Dynamic Financial Ledger",
   "main": "server.js",
   "scripts": {
     "start": "node server.js",

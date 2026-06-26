@@ -1,37 +1,75 @@
-// ═══════════════════════════════════════════
-// RECON Edge Function: ai-chat
+// ARCONZA — Supabase Edge Function: ai-chat
+// Port of server.js /api/ai/chat route for the standalone Android app.
+// Handles BOTH Build Assistant chat AND bill OCR (image scanning).
 //
-// Port of server.js /api/ai/chat (Express → Deno). Identical behavior:
-//   • proxies Gemini gemini-2.5-flash generateContent
-//   • hardcodes both CHAT and OCR system instructions server-side
-//     (client-sent systemInstruction is ignored except as a *hint* for
-//      which instruction to pick — never trusted verbatim)
-//   • sliding-window rate limit: 10 req / 60 s per user (or IP fallback)
-//   • input validation: contents array, max 12 messages, 100KB/msg
+// Deploy with: supabase functions deploy ai-chat --no-verify-jwt
 //
-// Secrets (set via `supabase secrets set ...`):
-//   GEMINI_API_KEY                — required
-//   UPSTASH_REDIS_REST_URL        — optional (rate limiting fails open)
-//   UPSTASH_REDIS_REST_TOKEN      — optional
+// Required Supabase secrets:
+//   GEMINI_API_KEY       — Google Gemini API key
+//   (UPSTASH_REDIS_REST_URL / TOKEN — optional, for rate limiting)
 //
-// The user's JWT (if present) is used to personalize the rate-limit bucket;
-// it is NOT required to call the function (matches server.js, which also
-// accepts anonymous callers, falling back to IP).
-// ═══════════════════════════════════════════
+// The function is deployed with --no-verify-jwt so anonymous callers
+// can access it (rate limiting falls back to IP if no JWT present).
 
-import { CORS_HEADERS, corsJson, handlePreflight, clientIp } from "../_shared/cors.ts";
-import { rateLimitByUserOrIp } from "../_shared/ratelimit.ts";
-import { userIdFromRequest } from "../_shared/auth.ts";
+import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
+import { createClient } from "https://esm.sh/@upstash/redis@1.34.0";
+import { Ratelimit } from "https://esm.sh/@upstash/ratelimit@2.0.0";
 
-const GEMINI_MODEL = "gemini-2.5-flash";
-const MAX_MESSAGES = 12;
-const MAX_MESSAGE_BYTES = 100_000;
-const RATE_LIMIT_WINDOW_S = 60;
-const RATE_LIMIT_MAX = 10;
+// ── CORS ──────────────────────────────────────────────────────
+const ALLOWED_ORIGINS = [
+  'http://localhost:8080',
+  'http://localhost:3000',
+  'http://localhost',
+  'https://localhost',
+  'capacitor://localhost',
+  'ionic://localhost',
+];
 
+function corsHeaders(req) {
+  const origin = req.headers.get('Origin') || '';
+  const allowed = ALLOWED_ORIGINS.includes(origin) ||
+    origin.startsWith('http://10.') ||
+    origin.startsWith('http://192.168.');
+  return {
+    'Access-Control-Allow-Origin': allowed ? origin : ALLOWED_ORIGINS[0],
+    'Access-Control-Allow-Methods': 'POST, OPTIONS',
+    'Access-Control-Allow-Headers': 'Content-Type, Authorization',
+    'Access-Control-Max-Age': '86400',
+  };
+}
+
+function json(data, status = 200, extraHeaders = {}) {
+  return new Response(JSON.stringify(data), {
+    status,
+    headers: { 'Content-Type': 'application/json', ...extraHeaders },
+  });
+}
+
+// ── Rate limiting (optional — fails open if Upstash not configured) ──
+let ratelimit = null;
+const UPSTASH_URL = Deno.env.get('UPSTASH_REDIS_REST_URL');
+const UPSTASH_TOKEN = Deno.env.get('UPSTASH_REDIS_REST_TOKEN');
+
+if (UPSTASH_URL && UPSTASH_TOKEN) {
+  try {
+    const redis = createClient({ url: UPSTASH_URL, token: UPSTASH_TOKEN });
+    ratelimit = new Ratelimit({
+      redis,
+      limiter: Ratelimit.slidingWindow(10, '60 s'),
+      analytics: true,
+    });
+    console.log('[ai-chat] Rate limiting enabled (Upstash)');
+  } catch (e) {
+    console.warn('[ai-chat] Upstash init failed, rate limiting disabled:', e.message);
+  }
+} else {
+  console.log('[ai-chat] No Upstash credentials — rate limiting disabled');
+}
+
+// ── Gemini system instructions ────────────────────────────────
 const CHAT_SYSTEM_INSTRUCTION = {
   parts: [{
-    text: `You are Build Assistant, an expert construction cost advisor embedded in RECON — a construction financial ledger app for Indian contractors and site builders.
+    text: `You are Build Assistant, an expert construction cost advisor embedded in ARCONZA — a construction financial ledger app for Indian contractors and site builders.
 
 You help with: Cost estimation and budget management in INR, Material selection and alternatives with local pricing, Construction best practices and ISI/BIS standards, Risk identification and mitigation, Phase-specific construction guidance, Subcontractor negotiation strategies.
 
@@ -40,8 +78,8 @@ IMPORTANT: The user's COMPLETE project data is provided in the first user turn. 
 Guidelines:
 - Quote exact figures from the data (use the ₹ symbol, lakhs/crores where appropriate).
 - Address the contractor directly as "you".
-- Respond concisely unless the user asked for a list/breakdown.`,
-  }],
+- Respond concisely unless the user asked for a list/breakdown.`
+  }]
 };
 
 const OCR_SYSTEM_INSTRUCTION = {
@@ -62,105 +100,127 @@ Schema:
       "amount": "Number"
     }
   ]
-}`,
-  }],
+}`
+  }]
 };
 
-Deno.serve(async (req: Request) => {
-  // CORS preflight
-  const preflight = handlePreflight(req);
-  if (preflight) return preflight;
-
-  if (req.method !== "POST") {
-    return corsJson({ error: "Method not allowed", message: "Use POST" }, { status: 405 });
+// ── Main handler ──────────────────────────────────────────────
+serve(async (req) => {
+  // Handle CORS preflight
+  if (req.method === 'OPTIONS') {
+    return new Response('ok', { headers: corsHeaders(req) });
   }
 
-  // ── Gemini key check ──
-  const geminiKey = Deno.env.get("GEMINI_API_KEY");
+  if (req.method !== 'POST') {
+    return json({ error: 'Method not allowed' }, 405, corsHeaders(req));
+  }
+
+  const _cors = corsHeaders(req);
+
+  // ── Check GEMINI_API_KEY ──────────────────────────────────
+  const geminiKey = Deno.env.get('GEMINI_API_KEY');
   if (!geminiKey) {
-    return corsJson({
-      error: "AI service not configured",
-      message: "GEMINI_API_KEY is not set. Run: supabase secrets set GEMINI_API_KEY=...",
-    }, { status: 503 });
+    console.error('[ai-chat] GEMINI_API_KEY not configured');
+    return json({
+      error: 'AI service not configured',
+      message: 'GEMINI_API_KEY secret is not set. Run: supabase secrets set GEMINI_API_KEY=...'
+    }, 503, _cors);
   }
 
-  // ── Rate limiting ──
-  const userId = userIdFromRequest(req);
-  const ip = clientIp(req);
-  const rl = await rateLimitByUserOrIp(userId, ip, {
-    url: Deno.env.get("UPSTASH_REDIS_REST_URL"),
-    token: Deno.env.get("UPSTASH_REDIS_REST_TOKEN"),
-  });
-
-  if (!rl.success) {
-    return corsJson({
-      error: "Rate limited",
-      message: "Too many AI requests. Please wait a moment.",
-      retryAfter: Math.ceil((rl.reset - Date.now()) / 1000),
-    }, {
-      status: 429,
-      headers: {
-        "X-RateLimit-Limit": String(rl.limit),
-        "X-RateLimit-Remaining": String(rl.remaining),
-        "X-RateLimit-Reset": String(rl.reset),
-      },
-    });
-  }
-
-  // ── Parse + validate body ──
-  let body: any;
+  // ── Parse request body ────────────────────────────────────
+  let body;
   try {
     body = await req.json();
-  } catch {
-    return corsJson({ error: "Invalid request", message: "Body must be valid JSON" }, { status: 400 });
+  } catch (e) {
+    return json({ error: 'Invalid JSON body' }, 400, _cors);
   }
 
   const { contents, generationConfig } = body;
 
+  // ── Validate contents ─────────────────────────────────────
   if (!contents || !Array.isArray(contents)) {
-    return corsJson({
-      error: "Invalid request",
-      message: 'Request body must include "contents" array',
-    }, { status: 400 });
+    return json({
+      error: 'Invalid request',
+      message: 'Request body must include "contents" array'
+    }, 400, _cors);
   }
 
-  if (contents.length > MAX_MESSAGES) {
-    return corsJson({
-      error: "Too many messages",
-      message: `Maximum ${MAX_MESSAGES} messages per request`,
-    }, { status: 400 });
+  if (contents.length > 12) {
+    return json({ error: 'Too many messages', message: 'Maximum 12 messages per request' }, 400, _cors);
   }
 
   for (const msg of contents) {
-    const textLen = msg.parts?.reduce((sum: number, p: any) => sum + (p.text?.length || 0), 0) || 0;
-    if (textLen > MAX_MESSAGE_BYTES) {
-      return corsJson({
-        error: "Message too long",
-        message: "Individual message exceeds 100KB",
-      }, { status: 400 });
+    const textLen = msg.parts?.reduce((sum, p) => sum + (p.text?.length || 0), 0) || 0;
+    if (textLen > 100000) {
+      return json({ error: 'Message too long', message: 'Individual message exceeds 100KB' }, 400, _cors);
     }
   }
 
-  // ── Pick the system instruction ──
-  // Client never controls the instruction text — only sends a *hint*
-  // (presence of an image, or "OCR"/"construction bills" in its instruction)
-  // that we use to choose between the chat and OCR personas.
-  let serverSystemInstruction: any = CHAT_SYSTEM_INSTRUCTION;
-  const clientInstructionText = body.systemInstruction?.parts?.[0]?.text || "";
-  const hasImage = contents.some((msg: any) =>
-    msg.parts?.some((part: any) => part.inlineData)
+  // Validate inline image sizes (Gemini ~4MB limit)
+  for (const msg of contents) {
+    const imgLen = msg.parts?.reduce((sum, p) => sum + (p.inlineData?.data?.length || 0), 0) || 0;
+    if (imgLen > 4_000_000) {
+      return json({ error: 'Image too large', message: 'Image must be under 3MB. Please compress and retry.' }, 413, _cors);
+    }
+  }
+
+  // ── Rate limiting ─────────────────────────────────────────
+  // Extract user identifier: JWT sub if present, else fall back to IP
+  let userId = 'anonymous';
+  try {
+    const authHeader = req.headers.get('Authorization') || '';
+    if (authHeader.startsWith('Bearer ')) {
+      const token = authHeader.replace('Bearer ', '');
+      const parts = token.split('.');
+      if (parts.length === 3) {
+        const payload = JSON.parse(atob(parts[1]));
+        userId = payload.sub || 'anonymous';
+      }
+    }
+  } catch (_) {}
+
+  const clientIp = req.headers.get('x-forwarded-for')?.split(',')[0]?.trim() ||
+                   req.headers.get('x-real-ip') || 'unknown';
+  const rateLimitKey = userId !== 'anonymous' ? userId : clientIp;
+
+  if (ratelimit) {
+    try {
+      const { success, reset } = await ratelimit.limit(rateLimitKey);
+      if (!success) {
+        return json({
+          error: 'Rate limited',
+          message: 'Too many AI requests. Please wait a moment.',
+          retryAfter: Math.ceil((reset - Date.now()) / 1000)
+        }, 429, _cors);
+      }
+    } catch (err) {
+      console.warn('[ai-chat] Rate limit check failed:', err.message);
+      // Continue without rate limiting if Redis is down (fail open)
+    }
+  }
+
+  // ── Determine system instruction ──────────────────────────
+  // Never trust client-sent systemInstruction — hardcode server-side
+  let serverSystemInstruction = CHAT_SYSTEM_INSTRUCTION;
+  const clientInstructionText = body.systemInstruction?.parts?.[0]?.text || '';
+  const hasImage = contents.some(msg =>
+    msg.parts?.some(part => part.inlineData)
   );
-  if (hasImage || clientInstructionText.includes("OCR") || clientInstructionText.includes("construction bills")) {
+
+  if (hasImage || clientInstructionText.includes('OCR') || clientInstructionText.includes('construction bills')) {
     serverSystemInstruction = OCR_SYSTEM_INSTRUCTION;
   }
 
-  // ── Call Gemini ──
-  try {
-    const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent?key=${geminiKey}`;
+  // ── Call Gemini API ───────────────────────────────────────
+  const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${geminiKey}`;
 
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 30000);
+
+  try {
     const response = await fetch(geminiUrl, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         systemInstruction: serverSystemInstruction,
         contents,
@@ -168,31 +228,40 @@ Deno.serve(async (req: Request) => {
           temperature: 0.7,
           maxOutputTokens: 2048,
           topP: 0.9,
-        },
+        }
       }),
+      signal: controller.signal,
     });
+
+    clearTimeout(timeout);
 
     const data = await response.json();
 
     if (!response.ok) {
-      return corsJson({
-        error: "Gemini API error",
-        message: data?.error?.message || `Status ${response.status}`,
-      }, { status: response.status });
+      console.error('[Gemini API error]', JSON.stringify(data));
+      return json({
+        error: 'Gemini API error',
+        message: data.error?.message || `Status ${response.status}`,
+      }, response.status, _cors);
     }
 
-    return corsJson(data, {
-      headers: {
-        "X-RateLimit-Limit": String(rl.limit),
-        "X-RateLimit-Remaining": String(rl.remaining),
-        "X-RateLimit-Reset": String(rl.reset),
-      },
-    });
-  } catch (err) {
-    console.error("[ai-chat] Gemini proxy error:", err);
-    return corsJson({
-      error: "AI proxy error",
-      message: "Failed to reach Gemini API.",
-    }, { status: 500 });
+    // Return Gemini response directly to client
+    return json(data, 200, _cors);
+
+  } catch (fetchErr) {
+    clearTimeout(timeout);
+
+    if (fetchErr.name === 'AbortError') {
+      return json({
+        error: 'AI service timeout',
+        message: 'The AI service took too long to respond. Please try again.'
+      }, 504, _cors);
+    }
+
+    console.error('[ai-chat] Fetch error:', fetchErr);
+    return json({
+      error: 'AI service error',
+      message: fetchErr.message || 'Failed to reach AI service'
+    }, 500, _cors);
   }
 });

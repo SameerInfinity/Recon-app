@@ -1,6 +1,6 @@
 {
   "appId": "com.recon.buildmanager",
-  "appName": "RECON",
+  "appName": "ARCONZA",
   "webDir": "public",
   "bundledWebRuntime": false,
   "server": {

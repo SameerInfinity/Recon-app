@@ -3,10 +3,10 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<meta name="description" content="RECON — Sign in to your construction management dashboard.">
+<meta name="description" content="ARCONZA — Sign in to your construction management dashboard.">
 <meta name="theme-color" content="#EAECEF">
 <meta name="apple-mobile-web-app-capable" content="yes">
-<title>RECON — Sign In</title>
+<title>ARCONZA — Sign In</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Jost:wght@300;400;500;600;700;800;900&family=IBM+Plex+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
@@ -175,13 +175,39 @@
   .spinner {
     display: inline-block; width: 16px; height: 16px;
     border: 2px solid rgba(123,70,38,0.20); border-top-color: var(--amber);
-    border-radius: 50%; animation: spin 0.6s linear infinite;
+    border-radius: 50%; animation: spin 0.65s linear infinite;
     vertical-align: middle; margin-right: 6px;
+    will-change: transform;
   }
   @keyframes spin { to { transform: rotate(360deg); } }
+  /* Smooth button state transitions */
+  .auth-btn { transition: all 220ms cubic-bezier(0.22, 1, 0.36, 1); }
+  .auth-btn:disabled { opacity: 0.7; cursor: not-allowed; }
+  .auth-btn:active:not(:disabled) { transform: scale(0.98); }
+  /* Smooth auth-card entrance */
+  .auth-card { animation: authCardIn 480ms cubic-bezier(0.22, 1, 0.36, 1) both; }
+  @keyframes authCardIn {
+    from { opacity: 0; transform: translateY(12px); }
+    to   { opacity: 1; transform: translateY(0); }
+  }
   @media (prefers-reduced-motion: reduce) {
     *, ::before, ::after { animation-duration: 0.01ms !important; transition-duration: 0.01ms !important; }
   }
+  /* Profile wizard */
+  #profile-wizard { display: none; flex-direction: column; align-items: center; gap: 20px; padding: 20px 0; animation: authCardIn 480ms cubic-bezier(0.22,1,0.36,1) both; }
+  .wiz-step { text-align: center; width: 100%; max-width: 340px; }
+  .wiz-dots { display: flex; gap: 8px; justify-content: center; margin-bottom: 24px; }
+  .wiz-dot { width: 8px; height: 8px; border-radius: 50%; background: rgba(123,70,38,0.15); transition: all 200ms ease-out; }
+  .wiz-dot.active { width: 24px; border-radius: 99px; background: var(--amber); }
+  .wiz-dot.done { background: var(--amber); opacity: 0.5; }
+  .wiz-title { font-size: 22px; font-weight: 700; color: #2E2820; margin: 0 0 8px; }
+  .wiz-sub { font-size: 14px; color: #6F7680; margin: 0 0 24px; }
+  .wiz-input-wrap { margin-bottom: 24px; }
+  .wiz-actions { display: flex; flex-direction: column; gap: 10px; align-items: center; }
+  .wiz-skip-btn { background: none; border: none; color: #9AA2AC; font-size: 12px; font-weight: 500; cursor: pointer; font-family: inherit; padding: 8px; transition: color 200ms; }
+  .wiz-skip-btn:hover { color: #6F7680; }
+  .auth-input { width: 100%; padding: 14px 16px; border: 1.5px solid rgba(123,70,38,0.15); border-radius: 12px; font-size: 15px; font-family: inherit; background: #fff; color: #2E2820; outline: none; transition: border-color 200ms; box-sizing: border-box; }
+  .auth-input:focus { border-color: var(--amber); }
 </style>
 </head>
 <body>
@@ -190,10 +216,15 @@
   <a href="/" class="auth-back">← Back to home</a>
   <div class="auth-logo">
     <div class="auth-logo-icon" id="auth-logo-icon">
-      <img src="icons/icon.svg" alt="RECON" width="40" height="40">
+      <img src="icons/icon.svg" alt="ARCONZA" width="40" height="40">
     </div>
-    <h1>RECON</h1>
+    <h1>ARCONZA</h1>
     <p>Site · Scope · Spend</p>
+  </div>
+
+  <!-- Profile Onboarding Wizard (shown after signup) -->
+  <div id="profile-wizard">
+    <div id="wizard-content"></div>
   </div>
 
   <div class="auth-card">
@@ -363,7 +394,7 @@ const AuthUI = (() => {
       return showError(`Too many login attempts. Locked out for ${remainingSecs} seconds.`);
     }
 
-    const email = document.getElementById('login-email').value.trim();
+    const email = document.getElementById('login-email').value.trim().toLowerCase();
     const password = document.getElementById('login-password').value;
 
     if (!email || !password) return showError('Please fill in all fields');
@@ -391,7 +422,7 @@ const AuthUI = (() => {
     e.preventDefault();
     hideMessages();
     const name = document.getElementById('register-name').value.trim();
-    const email = document.getElementById('register-email').value.trim();
+    const email = document.getElementById('register-email').value.trim().toLowerCase();
     const password = document.getElementById('register-password').value;
 
     if (!name || !email || !password) return showError('Please fill in all fields');
@@ -407,13 +438,172 @@ const AuthUI = (() => {
         showSuccess('Account created! Check your email to verify, then sign in.');
         switchTab('login');
       } else {
-        showSuccess('Account created! Redirecting...');
-        setTimeout(() => { window.location.href = (window.CapacitorBridge && window.CapacitorBridge.isNative) ? '/index.html' : '/'; }, 500);
+        // Account created with active session → show profile onboarding wizard
+        showSuccess('Account created! Let\'s set up your profile...');
+        setTimeout(() => showProfileWizard(name), 600);
       }
     } catch (err) {
       showError(err.message || 'Registration failed. Try a different email.');
     }
     setLoading('register-btn', false);
+  }
+
+  // ════════════════════════════════════════════════════════════════
+  // PROFILE ONBOARDING WIZARD
+  // Multi-step: Name → Role → Phone → Profile Pic
+  // Each step has a "Skip" option. Keeps it conversational & fun.
+  // ════════════════════════════════════════════════════════════════
+  let _wizardData = { fullName: '', role: '', phone: '', avatarUrl: '' };
+  let _wizardStep = 0;
+  let _avatarDataUrl = '';
+
+  function showProfileWizard(initialName) {
+    _wizardData = { fullName: initialName || '', role: '', phone: '', avatarUrl: '' };
+    _wizardStep = 0;
+    _avatarDataUrl = '';
+    const wizard = document.getElementById('profile-wizard');
+    if (!wizard) return;
+    // Hide the auth card, show wizard
+    document.querySelector('.auth-card').style.display = 'none';
+    wizard.style.display = 'flex';
+    renderWizardStep();
+  }
+
+  function renderWizardStep() {
+    const steps = [
+      {
+        title: 'Nice to meet you! 👋',
+        sub: 'Spare to tell us your name?',
+        placeholder: 'e.g. Rajesh Sharma',
+        value: _wizardData.fullName,
+        type: 'text',
+        skipText: 'Don\'t wanna tell',
+      },
+      {
+        title: 'What do you do? 🔨',
+        sub: 'What\'s generally your role in a project?',
+        placeholder: 'e.g. Contractor, Architect, Site Engineer...',
+        value: _wizardData.role,
+        type: 'select',
+        options: ['Owner / Builder', 'Contractor', 'Architect', 'Site Engineer', 'Project Manager', 'Interior Designer', 'Supplier', 'Other'],
+        skipText: 'Prefer not to say',
+      },
+      {
+        title: 'How can we reach you? 📱',
+        sub: 'What\'s your phone number?',
+        placeholder: '10-digit number',
+        value: _wizardData.phone,
+        type: 'tel',
+        skipText: 'Maybe later',
+      },
+      {
+        title: 'Say cheese! 📸',
+        sub: 'Want to add a profile picture?',
+        value: _wizardData.avatarUrl,
+        type: 'avatar',
+        skipText: 'No thanks',
+      },
+    ];
+    const step = steps[_wizardStep];
+    if (!step) return finishWizard();
+
+    const content = document.getElementById('wizard-content');
+    const dotsHtml = steps.map((_, i) =>
+      `<span class="wiz-dot ${i < _wizardStep ? 'done' : ''} ${i === _wizardStep ? 'active' : ''}"></span>`
+    ).join('');
+    const isLast = _wizardStep === steps.length - 1;
+
+    let inputHtml = '';
+    if (step.type === 'text' || step.type === 'tel') {
+      inputHtml = `<input type="${step.type}" id="wizard-input" class="auth-input" placeholder="${step.placeholder}" value="${step.value || ''}" style="text-align:center;font-size:16px" autocomplete="off">`;
+    } else if (step.type === 'select') {
+      inputHtml = `<select id="wizard-input" class="auth-input" style="text-align:center;font-size:16px;appearance:auto">
+        <option value="">Select your role...</option>
+        ${step.options.map(o => `<option value="${o}" ${step.value === o ? 'selected' : ''}>${o}</option>`).join('')}
+      </select>`;
+    } else if (step.type === 'avatar') {
+      inputHtml = `
+        <div style="display:flex;flex-direction:column;align-items:center;gap:14px">
+          <div id="wizard-avatar-preview" style="width:88px;height:88px;border-radius:50%;background:var(--amber-glow);border:2px dashed var(--amber-border);display:flex;align-items:center;justify-content:center;overflow:hidden;cursor:pointer" onclick="document.getElementById('wizard-avatar-file').click()">
+            ${_avatarDataUrl ? `<img src="${_avatarDataUrl}" style="width:100%;height:100%;object-fit:cover">` : '<svg viewBox="0 0 24 24" width="32" height="32" fill="none" stroke="var(--amber)" stroke-width="1.5"><circle cx="12" cy="8" r="4"/><path d="M4 21c1.5-4 5-6 8-6s6.5 2 8 6"/></svg>'}
+          </div>
+          <input type="file" id="wizard-avatar-file" accept="image/*" style="display:none" onchange="AuthUI.handleAvatarUpload(event)">
+          <p style="font-size:11px;color:var(--text-muted)">Tap to upload</p>
+        </div>`;
+    }
+
+    content.innerHTML = `
+      <div class="wiz-step">
+        <div class="wiz-dots">${dotsHtml}</div>
+        <h2 class="wiz-title">${step.title}</h2>
+        <p class="wiz-sub">${step.sub}</p>
+        <div class="wiz-input-wrap">${inputHtml}</div>
+        <div class="wiz-actions">
+          <button class="wiz-skip-btn" onclick="AuthUI.wizardSkip()">${step.skipText}</button>
+          <button class="auth-btn" onclick="AuthUI.wizardNext()" style="background:var(--amber);color:#fff;border:none">${isLast ? 'Finish' : 'Next'}</button>
+        </div>
+      </div>`;
+    setTimeout(() => { const inp = document.getElementById('wizard-input'); if (inp && inp.focus) inp.focus(); }, 100);
+  }
+
+  function wizardNext() {
+    const inp = document.getElementById('wizard-input');
+    if (inp) {
+      const val = inp.value.trim();
+      if (_wizardStep === 0) _wizardData.fullName = val;
+      else if (_wizardStep === 1) _wizardData.role = val;
+      else if (_wizardStep === 2) _wizardData.phone = val;
+    }
+    if (_wizardStep === 3 && _avatarDataUrl) {
+      _wizardData.avatarUrl = _avatarDataUrl;
+    }
+    _wizardStep++;
+    renderWizardStep();
+  }
+
+  function wizardSkip() {
+    // Keep whatever was already set (could be empty), just advance
+    _wizardStep++;
+    renderWizardStep();
+  }
+
+  function handleAvatarUpload(e) {
+    const file = e.target.files[0];
+    if (!file) return;
+    if (file.size > 2 * 1024 * 1024) { showError('Image must be under 2MB'); return; }
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      _avatarDataUrl = ev.target.result;
+      const preview = document.getElementById('wizard-avatar-preview');
+      if (preview) preview.innerHTML = `<img src="${_avatarDataUrl}" style="width:100%;height:100%;object-fit:cover">`;
+    };
+    reader.readAsDataURL(file);
+  }
+
+  async function finishWizard() {
+    const wizard = document.getElementById('profile-wizard');
+    const content = document.getElementById('wizard-content');
+    content.innerHTML = `<div style="text-align:center;padding:40px 20px"><div class="spinner" style="width:28px;height:28px;margin:0 auto 16px"></div><p style="color:var(--text-muted);font-size:14px">Saving your profile...</p></div>`;
+
+    try {
+      // Update the profile in Supabase
+      if (typeof SupabaseClient !== 'undefined' && SupabaseClient.updateProfile) {
+        await SupabaseClient.updateProfile({
+          fullName: _wizardData.fullName || undefined,
+          role: _wizardData.role || undefined,
+          phone: _wizardData.phone || undefined,
+          avatarUrl: _wizardData.avatarUrl || undefined,
+          onboardingComplete: true,
+        });
+      }
+    } catch (err) {
+      console.warn('[Profile wizard] updateProfile error:', err.message);
+    }
+
+    // Redirect to app
+    setTimeout(() => {
+      window.location.href = (window.CapacitorBridge && window.CapacitorBridge.isNative) ? '/index.html' : '/';
+    }, 500);
   }
 
   async function handleForgotPassword(e) {
@@ -465,7 +655,7 @@ const AuthUI = (() => {
     }
   }
 
-  return { switchTab, showForgotPassword, handleLogin, handleRegister, handleForgotPassword, handleGoogle };
+  return { switchTab, showForgotPassword, handleLogin, handleRegister, handleForgotPassword, handleGoogle, showProfileWizard, wizardNext, wizardSkip, handleAvatarUpload };
 })();
 </script>
 

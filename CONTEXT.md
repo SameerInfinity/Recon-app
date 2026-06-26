@@ -1,4 +1,4 @@
-# RECON — AI Context File
+# ARCONZA — AI Context File
 
 > **Purpose:** Give any AI assistant full understanding of this project to work
 > efficiently without breaking anything. Read this FIRST before touching code.
@@ -9,7 +9,7 @@
 
 | Field | Value |
 |---|---|
-| **App Name** | RECON — AI-Powered Construction Management & Dynamic Financial Ledger |
+| **App Name** | ARCONZA — AI-Powered Construction Management & Dynamic Financial Ledger |
 | **Package** | `recon-buildmanager` v2.0.0 |
 | **Target Users** | Indian contractors, site builders, construction managers |
 | **Currency** | INR (₹) — all financial figures in Indian Rupees |
@@ -177,7 +177,7 @@
 | `android/app/src/main/res/xml/network_security_config.xml` | Network security | Allows Render, Supabase, Google, CDN domains. Must use `includeSubdomains` (NOT `includeSubmodules` — that was a typo that broke builds) |
 | `android/app/build.gradle` | Build config | Signing via `keystore.properties` (NOT in capacitor.config.json). `minifyEnabled true` for release. |
 | `android/keystore.properties` | Keystore passwords | `storeFile=../recon-release-key.jks` (relative to `android/app/`). GITIGNORED — never commit. |
-| `android/recon-release-key.jks` | Release signing key | GITIGNORED. Password: `RECON2024secure`. Alias: `recon`. IRREPLACEABLE — lose it = can't update Play Store listing. |
+| `android/recon-release-key.jks` | Release signing key | GITIGNORED. Password: `ARCONZA2024secure`. Alias: `recon`. IRREPLACEABLE — lose it = can't update Play Store listing. |
 | `android/app/proguard-rules.pro` | ProGuard rules | Keeps Capacitor bridge, Supabase, Google Sign-In classes from obfuscation |
 
 ---
@@ -677,4 +677,4 @@ profiles (auth.uid)
 ---
 
 *Last updated: 2026-06-21*
-*Version: RECON v2.1.0 (Android standalone via Supabase Edge Functions)*
+*Version: ARCONZA v2.1.0 (Android standalone via Supabase Edge Functions)*

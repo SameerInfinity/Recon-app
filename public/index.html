@@ -2,17 +2,22 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, viewport-fit=cover">
-<meta name="description" content="RECON — AI-Powered Construction Management & Dynamic Financial Ledger for contractors and site builders.">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<meta name="description" content="ARCONZA — AI-Powered Construction Management & Dynamic Financial Ledger for contractors and site builders.">
 <meta name="theme-color" content="#EAECEF">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-<title>RECON — Construction Ledger</title>
+<title>ARCONZA — Construction Ledger</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Jost:wght@300;400;500;600;700;800;900&family=IBM+Plex+Mono:wght@400;500;600;700&display=swap" rel="stylesheet" crossorigin>
 <link rel="manifest" href="/manifest.json">
 <link rel="icon" href="/icons/icon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="/icons/icon.svg">
+<link rel="preload" href="css/main.css?v=30" as="style">
+<link rel="preload" href="js/security.js?v=1" as="script">
+<link rel="preload" href="js/app.js?v=23" as="script">
+<link rel="preload" href="js/state.js?v=22" as="script">
 <script>
   if ('serviceWorker' in navigator) {
     const isLocal = window.location.hostname.includes('localhost') || 
@@ -39,7 +44,7 @@
     }
   }
 </script>
-<link rel="stylesheet" href="css/main.css?v=22">
+<link rel="stylesheet" href="css/main.css?v=30">
 </head>
 <body>
 
@@ -47,12 +52,58 @@
 <div id="splash-screen">
   <div class="splash-core">
     <span class="splash-logo">
-      <img src="icons/icon.svg" alt="RECON" width="64" height="64">
+      <img src="icons/icon.svg" alt="ARCONZA" width="64" height="64">
     </span>
-    <h1 class="splash-title">RECON</h1>
+    <h1 class="splash-title">ARCONZA</h1>
     <p class="splash-tag">Site · Scope · Spend</p>
   </div>
-  <div class="splash-loader"><span></span></div>
+  <!-- Circular progress ring (replaces old sideways bar) -->
+  <div class="splash-ring-wrap" id="splash-ring-wrap">
+    <svg class="splash-ring-svg" viewBox="0 0 44 44" aria-hidden="true">
+      <defs>
+        <linearGradient id="splashGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+          <stop offset="0%" stop-color="#C28543"/>
+          <stop offset="100%" stop-color="#E8923A"/>
+        </linearGradient>
+      </defs>
+      <circle class="splash-ring-track" cx="22" cy="22" r="18"/>
+      <circle class="splash-ring-fill"  cx="22" cy="22" r="18"/>
+    </svg>
+  </div>
+</div>
+
+<!-- ─────────────── GLOBAL LOADING OVERLAY ─────────────── -->
+<!-- Shown via App.showLoading(message) / App.hideLoading().
+     Non-blocking, smooth fade, used for cloud sync / data sending / project connection. -->
+<div id="arconza-loading-overlay" aria-hidden="true">
+  <div class="arconza-loading-card">
+    <div class="arconza-loading-spinner"></div>
+    <div class="arconza-loading-message" id="arconza-loading-message">Working…</div>
+    <div class="arconza-loading-sub" id="arconza-loading-sub" style="display:none"></div>
+  </div>
+</div>
+
+<!-- ─────────────── WALKTHROUGH TOOLTIP OVERLAY ─────────────── -->
+<!-- Spotlight + tooltip card for the in-app feature tour.
+     Shown via App.startWalkthrough() / hidden via App.stopWalkthrough(). -->
+<div id="walkthrough-overlay" aria-hidden="true">
+  <div class="wt-panel wt-panel-top" id="wt-panel-top"></div>
+  <div class="wt-panel wt-panel-bottom" id="wt-panel-bottom"></div>
+  <div class="wt-panel wt-panel-left" id="wt-panel-left"></div>
+  <div class="wt-panel wt-panel-right" id="wt-panel-right"></div>
+  <div class="wt-spotlight" id="wt-spotlight"></div>
+  <div class="wt-tooltip" id="wt-tooltip">
+    <div class="wt-step-badge" id="wt-step-badge">Step 1 of 8</div>
+    <div class="wt-title" id="wt-title">Welcome!</div>
+    <div class="wt-desc" id="wt-desc">Let's take a quick tour.</div>
+    <div class="wt-controls">
+      <button class="wt-btn wt-btn-skip" id="wt-skip" type="button">Skip tour</button>
+      <div class="wt-btn-group">
+        <button class="wt-btn" id="wt-back" type="button" style="display:none">Back</button>
+        <button class="wt-btn wt-btn-primary" id="wt-next" type="button">Next</button>
+      </div>
+    </div>
+  </div>
 </div>
 
 <!-- ─────────────── ONBOARDING ─────────────── -->
@@ -66,12 +117,13 @@
   <header class="onb-topbar">
     <span class="onb-brand">
       <img src="icons/icon.svg" alt="" width="22" height="22">
-      <span>RECON</span>
+      <span>ARCONZA</span>
     </span>
     <button class="onb-skip" id="onb-skip" type="button">Skip</button>
   </header>
 
   <div class="onb-stage" id="onb-stage">
+    <!-- ── SLIDE 1: App overview — what ARCONZA is ── -->
     <section class="onb-slide is-active" data-index="0">
       <div class="onb-card">
         <div class="onb-art">
@@ -79,11 +131,12 @@
           <span class="onb-art-glow" aria-hidden="true"></span>
           <img src="img/onb1.jpg" alt="" loading="eager" width="280" height="280">
         </div>
-        <div class="onb-step-badge">Built for builders</div>
-        <h2 class="onb-title">Track every rupee, down to the last bag of cement</h2>
-        <p class="onb-desc">A living financial ledger for your site — materials, labour and vendors, always balanced and always in your pocket.</p>
+        <div class="onb-step-badge">Welcome to ARCONZA</div>
+        <h2 class="onb-title">Your complete construction command center</h2>
+        <p class="onb-desc">Track every phase, every material, every labour payment and every vendor udhaar — all in one app built for Indian contractors and site builders.</p>
       </div>
     </section>
+    <!-- ── SLIDE 2: Key features at a glance ── -->
     <section class="onb-slide" data-index="1">
       <div class="onb-card">
         <div class="onb-art">
@@ -91,11 +144,12 @@
           <span class="onb-art-glow" aria-hidden="true"></span>
           <img src="img/onb2.jpg" alt="" loading="lazy" width="280" height="280">
         </div>
-        <div class="onb-step-badge">Phase by phase</div>
-        <h2 class="onb-title">Plan, scope and watch every phase progress</h2>
-        <p class="onb-desc">From foundation to finishing — organise construction and interior work, RA bills and inventory in one clean flow.</p>
+        <div class="onb-step-badge">What you can do</div>
+        <h2 class="onb-title">Construction, Interiors, Ledgers &amp; AI — all connected</h2>
+        <p class="onb-desc">Log material &amp; labour costs per phase, scan bills with AI, track vendor khata, manage RA bills, site photos, flat sales and get smart cost insights from your AI Build Assistant.</p>
       </div>
     </section>
+    <!-- ── SLIDE 3: Comprehensive guide prompt ── -->
     <section class="onb-slide" data-index="2">
       <div class="onb-card">
         <div class="onb-art">
@@ -103,9 +157,18 @@
           <span class="onb-art-glow" aria-hidden="true"></span>
           <img src="img/onb3.jpg" alt="" loading="lazy" width="280" height="280">
         </div>
-        <div class="onb-step-badge">Your smart sidekick</div>
-        <h2 class="onb-title">An AI Build Assistant that flags risks early</h2>
-        <p class="onb-desc">Get instant cost insights and risk checks as you build — you stay fully in control, it just keeps watch.</p>
+        <div class="onb-step-badge">Ready to start?</div>
+        <h2 class="onb-title">Want a quick walkthrough of the app?</h2>
+        <p class="onb-desc">We'll guide you through the Construction tab, Interior sections, Ledgers, and the AI Build Assistant so you can hit the ground running. Takes about a minute.</p>
+        <div class="onb-choice-row">
+          <button class="onb-choice-btn onb-choice-yes" id="onb-walkthrough-yes" type="button">
+            <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+            <span>Yes, show me around</span>
+          </button>
+          <button class="onb-choice-btn onb-choice-no" id="onb-walkthrough-no" type="button">
+            <span>I'll explore on my own</span>
+          </button>
+        </div>
       </div>
     </section>
   </div>
@@ -128,8 +191,8 @@
 <!-- ─────────────── WELCOME / PROJECT PICKER ─────────────── -->
 <div id="welcome-screen" class="m-welcome">
   <div class="m-welcome-hero">
-    <span class="m-welcome-logo" id="welcome-logo-icon"><img src="icons/icon.svg" alt="RECON" width="42" height="42"></span>
-    <h1 class="m-welcome-title">RECON</h1>
+    <span class="m-welcome-logo" id="welcome-logo-icon"><img src="icons/icon.svg" alt="ARCONZA" width="42" height="42"></span>
+    <h1 class="m-welcome-title">ARCONZA</h1>
     <p class="m-welcome-tag">Site. Scope. Spend.</p>
     <p class="m-welcome-sub">Track every rupee. Every phase. Every trade — from your pocket.</p>
   </div>
@@ -169,7 +232,7 @@
     <div style="padding: 12px 14px 20px; border-bottom: 1px solid var(--border); margin-bottom: 8px;">
       <div style="display: flex; align-items: center; gap: 10px;">
         <img src="icons/icon.svg" width="28" height="28" alt="">
-        <span style="font-weight: 700; font-size: 18px; letter-spacing: -0.01em; color: var(--text); font-family: var(--font-display);">RECON</span>
+        <span style="font-weight: 700; font-size: 18px; letter-spacing: -0.01em; color: var(--text); font-family: var(--font-display);">ARCONZA</span>
       </div>
     </div>
 
@@ -212,7 +275,7 @@
     </button>
     <button class="ds-nav-item" data-tab="flatsales" onclick="App.showFlatSales()">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>
-      <span>Flat Sales / Purchaser</span>
+      <span>Flat / Shop Purchaser</span>
     </button>
     <button class="ds-nav-item" data-tab="quickleads" onclick="App.showQuickLeads()">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><line x1="19" y1="8" x2="19" y2="14"/><line x1="22" y1="11" x2="16" y2="11"/></svg>
@@ -256,7 +319,16 @@
 
   <!-- USER DROPDOWN -->
   <div class="m-user-dropdown hidden" id="user-dropdown">
-    <div class="m-user-email" id="user-email-display">Not signed in</div>
+    <div class="m-user-info" id="user-info-display">
+      <div class="m-user-avatar" id="user-avatar-display" style="width:40px;height:40px;border-radius:50%;background:var(--amber-glow);display:flex;align-items:center;justify-content:center;flex-shrink:0;overflow:hidden">
+        <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="var(--amber)" stroke-width="1.5"><circle cx="12" cy="8" r="4"/><path d="M4 21c1.5-4 5-6 8-6s6.5 2 8 6"/></svg>
+      </div>
+      <div style="min-width:0">
+        <div id="user-name-display" style="font-weight:700;font-size:14px;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">Loading...</div>
+        <div class="m-user-email" id="user-email-display" style="font-size:11px;color:var(--text-muted)">Not signed in</div>
+      </div>
+    </div>
+    <button class="m-menu-item" onclick="App.openAccountSettings()"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>  Account Settings</button>
     <button class="m-menu-item" id="btn-delete-project" onclick="App.confirmDeleteProject()"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>  Delete this project</button>
     <div class="m-menu-divider"></div>
     <button class="m-menu-item" onclick="App.signOut()"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>  Sign out</button>
@@ -309,8 +381,12 @@
     </header>
     <div class="m-drawer-watching" id="ai-watching">Watching: Dashboard</div>
     <div class="m-drawer-messages" id="ai-messages">
-      <div class="ai-message ai-intro">
+      <div class="ai-message ai-bot ai-intro">
+        <div class="ai-msg-icon" style="background:var(--amber-glow);color:var(--amber);border-radius:8px;width:28px;height:28px;display:flex;align-items:center;justify-content:center;flex-shrink:0">
+          <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="7" width="18" height="13" rx="3"/><path d="M8 7V5a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><circle cx="12" cy="13" r="2"/></svg>
+        </div>
         <div class="ai-msg-body">
+          <div class="ai-msg-type">Build Assistant</div>
           <p>I'm your Build Assistant. As you fill in each section, I'll flag risks and help you think through costs.</p>
           <p style="color:var(--text-muted);font-size:12px;margin-top:6px">You're always in control — I'm just the sidekick.</p>
         </div>
@@ -323,7 +399,7 @@
   </aside>
 
   <!-- GLOBAL SEARCH OVERLAY -->
-  <div id="global-search-overlay" style="display:none;position:fixed;inset:0;z-index:3000;background:rgba(0,0,0,0.7);backdrop-filter:blur(4px)" onclick="App.closeSearch(event)">
+  <div id="global-search-overlay" style="display:none;position:fixed;inset:0;z-index:9700;background:rgba(0,0,0,0.7);backdrop-filter:blur(4px)" onclick="App.closeSearch(event)">
     <div style="position:absolute;top:10%;left:50%;transform:translateX(-50%);width:min(94vw,640px);background:var(--charcoal-surface);border:1.5px solid var(--charcoal-border);border-radius:var(--r-xl);overflow:hidden;box-shadow:0 24px 80px rgba(0,0,0,0.5)">
       <!-- Search input -->
       <div style="display:flex;align-items:center;gap:10px;padding:14px 16px;border-bottom:1px solid var(--charcoal-border)">
@@ -374,43 +450,56 @@
 <script src="js/security.js?v=1"></script>
 <script src="js/capacitor-bridge.js?v=1"></script>
 <script src="js/supabase.min.js"></script>
-<script src="js/supabase-client.js?v=22"></script>
-<script src="js/onboarding.js?v=20"></script>
+<script src="js/supabase-client.js?v=24"></script>
+<script src="js/onboarding.js?v=22"></script>
 <script src="js/icons.js?v=20"></script>
-<script src="js/state.js?v=20"></script>
-<script src="js/financial.js?v=21"></script>
-<script src="js/dashboard.js?v=20"></script>
+<script src="js/state.js?v=22"></script>
+<script src="js/financial.js?v=22"></script>
+<script src="js/dashboard.js?v=22"></script>
 <script src="js/estimation.js?v=3"></script>
-<script src="js/phases.js?v=21"></script>
-<script src="js/ai.js?v=20"></script>
+<script src="js/phases.js?v=22"></script>
+<script src="js/ai.js?v=25"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
 <script src="js/export.js?v=20"></script>
 <script src="js/labour-vendors.js?v=21"></script>
 <script src="js/vendor-khata.js?v=21"></script>
 <script src="js/site-inventory.js?v=20"></script>
 <script src="js/ra-bills.js?v=20"></script>
-<script src="js/bill-scanner.js?v=21"></script>
-<script src="js/phases-new-core.js?v=20"></script>
+<script src="js/bill-scanner.js?v=22"></script>
+<script src="js/phases-new-core.js?v=22"></script>
 <script src="js/flat-sales.js?v=20"></script>
 <script src="js/quick-leads.js?v=1"></script>
 <script src="js/site-photos.js?v=1"></script>
-<script src="js/app.js?v=20"></script>
+<script src="js/app.js?v=23"></script>
 <script>
   // D-04: Global unhandled promise rejection handler — prevents silent failures
   // from fire-and-forget async calls across all modules.
   window.addEventListener('unhandledrejection', function(event) {
-    console.error('[RECON] Unhandled promise rejection:', event.reason);
+    console.error('[ARCONZA] Unhandled promise rejection:', event.reason);
     // Prevent the default console error (we already logged it above)
     event.preventDefault();
   });
 
   // Sign-in email display
   if (typeof SupabaseClient !== 'undefined') {
-    SupabaseClient.onReady && SupabaseClient.onReady(() => {
+    SupabaseClient.onReady && SupabaseClient.onReady(async () => {
       const u = SupabaseClient.getUser && SupabaseClient.getUser();
       if (u) {
         const el = document.getElementById('user-email-display');
         if (el) el.textContent = u.email;
+        // Load profile and populate user menu
+        if (SupabaseClient.loadProfile) {
+          try { await SupabaseClient.loadProfile(); } catch (_) {}
+        }
+        const profile = SupabaseClient.getProfile && SupabaseClient.getProfile();
+        const nameEl = document.getElementById('user-name-display');
+        if (nameEl) {
+          nameEl.textContent = profile?.full_name || u.user_metadata?.full_name || u.email?.split('@')[0] || 'User';
+        }
+        const avatarEl = document.getElementById('user-avatar-display');
+        if (avatarEl && profile?.avatar_url) {
+          avatarEl.innerHTML = '<img src="' + profile.avatar_url + '" style="width:100%;height:100%;object-fit:cover">';
+        }
       }
     });
   }

@@ -104,7 +104,7 @@ const QuickLeads = (() => {
       if (checkResult && checkResult.granted) return true;
 
       // Step 2: Request via native dialog
-      // This is what shows the system popup — "Allow RECON to access your call log?"
+      // This is what shows the system popup — "Allow ARCONZA to access your call log?"
       const reqResult = await CallLog.requestPermission();
       return !!(reqResult && reqResult.granted);
     } catch (e) {
@@ -272,7 +272,7 @@ const QuickLeads = (() => {
   //
   // When the user taps "Add Last Call" on Android:
   //   1. We call CallLog.requestPermission() — this shows the NATIVE
-  //      Android permission dialog ("Allow RECON to access your call log?")
+  //      Android permission dialog ("Allow ARCONZA to access your call log?")
   //   2. If the user taps "Allow" → we read the last 5 calls
   //   3. If the user taps "Deny" → we show a friendly explanation
   //      with an option to try again or add manually
@@ -306,7 +306,7 @@ const QuickLeads = (() => {
       let granted = false;
       try {
         // THIS is what triggers the native Android permission popup:
-        // "Allow RECON to access your call log?"  [Deny] [Allow]
+        // "Allow ARCONZA to access your call log?"  [Deny] [Allow]
         const reqResult = await CallLog.requestPermission();
         granted = !!(reqResult && reqResult.granted);
       } catch (e) {
@@ -396,7 +396,7 @@ const QuickLeads = (() => {
     App.showModal(`
       <h3 class="modal-title">${Icons.render('phoneIncoming', 16)} Call Log Access Needed</h3>
       <p style="color:var(--text-muted);font-size:13px;margin:12px 0;line-height:1.5">
-        To show your recent calls, RECON needs permission to read your call log.
+        To show your recent calls, ARCONZA needs permission to read your call log.
         This data stays on your device and is never shared.
       </p>
       <div style="background:var(--bg-elev-2);border:1px solid var(--charcoal-border);border-radius:10px;padding:12px;margin:12px 0">
@@ -437,12 +437,12 @@ const QuickLeads = (() => {
   }
 
   /**
-   * Open the Android app settings page for RECON, where the user
+   * Open the Android app settings page for ARCONZA, where the user
    * can manually grant the Call Log permission. This is needed
    * when the user previously chose "Don't ask again".
    *
    * Uses the native openAppSettings() method from our CallLogPlugin,
-   * which directly opens Settings > Apps > RECON > Permissions.
+   * which directly opens Settings > Apps > ARCONZA > Permissions.
    */
   async function _openAppSettings() {
     const CallLog = _getCallLogPlugin();
@@ -455,7 +455,7 @@ const QuickLeads = (() => {
       }
     }
     // Fallback: just inform the user
-    App.toast('Please go to Settings > Apps > RECON > Permissions', 'info');
+    App.toast('Please go to Settings > Apps > ARCONZA > Permissions', 'info');
   }
 
   function _selectCall(idx) {

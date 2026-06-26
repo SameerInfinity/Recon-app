@@ -175,14 +175,58 @@
 
   // ── 3-Card Hub for every trade phase ──────────────────────
   // replaces renderTradeHub
-  function renderTradeHubNew(phase, materialCards, laborCards) {
+  // extraCards is optional (e.g. supply_demand_charge on Electrical Supply phase)
+  function renderTradeHubNew(phase, materialCards, laborCards, extraCards) {
+    extraCards = extraCards || [];
     const materialTotal = materialCards.reduce((s, c) => s + sumEntries(phase.id, c.id), 0);
     const laborTotal    = laborCards.reduce((s, c)    => s + sumEntries(phase.id, c.id), 0);
+    const extraTotal    = extraCards.reduce((s, c)    => s + sumEntries(phase.id, c.id), 0);
     const billTotal     = (State.getBills(phase.id)||[]).reduce((s,b) => s + (parseFloat(b.totalAmount)||0), 0);
-    const phaseTotal    = materialTotal + laborTotal + billTotal;
+    const phaseTotal    = materialTotal + laborTotal + extraTotal + billTotal;
     const matCount      = materialCards.reduce((s,c)=>s+getEntries(phase.id,c.id).length,0);
     const labCount      = laborCards.reduce((s,c)=>s+getEntries(phase.id,c.id).length,0);
+    const extraCount    = extraCards.reduce((s,c)=>s+getEntries(phase.id,c.id).length,0);
     const billCount     = (State.getBills(phase.id)||[]).length;
+
+    // 3rd hub card — Supply Demand Charge (only on Electrical Supply phase)
+    const extraHubHtml = extraCards.length ? extraCards.map(c => {
+      const total = sumEntries(phase.id, c.id);
+      const cnt = getEntries(phase.id, c.id).length;
+      return `
+      <button class="category-card" onclick="App.showExtraCards(${phase.id})">
+        <span class="category-card-arrow">${Phases.iconFor('arrowRight',14)}</span>
+        <span class="category-card-icon">${Phases.iconFor(c.icon || 'zap',32)}</span>
+        <div class="category-card-name">${escapeHtml(c.name)}</div>
+        <div class="category-card-desc">${escapeHtml(c.desc || 'One-time charges & fees')}</div>
+        <div class="category-card-meta">
+          <div class="category-card-progress">
+            <div class="category-card-progress-label" id="hub-extra-count-${phase.id}-${c.id}">${cnt} entr${cnt!==1?'ies':'y'}</div>
+          </div>
+          <div class="category-card-cost" id="hub-extra-cost-${phase.id}-${c.id}" style="color:var(--amber)">${F.fmt(total)}</div>
+        </div>
+      </button>`;
+    }).join('') : '';
+
+    // ── "All Bills & Receipts" card — visually distinct, always at the bottom ──
+    // Spans full width of the grid (grid-column: 1 / -1 via .all-bills-card CSS).
+    // Renders bill count + total amount, and links to the BillScanner gallery.
+    const phaseBills = (State.getBills(phase.id) || []);
+    const billsCardHtml = `
+      <button class="all-bills-card" onclick="App.showPhaseBills(${phase.id})">
+        <span class="all-bills-card-icon">${Phases.iconFor('fileText',22)}</span>
+        <div class="all-bills-card-body">
+          <div class="all-bills-card-title-row">
+            <span class="all-bills-card-name">All Bills &amp; Receipts</span>
+            <span class="all-bills-card-badge">${Icons.render('bot',10)} AI Scanner</span>
+          </div>
+          <div class="all-bills-card-desc">Scan kachha bills with AI to auto-extract items, or browse all receipts and entry-photos saved under this phase.</div>
+          <div class="all-bills-card-meta">
+            <span class="all-bills-card-count" id="hub-bill-count-${phase.id}">${phaseBills.length} bill${phaseBills.length!==1?'s':''} scanned</span>
+            ${billTotal > 0 ? `<span>·</span><span class="all-bills-card-cost" id="hub-bill-total-${phase.id}">${F.fmt(billTotal)}</span>` : `<span class="all-bills-card-cost" id="hub-bill-total-${phase.id}" style="display:none"></span>`}
+          </div>
+        </div>
+        <span class="all-bills-card-chev">›</span>
+      </button>`;
 
     return `
     <div class="breadcrumb" style="margin-bottom:12px">
@@ -222,6 +266,12 @@
           <div class="category-card-cost" id="hub-labor-cost-${phase.id}" style="color:var(--amber)">${F.fmt(laborTotal)}</div>
         </div>
       </button>
+
+      <!-- Card 3 (optional): Supply Demand Charge or other "extra" cards -->
+      ${extraHubHtml}
+
+      <!-- All Bills & Receipts (always at the bottom, full-width, distinct style) -->
+      ${billsCardHtml}
 
     </div>
     
@@ -445,7 +495,7 @@
 
         <!-- Save button -->
         <div style="display:flex;justify-content:flex-end;margin-top:16px">
-          <button onclick="Phases._saveEntryForm('${phase.id}','${card.id}',${JSON.stringify(card.fields).replace(/"/g,'&quot;')})"
+          <button onclick="Phases._saveEntryForm('${phase.id}','${card.id}',${JSON.stringify(card.fields).replace(/"/g,'&quot;').replace(/'/g,'&#39;')})"
             style="background:var(--amber);color:var(--charcoal-dark);border:none;padding:12px 28px;border-radius:8px;font-size:14px;font-weight:700;cursor:pointer;display:flex;align-items:center;gap:8px">
             ${Phases.iconFor('check',14)} Save Entry
           </button>
@@ -683,7 +733,9 @@
     if (el && cost >= 0) { el.value = cost || ''; }
   };
 
-  Phases._saveEntryForm = function(phaseId, cardId, fieldsSpec) {
+  // C-05: async so we can await State.saveLocalImage (was fire-and-forget,
+  // causing the form to close before the image was persisted to localStorage).
+  Phases._saveEntryForm = async function(phaseId, cardId, fieldsSpec) {
     const dateEl = document.getElementById('ef-entry-date');
     const totalEl = document.getElementById('ef-total');
     const notesEl = document.getElementById('ef-notes');
@@ -745,7 +797,7 @@
       if (rawBillPhoto.startsWith('data:image')) {
         const key = entryId + '_bill';
         if (typeof State !== 'undefined' && State.saveLocalImage) {
-          State.saveLocalImage(key, rawBillPhoto);
+          await State.saveLocalImage(key, rawBillPhoto);
         }
         billPhotoUrl = 'local-image://' + key;
       } else {
@@ -760,7 +812,7 @@
       if (rawProofPhoto.startsWith('data:image')) {
         const key = entryId + '_proof';
         if (typeof State !== 'undefined' && State.saveLocalImage) {
-          State.saveLocalImage(key, rawProofPhoto);
+          await State.saveLocalImage(key, rawProofPhoto);
         }
         paymentProofUrl = 'local-image://' + key;
       } else {
@@ -994,10 +1046,22 @@
   };
 
   // ── Card classification helpers ───────────────────────────
+  // Labour card IDs — every phase (including interior sections + custom phases)
+  // MUST have at least one labour card so the user's "keep labour cost for all phases"
+  // requirement is satisfied.
   const LABOR_IDS = ['thekedar','tile_labor','painter_labor','electrician_labor',
-    'fab_labor','plumber_labor','pop_labor','lift_install','floor-prep','paint-prep']; // misc_expenses removed — it's a general expense, not labor
+    'fab_labor','plumber_labor','pop_labor','lift_install','floor-prep','paint-prep',
+    'elec_supply_labor',                                     // phase 11 (Electrical Supply)
+    'water_supply_labor',                                    // phase 12 (Water Supply)
+    'int_floor_labor','int_paint_labor','int_door_labor','int_cab_labor',
+    'int_trim_labor','int_closet_labor','int_glass_labor','int_fixture_labor']; // phases 20-27
 
-  function getAllCardsForPhase(phaseId) {
+  // "Extra" cards (neither material nor labour) — e.g. the Supply Demand Charge card
+  // on the Electrical Supply phase, and the Water Demand Charge on Water Supply.
+  // Rendered as a 3rd hub card.
+  const EXTRA_CARD_IDS = ['supply_demand_charge', 'water_demand_charge'];
+
+  function getStaticCardsForPhase(phaseId) {
     // NOTE: This function must NOT inline the card arrays as a static object literal
     // here, because the const declarations (CIVIL_CARDS_REF etc.) live below this
     // function in the file. Building M inline would hit a TDZ ReferenceError.
@@ -1012,16 +1076,67 @@
       case 7:  return POP_CARDS_REF;
       case 8:  return LIFT_CARDS_REF;
       case 9:  return MISC_CARDS_REF;
-      case 10: return INTERIOR_CARDS_REF;
+      case 10: return INTERIOR_CARDS_REF; // legacy (hidden in UI but kept for backward-compat data)
+      case 11: return ELEC_SUPPLY_CARDS_REF;
+      case 12: return WATER_SUPPLY_CARDS_REF;
+      case 20: return INT_FLOOR_CARDS_REF;
+      case 21: return INT_PAINT_CARDS_REF;
+      case 22: return INT_DOOR_CARDS_REF;
+      case 23: return INT_CAB_CARDS_REF;
+      case 24: return INT_TRIM_CARDS_REF;
+      case 25: return INT_CLOSET_CARDS_REF;
+      case 26: return INT_GLASS_CARDS_REF;
+      case 27: return INT_FIXTURE_CARDS_REF;
       default: return [];
     }
   }
 
+  function getAllCardsForPhase(phaseId) {
+    // Static cards + project-scoped custom cards (added via "Add New" button)
+    const staticCards = getStaticCardsForPhase(phaseId);
+    const customCards = (typeof State !== 'undefined' && State.getCustomCards)
+      ? State.getCustomCards(phaseId).map(c => normaliseCustomCard(c))
+      : [];
+    return [...staticCards, ...customCards];
+  }
+
+  // Convert a stored custom-card spec into the same shape as the static *_CARDS_REF entries.
+  function normaliseCustomCard(spec) {
+    const P = Financial.parseNum;
+    let costFn;
+    if (spec.costExpr === 'qty_rate') {
+      costFn = d => (P(d.qty) || 0) * (P(d.rate) || 0);
+    } else if (spec.costExpr === 'amount') {
+      costFn = d => P(d.amount) || 0;
+    } else {
+      // default: amount field if present, otherwise qty*rate
+      costFn = d => (d.amount !== undefined ? (P(d.amount) || 0) : (P(d.qty) || 0) * (P(d.rate) || 0));
+    }
+    return {
+      id: spec.id,
+      name: spec.name,
+      icon: spec.icon || 'listChecks',
+      desc: spec.desc || 'Custom entry',
+      fields: spec.fields || [
+        { key: 'item', label: 'Item Description', type: 'text' },
+        { key: 'qty',  label: 'Quantity',         type: 'number' },
+        { key: 'unit', label: 'Unit', type: 'select', options: ['pcs','kg','bags','brass','L','m','sqft','rft','ton','cft','nos'] },
+        { key: 'rate', label: 'Rate (₹)',          type: 'number' },
+        { key: 'vendor', label: 'Vendor',          type: 'text' },
+      ],
+      costFn,
+      isCustom: true,
+    };
+  }
+
   function getMaterialCardsForPhase(phaseId) {
-    return getAllCardsForPhase(phaseId).filter(c => !LABOR_IDS.includes(c.id));
+    return getAllCardsForPhase(phaseId).filter(c => !LABOR_IDS.includes(c.id) && !EXTRA_CARD_IDS.includes(c.id));
   }
   function getLaborCardsForPhase(phaseId) {
     return getAllCardsForPhase(phaseId).filter(c => LABOR_IDS.includes(c.id));
+  }
+  function getExtraCardsForPhase(phaseId) {
+    return getAllCardsForPhase(phaseId).filter(c => EXTRA_CARD_IDS.includes(c.id));
   }
 
   // ── References to the card arrays from phases.js ──────────
@@ -1498,70 +1613,394 @@
       costFn: d => (P(d.qty)||0)*(P(d.unit_price)||0) + (P(d.labor)||0) }
   ];
 
+  // ═══════════════════════════════════════════════════════════════
+  // PHASE 11 — ELECTRICAL SUPPLY
+  // Material: tf/cables + panels (+ auto "Add New" via Task 1)
+  // Labour: elec_supply_labor
+  // Extra (3rd hub card): supply_demand_charge
+  // ═══════════════════════════════════════════════════════════════
+  const ELEC_SUPPLY_CARDS_REF = [
+    { id:'tf_cables', name:'TF / Cables', icon:'zap', desc:'Transformer feeder cables, LT/HT cables, terminations.',
+      fields:[
+        { key:'type', label:'Type', type:'select', options:['LT Cable','HT Cable','TF Cable','Control Cable','Armoured Cable'] },
+        { key:'size', label:'Size (sqmm)', type:'select', options:['10','16','25','35','50','70','95','120','150','185','240','300','400'] },
+        { key:'brand', label:'Brand', type:'select', options:['Polycab','Havells','KEI','Finolex','RR Kabel','V-Guard','Local'] },
+        { key:'qty_mtr', label:'Qty (metres)', type:'number' },
+        { key:'rate_per_mtr', label:'Rate (₹/m)', type:'number' },
+        { key:'vendor', label:'Vendor', type:'text' }
+      ],
+      costFn: d => qrC(d,'qty_mtr','rate_per_mtr') },
+    { id:'panels', name:'Panels', icon:'blocks', desc:'LT panel, HT panel, distribution boards, metering panels.',
+      fields:[
+        { key:'type', label:'Panel Type', type:'select', options:['LT Panel','HT Panel','Main Distribution Board','Sub Distribution Board','Metering Panel','Power Factor Panel'] },
+        { key:'rating', label:'Rating', type:'text', placeholder:'e.g. 100A / 250A / 630A' },
+        { key:'brand', label:'Brand', type:'text' },
+        { key:'qty', label:'Qty', type:'number' },
+        { key:'rate', label:'Rate (₹/panel)', type:'number' },
+        { key:'vendor', label:'Vendor', type:'text' }
+      ],
+      costFn: d => qrC(d,'qty','rate') },
+    { id:'supply_demand_charge', name:'Supply Demand Charge', icon:'zap', desc:'One-time electricity board charges — security deposit, connection fee, meter installation, load sanctioning.',
+      fields:[
+        { key:'date', label:'Date', type:'date' },
+        { key:'item', label:'Charge / Fee Head', type:'text', placeholder:'e.g. Security Deposit' },
+        { key:'authority', label:'Authority / Discom', type:'text', placeholder:'e.g. MSEDCL / BSES / TSSPDCL' },
+        { key:'amount', label:'Amount (₹)', type:'number' },
+        { key:'mode', label:'Mode', type:'select', options:['Cash','UPI','Cheque','DD','NEFT'] }
+      ],
+      costFn: d => amtC(d,'amount') },
+    { id:'elec_supply_labor', name:'Electrical Supply Labour', icon:'userCircle', desc:'Payouts to electrical contractor — cable laying, panel installation, terminations, testing.',
+      fields:[
+        { key:'date', label:'Date', type:'date' },
+        { key:'payee', label:'Contractor / Crew', type:'text' },
+        { key:'work', label:'Work Description', type:'text' },
+        { key:'amount', label:'Amount (₹)', type:'number' },
+        { key:'mode', label:'Mode', type:'select', options:['Cash','UPI','Cheque','NEFT'] }
+      ],
+      costFn: d => amtC(d,'amount') },
+  ];
+
+  // ═══════════════════════════════════════════════════════════════
+  // PHASE 12 — WATER SUPPLY
+  // Material: pipes (+ auto "Add New" via Task 1)
+  // Labour: water_supply_labor
+  // Extra (3rd hub card): water_demand_charge (water board / municipal charges)
+  // ═══════════════════════════════════════════════════════════════
+  const WATER_SUPPLY_CARDS_REF = [
+    { id:'ws_pipes', name:'Pipes', icon:'pipe', desc:'Main water supply pipes — GI, PVC, CPVC, HDPE, copper — by size and length.',
+      fields:[
+        { key:'type', label:'Pipe Type', type:'select', options:['GI','PVC','CPVC','HDPE','Copper','MS','SS'] },
+        { key:'size', label:'Size (mm)', type:'select', options:['15','20','25','32','40','50','63','75','90','110','160','200','250'] },
+        { key:'brand', label:'Brand', type:'select', options:['Supreme','Astral','Finolex','Prince','Jain','AquaGold','Local'] },
+        { key:'qty_mtr', label:'Qty (metres)', type:'number' },
+        { key:'rate_per_mtr', label:'Rate (₹/m)', type:'number' },
+        { key:'vendor', label:'Vendor', type:'text' }
+      ],
+      costFn: d => qrC(d,'qty_mtr','rate_per_mtr') },
+    { id:'water_demand_charge', name:'Water Demand Charge', icon:'droplet', desc:'One-time water board / municipal charges — connection fee, meter installation, security deposit, development charge.',
+      fields:[
+        { key:'date', label:'Date', type:'date' },
+        { key:'item', label:'Charge / Fee Head', type:'text', placeholder:'e.g. New Connection Fee' },
+        { key:'authority', label:'Authority / Board', type:'text', placeholder:'e.g. Municipal Corp / Water Works Dept' },
+        { key:'amount', label:'Amount (₹)', type:'number' },
+        { key:'mode', label:'Mode', type:'select', options:['Cash','UPI','Cheque','DD','NEFT'] }
+      ],
+      costFn: d => amtC(d,'amount') },
+    { id:'water_supply_labor', name:'Water Supply Labour', icon:'userCircle', desc:'Payouts to plumber / contractor — trenching, pipe laying, jointing, pressure testing, commissioning.',
+      fields:[
+        { key:'date', label:'Date', type:'date' },
+        { key:'payee', label:'Contractor / Crew', type:'text' },
+        { key:'work', label:'Work Description', type:'text' },
+        { key:'amount', label:'Amount (₹)', type:'number' },
+        { key:'mode', label:'Mode', type:'select', options:['Cash','UPI','Cheque','NEFT'] }
+      ],
+      costFn: d => amtC(d,'amount') },
+  ];
+
+  // ═══════════════════════════════════════════════════════════════
+  // PHASES 20-27 — INTERIOR SECTION PHASES
+  // Each section = a self-contained mini phase with its own material cards
+  // and exactly one labour card (so labour cost is tracked per section,
+  // matching the user's "keep labour cost for all phases" requirement).
+  // ═══════════════════════════════════════════════════════════════
+
+  // 20 — Interior Flooring
+  const INT_FLOOR_CARDS_REF = [
+    { id:'int_floor_material', name:'Flooring Material', icon:'ruler', desc:'Laminate, vinyl, engineered hardwood, tile, marble — per zone.',
+      fields:[
+        { key:'zone', label:'Room / Zone', type:'text', placeholder:'e.g. Living Room' },
+        { key:'material', label:'Material', type:'select', options:['Laminate','LVP','Engineered Hardwood','Solid Hardwood','Porcelain Tile','Marble','Granite','Carpet'] },
+        { key:'area_sqft', label:'Area (sqft)', type:'number' },
+        { key:'rate_per_sqft', label:'Rate (₹/sqft)', type:'number' },
+        { key:'vendor', label:'Vendor', type:'text' }
+      ],
+      costFn: d => qrC(d,'area_sqft','rate_per_sqft') },
+    { id:'int_floor_underlay', name:'Underlay / Adhesive', icon:'insulation', desc:'Underlayment, adhesive, vapor barrier, transition strips.',
+      fields:[
+        { key:'item', label:'Item', type:'text' },
+        { key:'qty', label:'Qty', type:'number' },
+        { key:'unit', label:'Unit', type:'select', options:['sqft','bag','ltr','pcs'] },
+        { key:'rate', label:'Rate (₹)', type:'number' }
+      ],
+      costFn: d => (P(d.qty)||0)*(P(d.rate)||0) },
+    { id:'int_floor_labor', name:'Flooring Labour', icon:'userCircle', desc:'Payouts to the flooring installer — per sqft or lump sum.',
+      fields:[
+        { key:'date', label:'Date', type:'date' },
+        { key:'payee', label:'Installer / Contractor', type:'text' },
+        { key:'work', label:'Work Description', type:'text' },
+        { key:'amount', label:'Amount (₹)', type:'number' },
+        { key:'mode', label:'Mode', type:'select', options:['Cash','UPI','Cheque','NEFT'] }
+      ],
+      costFn: d => amtC(d,'amount') },
+  ];
+
+  // 21 — Interior Painting
+  const INT_PAINT_CARDS_REF = [
+    { id:'int_paint_material', name:'Paint & Primer', icon:'palette', desc:'Interior emulsion, primer, putty per room.',
+      fields:[
+        { key:'room', label:'Room', type:'text' },
+        { key:'finish', label:'Finish', type:'select', options:['Matte','Satin','Semi-gloss','Premium Emulsion','Distemper','Texture'] },
+        { key:'brand', label:'Brand', type:'text' },
+        { key:'qty_ltr', label:'Qty (litres)', type:'number' },
+        { key:'rate_per_ltr', label:'Rate (₹/litre)', type:'number' }
+      ],
+      costFn: d => qrC(d,'qty_ltr','rate_per_ltr') },
+    { id:'int_putty', name:'Wall Putty / Prep', icon:'paintRoller', desc:'Acrylic / white-cement putty, surface prep.',
+      fields:[
+        { key:'brand', label:'Brand', type:'text' },
+        { key:'qty_kg', label:'Qty (kg)', type:'number' },
+        { key:'rate_per_kg', label:'Rate (₹/kg)', type:'number' }
+      ],
+      costFn: d => qrC(d,'qty_kg','rate_per_kg') },
+    { id:'int_paint_labor', name:'Painter Labour', icon:'userCircle', desc:'Painter payouts per room or per coat.',
+      fields:[
+        { key:'date', label:'Date', type:'date' },
+        { key:'payee', label:'Painter', type:'text' },
+        { key:'work', label:'Work / Area', type:'text' },
+        { key:'amount', label:'Amount (₹)', type:'number' },
+        { key:'mode', label:'Mode', type:'select', options:['Cash','UPI','Cheque','NEFT'] }
+      ],
+      costFn: d => amtC(d,'amount') },
+  ];
+
+  // 22 — Interior Doors & Hardware
+  const INT_DOOR_CARDS_REF = [
+    { id:'int_door_slab', name:'Door Slabs', icon:'door', desc:'Interior door slabs per room.',
+      fields:[
+        { key:'location', label:'Location', type:'text' },
+        { key:'style', label:'Style', type:'select', options:['1-Panel','2-Panel Shaker','6-Panel Solid','Flush','Bifold','Barn','French'] },
+        { key:'qty', label:'Qty', type:'number' },
+        { key:'rate', label:'Rate (₹/door)', type:'number' }
+      ],
+      costFn: d => qrC(d,'qty','rate') },
+    { id:'int_door_hw', name:'Door Hardware', icon:'key', desc:'Hinges, locks, handles, stops.',
+      fields:[
+        { key:'item', label:'Item', type:'text' },
+        { key:'qty', label:'Qty', type:'number' },
+        { key:'rate', label:'Rate (₹/pc)', type:'number' }
+      ],
+      costFn: d => qrC(d,'qty','rate') },
+    { id:'int_door_labor', name:'Door Install Labour', icon:'userCircle', desc:'Carpenter payouts for door hanging and hardware fitment.',
+      fields:[
+        { key:'date', label:'Date', type:'date' },
+        { key:'payee', label:'Carpenter', type:'text' },
+        { key:'work', label:'Work Description', type:'text' },
+        { key:'amount', label:'Amount (₹)', type:'number' },
+        { key:'mode', label:'Mode', type:'select', options:['Cash','UPI','Cheque','NEFT'] }
+      ],
+      costFn: d => amtC(d,'amount') },
+  ];
+
+  // 23 — Interior Cabinetry
+  const INT_CAB_CARDS_REF = [
+    { id:'int_cab_boxes', name:'Cabinet Boxes & Doors', icon:'sofa', desc:'Base, upper, pantry cabinets — per linear foot.',
+      fields:[
+        { key:'class', label:'Cabinet Class', type:'select', options:['Stock / RTA','Semi-Custom','Full Custom'] },
+        { key:'core', label:'Core Material', type:'select', options:['1/2" Plywood','3/4" Plywood','MDF / Furniture Board'] },
+        { key:'door_profile', label:'Door Profile', type:'select', options:['Shaker','Flat Slab','Raised Panel','Glass-Front'] },
+        { key:'lf', label:'LF (linear ft)', type:'number' },
+        { key:'rate_per_lf', label:'Rate (₹/LF)', type:'number' }
+      ],
+      costFn: d => qrC(d,'lf','rate_per_lf') },
+    { id:'int_cab_hw', name:'Cabinet Hardware', icon:'wrenchScrew', desc:'Pulls, knobs, hinges, drawer glides, soft-close.',
+      fields:[
+        { key:'item', label:'Item', type:'text' },
+        { key:'qty', label:'Qty', type:'number' },
+        { key:'rate', label:'Rate (₹/pc)', type:'number' }
+      ],
+      costFn: d => qrC(d,'qty','rate') },
+    { id:'int_cab_labor', name:'Cabinet Install Labour', icon:'userCircle', desc:'Cabinet installer payouts — per LF or lump sum.',
+      fields:[
+        { key:'date', label:'Date', type:'date' },
+        { key:'payee', label:'Installer', type:'text' },
+        { key:'work', label:'Work Description', type:'text' },
+        { key:'amount', label:'Amount (₹)', type:'number' },
+        { key:'mode', label:'Mode', type:'select', options:['Cash','UPI','Cheque','NEFT'] }
+      ],
+      costFn: d => amtC(d,'amount') },
+  ];
+
+  // 24 — Interior Trim & Staircase
+  const INT_TRIM_CARDS_REF = [
+    { id:'int_trim_material', name:'Base / Casing / Crown', icon:'bricks', desc:'Baseboards, casings, crown moulding per LF.',
+      fields:[
+        { key:'type', label:'Trim Type', type:'select', options:['Base','Casing','Crown','Chair Rail','Shoe Mould'] },
+        { key:'material', label:'Material', type:'select', options:['MDF','Pine','Poplar','Oak','PVC'] },
+        { key:'lf', label:'LF', type:'number' },
+        { key:'rate_per_lf', label:'Rate (₹/LF)', type:'number' }
+      ],
+      costFn: d => qrC(d,'lf','rate_per_lf') },
+    { id:'int_stair_material', name:'Staircase Trim / Railing', icon:'stairs', desc:'Treads, risers, railing, balusters.',
+      fields:[
+        { key:'item', label:'Item', type:'text' },
+        { key:'qty', label:'Qty', type:'number' },
+        { key:'unit', label:'Unit', type:'select', options:['rft','pcs','set'] },
+        { key:'rate', label:'Rate (₹)', type:'number' }
+      ],
+      costFn: d => (P(d.qty)||0)*(P(d.rate)||0) },
+    { id:'int_trim_labor', name:'Trim Labour', icon:'userCircle', desc:'Finish carpenter payouts for trim and staircase.',
+      fields:[
+        { key:'date', label:'Date', type:'date' },
+        { key:'payee', label:'Finish Carpenter', type:'text' },
+        { key:'work', label:'Work Description', type:'text' },
+        { key:'amount', label:'Amount (₹)', type:'number' },
+        { key:'mode', label:'Mode', type:'select', options:['Cash','UPI','Cheque','NEFT'] }
+      ],
+      costFn: d => amtC(d,'amount') },
+  ];
+
+  // 25 — Interior Closets
+  const INT_CLOSET_CARDS_REF = [
+    { id:'int_closet_material', name:'Closet System', icon:'door', desc:'Walk-in / reach-in closet shelving, rods, drawers.',
+      fields:[
+        { key:'type', label:'Closet Type', type:'select', options:['Wire','Melamine','Custom Wood','Modular'] },
+        { key:'lf', label:'LF', type:'number' },
+        { key:'rate_per_lf', label:'Rate (₹/LF)', type:'number' }
+      ],
+      costFn: d => qrC(d,'lf','rate_per_lf') },
+    { id:'int_closet_acc', name:'Closet Accessories', icon:'listChecks', desc:'Pull-out baskets, tie racks, shoe shelves, lights.',
+      fields:[
+        { key:'item', label:'Item', type:'text' },
+        { key:'qty', label:'Qty', type:'number' },
+        { key:'rate', label:'Rate (₹/pc)', type:'number' }
+      ],
+      costFn: d => qrC(d,'qty','rate') },
+    { id:'int_closet_labor', name:'Closet Install Labour', icon:'userCircle', desc:'Closet installer payouts.',
+      fields:[
+        { key:'date', label:'Date', type:'date' },
+        { key:'payee', label:'Installer', type:'text' },
+        { key:'work', label:'Work Description', type:'text' },
+        { key:'amount', label:'Amount (₹)', type:'number' },
+        { key:'mode', label:'Mode', type:'select', options:['Cash','UPI','Cheque','NEFT'] }
+      ],
+      costFn: d => amtC(d,'amount') },
+  ];
+
+  // 26 — Interior Glass & Mirror
+  const INT_GLASS_CARDS_REF = [
+    { id:'int_glass_material', name:'Glass / Mirror', icon:'mirror', desc:'Toughened glass partitions, mirrors, shower enclosures.',
+      fields:[
+        { key:'type', label:'Type', type:'select', options:['Toughened Partition','Mirror','Shower Enclosure','Glass Door','Railing Infill'] },
+        { key:'thickness', label:'Thickness (mm)', type:'select', options:['6','8','10','12','15','19'] },
+        { key:'area_sqft', label:'Area (sqft)', type:'number' },
+        { key:'rate_per_sqft', label:'Rate (₹/sqft)', type:'number' }
+      ],
+      costFn: d => qrC(d,'area_sqft','rate_per_sqft') },
+    { id:'int_glass_hw', name:'Glass Hardware', icon:'wrenchScrew', desc:'Hinges, clamps, tracks, handles for glass.',
+      fields:[
+        { key:'item', label:'Item', type:'text' },
+        { key:'qty', label:'Qty', type:'number' },
+        { key:'rate', label:'Rate (₹/pc)', type:'number' }
+      ],
+      costFn: d => qrC(d,'qty','rate') },
+    { id:'int_glass_labor', name:'Glass Install Labour', icon:'userCircle', desc:'Glazier / installer payouts.',
+      fields:[
+        { key:'date', label:'Date', type:'date' },
+        { key:'payee', label:'Glazier', type:'text' },
+        { key:'work', label:'Work Description', type:'text' },
+        { key:'amount', label:'Amount (₹)', type:'number' },
+        { key:'mode', label:'Mode', type:'select', options:['Cash','UPI','Cheque','NEFT'] }
+      ],
+      costFn: d => amtC(d,'amount') },
+  ];
+
+  // 27 — Interior Fixtures
+  const INT_FIXTURE_CARDS_REF = [
+    { id:'int_light_fixture', name:'Light Fixtures', icon:'lightbulb', desc:'Chandeliers, downlights, cove lights, pendants.',
+      fields:[
+        { key:'type', label:'Type', type:'select', options:['Chandelier','Downlight','Cove','Pendant','Wall Sconce','Track'] },
+        { key:'brand', label:'Brand', type:'text' },
+        { key:'qty', label:'Qty', type:'number' },
+        { key:'rate', label:'Rate (₹/pc)', type:'number' }
+      ],
+      costFn: d => qrC(d,'qty','rate') },
+    { id:'int_plumb_fixture', name:'Plumbing Fixtures', icon:'droplet', desc:'Closet, basin, faucet, shower head, kitchen sink.',
+      fields:[
+        { key:'item', label:'Fixture', type:'text' },
+        { key:'brand', label:'Brand', type:'select', options:['Jaquar','Hindware','Cera','Kohler','Parryware','TOTO','Local'] },
+        { key:'qty', label:'Qty', type:'number' },
+        { key:'rate', label:'Rate (₹/pc)', type:'number' }
+      ],
+      costFn: d => qrC(d,'qty','rate') },
+    { id:'int_fixture_labor', name:'Fixture Install Labour', icon:'userCircle', desc:'Electrician + plumber payouts for fixture install.',
+      fields:[
+        { key:'date', label:'Date', type:'date' },
+        { key:'payee', label:'Installer', type:'text' },
+        { key:'work', label:'Work Description', type:'text' },
+        { key:'amount', label:'Amount (₹)', type:'number' },
+        { key:'mode', label:'Mode', type:'select', options:['Cash','UPI','Cheque','NEFT'] }
+      ],
+      costFn: d => amtC(d,'amount') },
+  ];
+
 // ── Patch financial.js to use entries for phase totals ────
-  // Override computePhaseTotal to use entry-based sums for phases 1-10
+  // Override computePhaseTotal to use entry-based sums for phases 1-200
+  // (covers all standard phases + interior sections + custom user phases).
   const _origComputePhaseTotal = Financial.computePhaseTotal;
   Financial.computePhaseTotal = function(phase) {
     const pid = Number(phase?.id);
-    if (pid >= 1 && pid <= 10) {
+    if (pid >= 1 && pid <= 200) {
       return sumAllEntries(pid) + ((State.getBills && State.getBills(pid))||[]).reduce((s,b)=>s+(parseFloat(b.totalAmount)||0),0);
     }
     return _origComputePhaseTotal(phase);
   };
 
-  // ── Override renderTradePhases 1-10 with new 3-card hub ────
-  const PHASE_CARD_MAP = {
-    1: [CIVIL_CARDS_REF.filter(c=>!LABOR_IDS.includes(c.id)), CIVIL_CARDS_REF.filter(c=>LABOR_IDS.includes(c.id))],
-    2: [TILES_CARDS_REF.filter(c=>!LABOR_IDS.includes(c.id)), TILES_CARDS_REF.filter(c=>LABOR_IDS.includes(c.id))],
-    3: [PAINT_CARDS_REF.filter(c=>!LABOR_IDS.includes(c.id)), PAINT_CARDS_REF.filter(c=>LABOR_IDS.includes(c.id))],
-    4: [ELEC_CARDS_REF.filter(c=>!LABOR_IDS.includes(c.id)), ELEC_CARDS_REF.filter(c=>LABOR_IDS.includes(c.id))],
-    5: [FAB_CARDS_REF.filter(c=>!LABOR_IDS.includes(c.id)), FAB_CARDS_REF.filter(c=>LABOR_IDS.includes(c.id))],
-    6: [[...PLUMB_EXT_REF,...PLUMB_INT_REF].filter(c=>!LABOR_IDS.includes(c.id)), [...PLUMB_EXT_REF,...PLUMB_INT_REF].filter(c=>LABOR_IDS.includes(c.id))],
-    7: [POP_CARDS_REF.filter(c=>!LABOR_IDS.includes(c.id)), POP_CARDS_REF.filter(c=>LABOR_IDS.includes(c.id))],
-    8: [LIFT_CARDS_REF.filter(c=>!LABOR_IDS.includes(c.id)), LIFT_CARDS_REF.filter(c=>LABOR_IDS.includes(c.id))],
-    9: [MISC_CARDS_REF.filter(c=>!LABOR_IDS.includes(c.id)), MISC_CARDS_REF.filter(c=>LABOR_IDS.includes(c.id))],
-    10: [INTERIOR_CARDS_REF.filter(c=>!LABOR_IDS.includes(c.id)), INTERIOR_CARDS_REF.filter(c=>LABOR_IDS.includes(c.id))],
-  };
+  // ── Override renderTradePhases 1-27 with new 3-card hub ────
+  // PHASE_CARD_MAP is a static fallback. The live lookup now goes through
+  // getMaterialCardsForPhase / getLaborCardsForPhase / getExtraCardsForPhase
+  // (which also pick up project-scoped custom cards).
+  function _phaseCards(phaseId) {
+    const all = getAllCardsForPhase(phaseId);
+    return [
+      all.filter(c => !LABOR_IDS.includes(c.id) && !EXTRA_CARD_IDS.includes(c.id)),
+      all.filter(c => LABOR_IDS.includes(c.id)),
+      all.filter(c => EXTRA_CARD_IDS.includes(c.id)),
+    ];
+  }
+  const PHASE_CARD_MAP = {};
+  [1,2,3,4,5,6,7,8,9,10,11,12,20,21,22,23,24,25,26,27].forEach(pid => {
+    const [m, l, x] = _phaseCards(pid);
+    PHASE_CARD_MAP[pid] = [m, l, x];
+  });
 
   function makeTradeRenderer(phaseId) {
     return function(phase) {
-      const [mat, lab] = PHASE_CARD_MAP[phaseId];
-      return renderTradeHubNew(phase, mat, lab);
+      // Always re-derive from the live getAllCardsForPhase so newly-added
+      // custom cards appear immediately without a page reload.
+      const [mat, lab, extra] = _phaseCards(phaseId);
+      return renderTradeHubNew(phase, mat, lab, extra);
     };
   }
 
-  // Override renderPhaseHub for phases 1-10 to use new 3-card hub
+  // Override renderPhaseHub for ALL known phases (1-27 + custom)
   const _origRenderPhaseHub = Phases.renderPhaseHub ? Phases.renderPhaseHub.bind(Phases) : null;
   Phases.renderPhaseHub = function(phase) {
-    if (phase.id >= 1 && phase.id <= 10) {
-      const [mat, lab] = PHASE_CARD_MAP[phase.id];
-      return renderTradeHubNew(phase, mat, lab);
+    const pid = Number(phase?.id);
+    if (pid >= 1 && pid <= 200) {
+      const [mat, lab, extra] = _phaseCards(pid);
+      return renderTradeHubNew(phase, mat, lab, extra);
     }
-    // For other phases, use original
     return _origRenderPhaseHub ? _origRenderPhaseHub(phase) : '';
   };
 
-  Phases.renderTradePhase1 = makeTradeRenderer(1);
-  Phases.renderTradePhase2 = makeTradeRenderer(2);
-  Phases.renderTradePhase3 = makeTradeRenderer(3);
-  Phases.renderTradePhase4 = makeTradeRenderer(4);
-  Phases.renderTradePhase5 = makeTradeRenderer(5);
-  Phases.renderTradePhase6 = makeTradeRenderer(6);
-  Phases.renderTradePhase7 = makeTradeRenderer(7);
-  Phases.renderTradePhase8 = makeTradeRenderer(8);
-  Phases.renderTradePhase9 = makeTradeRenderer(9);
-  Phases.renderTradePhase10 = makeTradeRenderer(10);
+  // Override renderTradePhaseN for all standard phases
+  [1,2,3,4,5,6,7,8,9,10,11,12,20,21,22,23,24,25,26,27].forEach(pid => {
+    Phases['renderTradePhase' + pid] = makeTradeRenderer(pid);
+  });
 
-  // Override showInputCard for phases 1-10 to use new entry form
+  // Override showInputCard for all phases (1-200) to use new entry form
   const _origShowInputCard = (typeof App !== 'undefined' && App.showInputCard) ? App.showInputCard.bind(App) : null;
   if (typeof App !== 'undefined') {
     App.showInputCard = function(phaseId, cardId) {
-      if (phaseId >= 1 && phaseId <= 10) {
+      const pid = Number(phaseId);
+      if (pid >= 1 && pid <= 200) {
         const allCards = getAllCardsForPhase(phaseId);
         const card = allCards.find(c => c.id === cardId);
         if (card) {
-          const isLabor = LABOR_IDS.includes(cardId);
-          Phases.showCardEntryForm(phaseId, cardId, isLabor ? 'Labor Costing' : 'Material Costs');
+          let groupLabel = 'Material Costs';
+          if (LABOR_IDS.includes(cardId)) groupLabel = 'Labor Costing';
+          else if (EXTRA_CARD_IDS.includes(cardId)) groupLabel = card.name || 'Extra Charges';
+          Phases.showCardEntryForm(phaseId, cardId, groupLabel);
           return;
         }
       }
@@ -1578,12 +2017,14 @@
     if (!proj) return;
     const phase = proj.phases.find(p => Number(p.id) === Number(phaseId));
     if (!phase) return;
-    const [mat, lab] = PHASE_CARD_MAP[phaseId] || [[], []];
+    // Re-derive cards live (so custom cards added during this session are picked up)
+    const [mat, lab, extra] = _phaseCards(phaseId);
     const materialTotal = mat.reduce((s, c) => s + sumEntries(phaseId, c.id), 0);
     const laborTotal    = lab.reduce((s, c) => s + sumEntries(phaseId, c.id), 0);
+    const extraTotal    = extra.reduce((s, c) => s + sumEntries(phaseId, c.id), 0);
     const bills         = (State.getBills(phaseId) || []);
     const billTotal     = bills.reduce((s, b) => s + (parseFloat(b.totalAmount) || 0), 0);
-    const phaseTotal    = materialTotal + laborTotal + billTotal;
+    const phaseTotal    = materialTotal + laborTotal + extraTotal + billTotal;
     const matCount      = mat.reduce((s, c) => s + getEntries(phaseId, c.id).length, 0);
     const labCount      = lab.reduce((s, c) => s + getEntries(phaseId, c.id).length, 0);
 
@@ -1594,12 +2035,35 @@
     updateEl(`hub-material-count-${phaseId}`, matCount + ' entries');
     updateEl(`hub-labor-count-${phaseId}`,    labCount + ' entries');
     updateEl(`hub-bill-count-${phaseId}`,     bills.length + ' bill' + (bills.length !== 1 ? 's' : '') + ' scanned');
-    updateEl(`hub-bill-total-${phaseId}`,     F.fmt(billTotal));
+    // For the bill total: show/hide the span depending on whether total > 0
+    // (matches the conditional render in renderTradeHubNew).
+    const billTotalEl = document.getElementById(`hub-bill-total-${phaseId}`);
+    if (billTotalEl) {
+      if (billTotal > 0) {
+        billTotalEl.textContent = F.fmt(billTotal);
+        billTotalEl.style.display = '';
+      } else {
+        billTotalEl.style.display = 'none';
+      }
+    }
+    // Update extra card counts/totals too
+    extra.forEach(c => {
+      const tot = sumEntries(phaseId, c.id);
+      const cnt = getEntries(phaseId, c.id).length;
+      updateEl(`hub-extra-count-${phaseId}-${c.id}`, cnt + ' entr' + (cnt!==1?'ies':'y'));
+      updateEl(`hub-extra-cost-${phaseId}-${c.id}`, F.fmt(tot));
+    });
   }
 
   Phases.updateHubTotals = updateHubTotals;
   Phases.getLaborCardsForPhase = getLaborCardsForPhase;
   Phases.getAllCardsForPhase = getAllCardsForPhase;
+  Phases.getMaterialCardsForPhase = getMaterialCardsForPhase;
+  Phases.getExtraCardsForPhase = getExtraCardsForPhase;
+  // Expose the live LABOR_IDS / EXTRA_CARD_IDS arrays so financial.js can pick
+  // up dynamically-added custom labour/extra card IDs (added via "Add New").
+  Phases._dynamicLaborIds = LABOR_IDS;
+  Phases._dynamicExtraIds = EXTRA_CARD_IDS;
 
   // BUG 6 FIX: Force immediate totals refresh now that the override is applied
   // This fixes the "₹0 in sidebar" issue when phases-new-core.js loads after
@@ -1616,21 +2080,40 @@
     : {};
 
   // Also expose renderCardListView and renderEntryForm on Phases so
-  // App.showMaterialCards / App.showLaborCards / App.showEntryForm can call them
-  Phases.renderCardListView = function(phaseId, isLabor) {
+  // App.showMaterialCards / App.showLaborCards / App.showEntryForm can call them.
+  // `view` can be 'material' | 'labor' | 'extra' (defaults by isLabor flag for back-compat).
+  Phases.renderCardListView = function(phaseId, isLabor, view) {
     phaseId = Number(phaseId);
     const proj = State.getCurrentProject();
     if (!proj) return '<div style="padding:24px">No project loaded</div>';
     const phase = proj.phases.find(p => Number(p.id) === Number(phaseId));
     if (!phase) return '';
-    const cards = (Object.values(ALL_CARDS_REF[phaseId] || {})).filter(c =>
-      isLabor ? LABOR_IDS.includes(c.id) : !LABOR_IDS.includes(c.id));
-    const label = isLabor ? 'Labor Costing' : 'Material Costs';
+    // Resolve which view we're in
+    let v = view;
+    if (!v) v = isLabor ? 'labor' : 'material';
+    const all = getAllCardsForPhase(phaseId);
+    let cards;
+    let label;
+    if (v === 'labor') {
+      cards = all.filter(c => LABOR_IDS.includes(c.id));
+      label = 'Labor Costing';
+    } else if (v === 'extra') {
+      cards = all.filter(c => EXTRA_CARD_IDS.includes(c.id));
+      // Use the first extra card's name as the section label, or fall back.
+      label = cards.length ? cards[0].name : 'Extra Charges';
+    } else {
+      cards = all.filter(c => !LABOR_IDS.includes(c.id) && !EXTRA_CARD_IDS.includes(c.id));
+      label = 'Material Costs';
+    }
     const total = cards.reduce((s,c) => s + sumEntries(phaseId, c.id), 0);
     const cardHtml = cards.map(c => {
       const entries = getEntries(phaseId, c.id);
       const ct = entries.reduce((s,e) => s + (parseFloat(e.total)||0), 0);
-      return `<button class="category-card" onclick="App.showEntryForm(${phaseId},'${c.id}')" style="text-align:left">
+      const deleteBtn = c.isCustom
+        ? `<span onclick="event.stopPropagation();Phases._deleteCustomCard(${phaseId},'${c.id}')" title="Delete this custom category" style="position:absolute;top:8px;right:8px;background:rgba(0,0,0,0.4);color:#fff;border-radius:50%;width:22px;height:22px;display:flex;align-items:center;justify-content:center;cursor:pointer;font-size:11px">×</span>`
+        : '';
+      return `<button class="category-card" onclick="App.showEntryForm(${phaseId},'${c.id}')" style="text-align:left;position:relative">
+        ${deleteBtn}
         <span class="category-card-arrow">${Phases.iconFor('arrowRight',14)}</span>
         <span class="category-card-icon">${Phases.iconFor(c.icon||'listChecks',28)}</span>
         <div class="category-card-name">${escapeHtml(c.name)}</div>
@@ -1641,16 +2124,28 @@
         </div>
       </button>`;
     }).join('');
+
+    // "Add New" card — lets the user create a custom material/labour/extra category
+    // for this phase on the fly (Task 1).
+    const addNewLabel = v === 'labor' ? 'Add New Labour Type' : (v === 'extra' ? 'Add New Charge' : 'Add New Material');
+    const addNewHtml = `
+      <button class="category-card" onclick="Phases._showAddCustomCardModal(${phaseId},'${v}')" style="text-align:left;border:1.5px dashed var(--amber-border);background:var(--amber-light-bg);color:var(--amber)">
+        <span class="category-card-icon">${Phases.iconFor('plus',28)}</span>
+        <div class="category-card-name">${addNewLabel}</div>
+        <div class="category-card-desc">Create a custom category for this phase.</div>
+        <div class="category-card-meta"><div class="category-card-progress-label">Tap to add</div></div>
+      </button>`;
+
     return `<div class="category-hub">
       <div class="breadcrumb" style="margin-bottom:12px">
-        <a onclick="App.showOverview()" style="cursor:pointer">Overview</a>
+        <a onclick="App.showPhaseHub(${phaseId})" style="cursor:pointer">${escapeHtml(phase.name)}</a>
         <span class="breadcrumb-sep">›</span>
-        <span class="breadcrumb-current">${escapeHtml(phase.name)}</span>
+        <span class="breadcrumb-current">${label}</span>
       </div>
       <div class="category-hub-header" style="margin-bottom:20px">
-        <div class="category-hub-title">${Phases.iconFor(phase.icon, 20)} <span style="margin-left:8px">${escapeHtml(phase.name)}</span></div>
+        <div class="category-hub-title">${Phases.iconFor(phase.icon, 20)} <span style="margin-left:8px">${escapeHtml(phase.name)} · ${label}</span></div>
       </div>
-      <div class="category-grid">${cardHtml}</div>
+      <div class="category-grid">${cardHtml}${addNewHtml}</div>
       
       <!-- Section details & total box at the bottom -->
       <div style="margin-top:24px;margin-bottom:20px;background:var(--charcoal-mid);border:1px solid var(--charcoal-border);border-radius:var(--radius-lg);padding:14px 18px">
@@ -1669,10 +2164,114 @@
     </div>`;
   };
 
+  // ── "Add New" custom card modal (Task 1) ─────────────────────────
+  Phases._showAddCustomCardModal = function(phaseId, view) {
+    const isLabor = view === 'labor';
+    const isExtra = view === 'extra';
+    const typeLabel = isLabor ? 'Labour Type' : (isExtra ? 'Charge Type' : 'Material Type');
+    App.showModal(`
+      <h3 class="modal-title">${Icons.render('plus', 16)} Add New ${typeLabel}</h3>
+      <div style="margin-bottom:12px">
+        <label class="modal-label">${typeLabel} Name *</label>
+        <input id="cm-name" class="modal-input" placeholder="e.g. ${isLabor ? 'Mason Daily Wage' : (isExtra ? 'Test & Inspection Fee' : 'Specialty Adhesive')}">
+      </div>
+      <div style="margin-bottom:12px">
+        <label class="modal-label">Description (optional)</label>
+        <input id="cm-desc" class="modal-input" placeholder="Short note about this category">
+      </div>
+      <div style="margin-bottom:12px">
+        <label class="modal-label">Cost Calculation</label>
+        <select id="cm-cost" class="modal-input" style="appearance:auto">
+          <option value="qty_rate">Quantity × Rate</option>
+          <option value="amount">Flat Amount</option>
+        </select>
+      </div>
+      <div style="display:flex;gap:12px">
+        <button onclick="App.closeModal()" class="modal-btn-cancel" style="flex:1;padding:11px;border-radius:10px;border:1px solid var(--charcoal-border);background:none;color:var(--text-secondary);cursor:pointer;font-family:inherit;font-weight:600">Cancel</button>
+        <button onclick="Phases._saveCustomCard(${phaseId},'${view}')" class="modal-btn-primary" style="flex:1;padding:11px;border-radius:10px;border:none;background:var(--amber);color:#fff;cursor:pointer;font-family:inherit;font-weight:600">Add Category</button>
+      </div>
+    `);
+  };
+
+  Phases._saveCustomCard = function(phaseId, view) {
+    const name = document.getElementById('cm-name')?.value.trim();
+    if (!name) { App.toast('Name is required', 'error'); return; }
+    const desc = document.getElementById('cm-desc')?.value.trim() || 'Custom category';
+    const costExpr = document.getElementById('cm-cost')?.value || 'qty_rate';
+    const isLabor = view === 'labor';
+    const isExtra = view === 'extra';
+
+    // Build the field set based on cost expression and labour/extra flag
+    let fields;
+    if (isLabor || costExpr === 'amount') {
+      fields = [
+        { key:'date', label:'Date', type:'date' },
+        { key:'item', label:'Item / Work', type:'text' },
+        { key:'amount', label:'Amount (₹)', type:'number' },
+        { key:'mode', label:'Mode', type:'select', options:['Cash','UPI','Cheque','NEFT'] },
+      ];
+    } else {
+      fields = [
+        { key:'item', label:'Item Description', type:'text' },
+        { key:'qty', label:'Quantity', type:'number' },
+        { key:'unit', label:'Unit', type:'select', options:['pcs','kg','bags','brass','L','m','sqft','rft','ton','cft','nos'] },
+        { key:'rate', label:'Rate (₹)', type:'number' },
+        { key:'vendor', label:'Vendor', type:'text' },
+      ];
+    }
+
+    // For labour cards, force the card ID into LABOR_IDS by using a `custom_labor_` prefix
+    // AND register it dynamically in LABOR_IDS so the rest of the app treats it as labour.
+    // For extra cards, use `custom_extra_` prefix and register in EXTRA_CARD_IDS.
+    let cardId;
+    if (isLabor) {
+      cardId = 'custom_labor_' + Date.now().toString(36);
+      if (!LABOR_IDS.includes(cardId)) LABOR_IDS.push(cardId);
+    } else if (isExtra) {
+      cardId = 'custom_extra_' + Date.now().toString(36);
+      if (!EXTRA_CARD_IDS.includes(cardId)) EXTRA_CARD_IDS.push(cardId);
+    } else {
+      cardId = 'custom_material_' + Date.now().toString(36);
+    }
+
+    const cardSpec = {
+      id: cardId,
+      name,
+      icon: isLabor ? 'userCircle' : (isExtra ? 'zap' : 'listChecks'),
+      desc,
+      fields,
+      costExpr: (isLabor || costExpr === 'amount') ? 'amount' : 'qty_rate',
+      isLabor,
+      isExtra,
+      isCustom: true,
+    };
+    State.addCustomCard(phaseId, cardSpec);
+    App.closeModal();
+    App.toast('Category added', 'success');
+    // Re-render the card list view so the new card shows immediately
+    if (typeof App !== 'undefined' && App.showMaterialCards && !isLabor && !isExtra) App.showMaterialCards(phaseId);
+    else if (typeof App !== 'undefined' && App.showLaborCards && isLabor) App.showLaborCards(phaseId);
+    else if (typeof App !== 'undefined' && App.showExtraCards && isExtra) App.showExtraCards(phaseId);
+    else if (typeof App !== 'undefined' && App.showPhaseHub) App.showPhaseHub(phaseId);
+  };
+
+  Phases._deleteCustomCard = function(phaseId, cardId) {
+    App.showConfirmModal({
+      icon: Icons.render('trash', 24),
+      title: 'Delete this custom category?',
+      body: 'Existing entries will be kept but the category will no longer appear in the list.',
+      confirmLabel: 'Delete',
+      onConfirm: () => {
+        State.deleteCustomCard(phaseId, cardId);
+        App.toast('Category removed', 'info');
+        // Best-effort re-render
+        if (typeof App !== 'undefined' && App.showMaterialCards) App.showMaterialCards(phaseId);
+      }
+    });
+  };
+
   Phases.renderEntryForm = function(phaseId, cardId) {
     phaseId = Number(phaseId);
-    // Delegate to showCardEntryForm which writes to content-area directly
-    // Here we just trigger it and return the content-area html
     const proj = State.getCurrentProject();
     if (!proj) return '<div style="padding:24px">No project</div>';
     const phase = proj.phases.find(p => Number(p.id) === Number(phaseId));
@@ -1680,11 +2279,11 @@
     const allCards = getAllCardsForPhase(phaseId);
     const card = allCards.find(c => c.id === cardId);
     if (!card) return '<div style="padding:24px">Card not found</div>';
-    const isLabor = LABOR_IDS.includes(cardId);
-    // Render the entry form and return the HTML (App.showEntryForm sets innerHTML)
+    let groupLabel = 'Material Costs';
+    if (LABOR_IDS.includes(cardId)) groupLabel = 'Labor Costing';
+    else if (EXTRA_CARD_IDS.includes(cardId)) groupLabel = card.name || 'Extra Charges';
     Phases._entryTotalOverride = false;
-    // Use existing renderEntryForm from phases-new-core
-    return renderEntryForm(phase, card, isLabor ? 'Labor Costing' : 'Material Costs');
+    return renderEntryForm(phase, card, groupLabel);
   };
 
   console.log('[PhasesCore] Entry model patched — 3-card hub active for phases 1-9');
@@ -1703,11 +2302,13 @@
 
     const matCards = getMaterialCardsForPhase(phaseId);
     const labCards = getLaborCardsForPhase(phaseId);
+    const extraCards = getExtraCardsForPhase(phaseId);
 
     const materialTotal = matCards.reduce((s, c) => s + sumEntries(phaseId, c.id), 0);
     const laborTotal = labCards.reduce((s, c) => s + sumEntries(phaseId, c.id), 0);
+    const extraTotal = extraCards.reduce((s, c) => s + sumEntries(phaseId, c.id), 0);
     const billTotal = (State.getBills(phaseId)||[]).reduce((s,b) => s + (parseFloat(b.totalAmount)||0), 0);
-    const phaseTotal = materialTotal + laborTotal + billTotal;
+    const phaseTotal = materialTotal + laborTotal + extraTotal + billTotal;
 
     const matCount = matCards.reduce((s,c) => s + getEntries(phaseId, c.id).length, 0);
     const labCount = labCards.reduce((s,c) => s + getEntries(phaseId, c.id).length, 0);
@@ -1723,6 +2324,19 @@
     if (hubMatCount) hubMatCount.textContent = matCount + ' entries';
     const hubLabCount = document.getElementById('hub-labor-count-' + phaseId);
     if (hubLabCount) hubLabCount.textContent = labCount + ' entries';
+    // All Bills card count + total
+    const bills = State.getBills(phaseId) || [];
+    const hubBillCount = document.getElementById('hub-bill-count-' + phaseId);
+    if (hubBillCount) hubBillCount.textContent = bills.length + ' bill' + (bills.length !== 1 ? 's' : '') + ' scanned';
+    const hubBillTotal = document.getElementById('hub-bill-total-' + phaseId);
+    if (hubBillTotal) {
+      if (billTotal > 0) {
+        hubBillTotal.textContent = F.fmt(billTotal);
+        hubBillTotal.style.display = '';
+      } else {
+        hubBillTotal.style.display = 'none';
+      }
+    }
   }
 
   Phases._updateHubCosts = _updateHubCosts;

@@ -253,6 +253,52 @@ const SupabaseClient = (() => {
     return data;
   }
 
+  // ── Profile management ──────────────────────────────────
+  // The profiles table is auto-populated by a trigger on signup.
+  // These functions let us read/update the profile row.
+  let _profile = null;
+
+  function getProfile() { return _profile; }
+
+  async function loadProfile() {
+    if (!_supabase || !_user) return null;
+    try {
+      const { data, error } = await _supabase
+        .from('profiles')
+        .select('*')
+        .eq('id', _user.id)
+        .single();
+      if (error) throw error;
+      _profile = data;
+      return data;
+    } catch (err) {
+      console.warn('[Supabase] loadProfile error:', err.message);
+      return null;
+    }
+  }
+
+  async function updateProfile(updates) {
+    if (!_supabase || !_user) throw new Error('Not authenticated');
+    const payload = {};
+    if (updates.fullName !== undefined) payload.full_name = updates.fullName;
+    if (updates.company !== undefined) payload.company = updates.company;
+    if (updates.phone !== undefined) payload.phone = updates.phone;
+    if (updates.role !== undefined) payload.role = updates.role;
+    if (updates.avatarUrl !== undefined) payload.avatar_url = updates.avatarUrl;
+    if (updates.onboardingComplete !== undefined) payload.onboarding_complete = updates.onboardingComplete;
+    payload.updated_at = new Date().toISOString();
+
+    const { data, error } = await _supabase
+      .from('profiles')
+      .update(payload)
+      .eq('id', _user.id)
+      .select()
+      .single();
+    if (error) throw error;
+    _profile = data;
+    return data;
+  }
+
   async function signIn(email, password) {
     if (!_supabase) throw new Error('Supabase not initialized');
     const { data, error } = await _supabase.auth.signInWithPassword({
@@ -440,12 +486,18 @@ const SupabaseClient = (() => {
     const { data: { session } } = await _supabase.auth.getSession();
     if (!session?.access_token) throw new Error('No active session');
 
+    const deleteHeaders = {
+      'Authorization': `Bearer ${session.access_token}`,
+      'Content-Type': 'application/json',
+    };
+    // On native (Edge Function), also send the Supabase anon key as 'apikey'
+    if (_config && _config.supabaseAnonKey) {
+      deleteHeaders['apikey'] = _config.supabaseAnonKey;
+    }
+
     const res = await fetch(getDeleteUserUrl(), {
       method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${session.access_token}`,
-        'Content-Type': 'application/json',
-      }
+      headers: deleteHeaders,
     });
 
     const data = await res.json();
@@ -495,6 +547,9 @@ const SupabaseClient = (() => {
     onReady,
     getClient,
     getUser,
+    getProfile,
+    loadProfile,
+    updateProfile,
     isAuthenticated,
     signUp,
     signIn,
@@ -505,5 +560,6 @@ const SupabaseClient = (() => {
     requireAuth,
     getAiChatUrl,
     getDeleteUserUrl,
+    getConfig: () => _config,
   };
 })();
