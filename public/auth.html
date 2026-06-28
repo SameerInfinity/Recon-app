@@ -651,7 +651,13 @@ const AuthUI = (() => {
     } catch (err) {
       btn.disabled = false;
       btn.innerHTML = originalHTML;
-      showError(err.message || 'Google sign-in failed. Please try again.');
+      const msg = err.message || 'Google sign-in failed. Please try again.';
+      // Don't show "cancelled" as a scary error — it's a normal user action
+      if (msg.includes('cancelled') || msg.includes('cancel')) {
+        showError(msg); // Uses the same amber warning style, not red error
+      } else {
+        showError(msg);
+      }
     }
   }
 

@@ -530,6 +530,16 @@ const App = (() => {
         AI.addMessage('info', '', 'Welcome', `Project "${proj.name}" loaded. ${Financial.fmtFull(total)} tracked so far.`, []);
       } catch {}
     }, 600);
+    // Check if user opted into walkthrough during onboarding — start it now
+    // that the main app + project are loaded.
+    try {
+      if (localStorage.getItem('arconza_pending_walkthrough') === '1') {
+        localStorage.removeItem('arconza_pending_walkthrough');
+        setTimeout(() => {
+          if (typeof startWalkthrough === 'function') startWalkthrough();
+        }, 1200);
+      }
+    } catch (e) {}
   }
 
   function syncSidebarActiveState(hubName, viewName, ledgerTab) {
@@ -1972,13 +1982,13 @@ const App = (() => {
     // Render account settings as a modal
     const profile = (typeof SupabaseClient !== 'undefined' && SupabaseClient.getProfile?.()) || {};
     const user = (typeof SupabaseClient !== 'undefined' && SupabaseClient.getUser?.()) || {};
-    const name = profile.full_name || user.user_metadata?.full_name || '';
-    const role = profile.role || '';
-    const phone = profile.phone || '';
-    const company = profile.company || '';
-    const avatarUrl = profile.avatar_url || '';
+    const name = profile?.full_name || user?.user_metadata?.full_name || '';
+    const role = profile?.role || '';
+    const phone = profile?.phone || '';
+    const company = profile?.company || '';
+    const avatarUrl = profile?.avatar_url || '';
 
-    App.showModal(`
+    showModal(`
       <h3 class="modal-title">${Icons.render('settings', 16)} Account Settings</h3>
       <div style="display:flex;flex-direction:column;align-items:center;gap:12px;margin-bottom:20px">
         <div id="acct-avatar-preview" style="width:80px;height:80px;border-radius:50%;background:var(--amber-glow);border:2px solid var(--amber-border);display:flex;align-items:center;justify-content:center;overflow:hidden;cursor:pointer;position:relative" onclick="document.getElementById('acct-avatar-file').click()">
@@ -2035,6 +2045,10 @@ const App = (() => {
     const role = document.getElementById('acct-role')?.value || '';
     const phone = document.getElementById('acct-phone')?.value.trim() || '';
     const company = document.getElementById('acct-company')?.value.trim() || '';
+    if (typeof SupabaseClient === 'undefined' || !SupabaseClient.updateProfile) {
+      toast('Profile sync not available — check your connection', 'error');
+      return;
+    }
     showLoading('Saving profile…');
     try {
       const updates = { fullName, role, phone, company };
@@ -2048,6 +2062,7 @@ const App = (() => {
       _loadProfileIntoMenu();
     } catch (err) {
       hideLoading();
+      console.error('[Account Settings] Save failed:', err);
       toast('Failed to save: ' + (err.message || 'Unknown error'), 'error');
     }
   }
@@ -2737,9 +2752,10 @@ const App = (() => {
     {
       title: 'You\'re all set!',
       desc: 'That\'s the tour! Start by creating a project from the Dashboard, or explore each tab to see everything ARCONZA can do. You can replay this tour anytime from More → App Tutorial.',
-      selector: 'body',
+      selector: '#main-app .m-hero-card, .m-hero-card',
       nav: () => { showHub('dashboard'); },
       wait: 300,
+      hideSpotlight: true,
     },
   ];
 
@@ -2836,14 +2852,33 @@ const App = (() => {
     if (backBtn) backBtn.style.display = (_wtStep > 0) ? '' : 'none';
     // Find the target element
     const target = _wtFindTarget(step.selector);
-    if (target) {
+    const spotlight = document.getElementById('wt-spotlight');
+    // If the step has hideSpotlight, hide the spotlight ring + panels (just show tooltip)
+    if (step.hideSpotlight) {
+      ['wt-panel-top','wt-panel-bottom','wt-panel-left','wt-panel-right','wt-spotlight'].forEach(id => {
+        const el = document.getElementById(id);
+        if (el) el.style.display = 'none';
+      });
+      // Position tooltip in the center of the screen
+      const tooltip = document.getElementById('wt-tooltip');
+      if (tooltip) {
+        tooltip.classList.remove('wt-below', 'wt-above');
+        const ttRect = tooltip.getBoundingClientRect();
+        tooltip.style.left = Math.max(16, (window.innerWidth - ttRect.width) / 2) + 'px';
+        tooltip.style.top = Math.max(16, (window.innerHeight - ttRect.height) / 2) + 'px';
+      }
+    } else if (target) {
+      // Show panels + spotlight
+      ['wt-panel-top','wt-panel-bottom','wt-panel-left','wt-panel-right','wt-spotlight'].forEach(id => {
+        const el = document.getElementById(id);
+        if (el) el.style.display = '';
+      });
       const rect = target.getBoundingClientRect();
       _wtPositionPanels(rect);
       _wtPositionTooltip(rect);
       // Scroll the target into view if it's off-screen
       if (rect.top < 0 || rect.bottom > window.innerHeight || rect.left < 0 || rect.right > window.innerWidth) {
         target.scrollIntoView({ behavior: 'smooth', block: 'center', inline: 'center' });
-        // Re-measure after scroll settles
         setTimeout(() => {
           const r2 = target.getBoundingClientRect();
           _wtPositionPanels(r2);

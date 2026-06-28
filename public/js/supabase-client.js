@@ -267,7 +267,7 @@ const SupabaseClient = (() => {
         .from('profiles')
         .select('*')
         .eq('id', _user.id)
-        .single();
+        .maybeSingle();
       if (error) throw error;
       _profile = data;
       return data;
@@ -288,12 +288,15 @@ const SupabaseClient = (() => {
     if (updates.onboardingComplete !== undefined) payload.onboarding_complete = updates.onboardingComplete;
     payload.updated_at = new Date().toISOString();
 
+    // Use upsert instead of update+select+single — this handles both
+    // the case where the profile row exists (update) and where it
+    // doesn't exist yet (insert). Avoids "Cannot coerce to single
+    // JSON object" error when .single() returns 0 rows.
     const { data, error } = await _supabase
       .from('profiles')
-      .update(payload)
-      .eq('id', _user.id)
+      .upsert({ id: _user.id, ...payload })
       .select()
-      .single();
+      .maybeSingle();
     if (error) throw error;
     _profile = data;
     return data;
@@ -416,8 +419,28 @@ const SupabaseClient = (() => {
       },
     });
 
-    const idToken = response && response.result && response.result.idToken;
-    if (!idToken) throw new Error('Google sign-in did not return an ID token');
+    // The @capgo/capacitor-social-login plugin returns different shapes
+    // depending on version. Handle all cases:
+    // - { result: { idToken, ... } }  (success)
+    // - { result: null }               (cancelled/failed)
+    // - { result: { cancelled: true } }(explicit cancel)
+    // - { error: '...' }               (error)
+    if (!response) throw new Error('Google sign-in returned no response');
+    if (response.error) throw new Error(response.error);
+    
+    const result = response.result || response;
+    if (!result) throw new Error('Google sign-in cancelled');
+    if (result.cancelled) throw new Error('Google sign-in cancelled by user');
+    
+    const idToken = result.idToken;
+    if (!idToken) {
+      // If there's no idToken but there IS an accessToken, the user may have
+      // cancelled the sign-in or the plugin returned a partial result
+      if (result.accessToken) {
+        throw new Error('Google returned access token but no ID token. Ensure webClientId is correct.');
+      }
+      throw new Error('Google sign-in cancelled by user');
+    }
 
     const validation = _validateGoogleIdToken(idToken, nonceDigest, webClientId);
     if (!validation.valid) {

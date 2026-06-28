@@ -228,25 +228,32 @@
   }
 
   // ── Finish onboarding and optionally start the in-app walkthrough ──
-  // If startTour=true, hides onboarding, marks onboarded, then triggers
-  // App.startWalkthrough() once the app shell is visible.
+  // ALWAYS redirect to auth.html after onboarding (whether or not the user
+  // chose the walkthrough). The walkthrough preference is saved to localStorage
+  // and checked AFTER the user signs in + opens/creates a project.
   function finishWithWalkthrough(startTour) {
     if (!_tutorialMode) markOnboarded();
     var wasTutorial = _tutorialMode;
     _tutorialMode = false;
+    // Save walkthrough preference for later (after auth + project creation)
+    if (startTour) {
+      try { localStorage.setItem('arconza_pending_walkthrough', '1'); } catch (e) {}
+    }
     if (!onb) {
-      if (startTour) _triggerWalkthrough();
+      _goToAuth(wasTutorial);
       return;
     }
     onb.classList.add('onb-hide');
     setTimeout(function () {
       onb.style.display = 'none';
-      if (startTour) {
-        _triggerWalkthrough();
-      } else if (!wasTutorial && !isAuthed()) {
-        window.location.href = '/auth.html';
-      }
+      _goToAuth(wasTutorial);
     }, 480);
+  }
+
+  function _goToAuth(wasTutorial) {
+    if (!wasTutorial && !isAuthed()) {
+      window.location.href = '/auth.html';
+    }
   }
 
   // Trigger the walkthrough via the App module if available.
